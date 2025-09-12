@@ -1,6 +1,6 @@
 {
   "name": "vector-framework",
-  "version": "0.9.1",
+  "version": "0.9.2",
   "author": "",
   "repository": {
     "type": "git",
@@ -81,7 +81,7 @@
     "build:clean": "rm -rf dist",
     "build:ts": "tsc",
     "build:bundle": "bun build src/index.ts --format esm --minify --outfile dist/index.mjs && bun build src/index.ts --format cjs --minify --outfile dist/index.js",
-    "build:cli": "bun build src/cli/index.ts --target node --outfile dist/cli.js && node -e \"const fs=require('fs'); let content=fs.readFileSync('dist/cli.js','utf8'); content=content.replace(/^#!.*\\n/, '#!/usr/bin/env node\\n'); fs.writeFileSync('dist/cli.js', content)\"",
+    "build:cli": "bun build src/cli/index.ts --target bun --outfile dist/cli.js",
     "test": "bun test tests/api-error.test.ts tests/cache.test.ts tests/middleware.test.ts tests/middleware-integration.test.ts tests/router.test.ts",
     "test:unit": "bun test tests/*.test.ts",
     "test:watch": "bun test --watch tests/*.test.ts",

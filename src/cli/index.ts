@@ -5,8 +5,11 @@ import { parseArgs } from "node:util";
 import { getVectorInstance } from "../core/vector";
 import { ConfigLoader } from "../core/config-loader";
 
+// Compatibility layer for both Node and Bun
+const args = typeof Bun !== 'undefined' ? Bun.argv.slice(2) : process.argv.slice(2);
+
 const { values, positionals } = parseArgs({
-  args: Bun.argv.slice(2),
+  args,
   options: {
     port: {
       type: "string",
@@ -195,15 +198,25 @@ async function runBuild() {
 
     console.log(`  Generated ${routes.length} routes`);
 
-    const buildProcess = Bun.spawn([
-      "bun",
-      "build",
-      "src/index.ts",
-      "--outdir",
-      "dist",
-      "--minify",
-    ]);
-    await buildProcess.exited;
+    // Use spawn based on runtime
+    if (typeof Bun !== 'undefined') {
+      const buildProcess = Bun.spawn([
+        "bun",
+        "build",
+        "src/index.ts",
+        "--outdir",
+        "dist",
+        "--minify",
+      ]);
+      await buildProcess.exited;
+    } else {
+      // For Node.js, use child_process
+      const { spawnSync } = await import('child_process');
+      spawnSync('bun', ['build', 'src/index.ts', '--outdir', 'dist', '--minify'], {
+        stdio: 'inherit',
+        shell: true
+      });
+    }
 
     console.log("\n  ✓ Build complete\n");
   } catch (error) {
