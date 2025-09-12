@@ -104,24 +104,20 @@ async function runDev() {
 
       try {
         // Watch entire project directory for changes
-        watch(
-          process.cwd(),
-          { recursive: true },
-          async (eventType, filename) => {
-            if (
-              filename &&
-              (filename.endsWith(".ts") ||
-                filename.endsWith(".js") ||
-                filename.endsWith(".json"))
-            ) {
-              console.log(`\n  🔄 File changed: ${filename}`);
-              console.log("  🔄 Restarting server...\n");
+        watch(process.cwd(), { recursive: true }, async (_, filename) => {
+          if (
+            filename &&
+            (filename.endsWith(".ts") ||
+              filename.endsWith(".js") ||
+              filename.endsWith(".json"))
+          ) {
+            console.log(`\n  🔄 File changed: ${filename}`);
+            console.log("  🔄 Restarting server...\n");
 
-              // Exit the current process, which will trigger a restart if using --watch flag
-              process.exit(0);
-            }
+            // Exit the current process, which will trigger a restart if using --watch flag
+            process.exit(0);
           }
-        );
+        });
       } catch (err) {
         console.warn("  ⚠️  File watching not available");
       }
