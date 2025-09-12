@@ -5,9 +5,8 @@ import { CacheManager } from '../cache/manager';
 import { RouteGenerator } from '../dev/route-generator';
 import { RouteScanner } from '../dev/route-scanner';
 import { MiddlewareManager } from '../middleware/manager';
+import { toFileUrl } from '../utils/path';
 import type {
-  AfterMiddlewareHandler,
-  BeforeMiddlewareHandler,
   CacheHandler,
   DefaultVectorTypes,
   ProtectedHandler,
@@ -19,6 +18,7 @@ import type {
 import { VectorRouter } from './router';
 import { VectorServer } from './server';
 
+// Internal-only class - not exposed to users
 export class Vector<TTypes extends VectorTypes = DefaultVectorTypes> {
   private static instance: Vector<any>;
   private router: VectorRouter<TTypes>;
@@ -43,6 +43,7 @@ export class Vector<TTypes extends VectorTypes = DefaultVectorTypes> {
     );
   }
 
+  // Internal use only - not exposed to users
   static getInstance<T extends VectorTypes = DefaultVectorTypes>(): Vector<T> {
     if (!Vector.instance) {
       Vector.instance = new Vector<T>();
@@ -50,45 +51,37 @@ export class Vector<TTypes extends VectorTypes = DefaultVectorTypes> {
     return Vector.instance as Vector<T>;
   }
 
-  set protected(handler: ProtectedHandler<TTypes>) {
+  // Internal method to set protected handler
+  setProtectedHandler(handler: ProtectedHandler<TTypes>) {
     this._protectedHandler = handler;
     this.authManager.setProtectedHandler(handler);
   }
 
-  get protected(): ProtectedHandler<TTypes> | null {
+  getProtectedHandler(): ProtectedHandler<TTypes> | null {
     return this._protectedHandler;
   }
 
-  set cache(handler: CacheHandler) {
+  // Internal method to set cache handler
+  setCacheHandler(handler: CacheHandler) {
     this._cacheHandler = handler;
     this.cacheManager.setCacheHandler(handler);
   }
 
-  get cache(): CacheHandler | null {
+  getCacheHandler(): CacheHandler | null {
     return this._cacheHandler;
   }
 
-  route(options: RouteOptions<TTypes>, handler: RouteHandler<TTypes>): RouteEntry {
+  // Internal method to add route
+  addRoute(options: RouteOptions<TTypes>, handler: RouteHandler<TTypes>): RouteEntry {
     return this.router.route(options, handler);
   }
 
-  use(...middleware: BeforeMiddlewareHandler<TTypes>[]): this {
-    this.middlewareManager.addBefore(...middleware);
-    return this;
-  }
-
-  before(...middleware: BeforeMiddlewareHandler<TTypes>[]): this {
-    this.middlewareManager.addBefore(...middleware);
-    return this;
-  }
-
-  finally(...middleware: AfterMiddlewareHandler<TTypes>[]): this {
-    this.middlewareManager.addFinally(...middleware);
-    return this;
-  }
-
-  async serve(config?: VectorConfig<TTypes>): Promise<Server> {
+  // Internal method to start server - only called by CLI
+  async startServer(config?: VectorConfig<TTypes>): Promise<Server> {
     this.config = { ...this.config, ...config };
+
+    // Clear previous middleware to avoid accumulation across multiple starts
+    this.middlewareManager.clear();
 
     if (config?.before) {
       this.middlewareManager.addBefore(...config.before);
@@ -129,17 +122,19 @@ export class Vector<TTypes extends VectorTypes = DefaultVectorTypes> {
 
         for (const route of routes) {
           try {
-            // Convert Windows paths to URLs for import
-            const importPath =
-              process.platform === 'win32'
-                ? `file:///${route.path.replace(/\\/g, '/')}`
-                : route.path;
+            const importPath = toFileUrl(route.path);
 
             const module = await import(importPath);
             const exported = route.name === 'default' ? module.default : module[route.name];
 
             if (exported) {
-              if (this.isRouteEntry(exported)) {
+              if (this.isRouteDefinition(exported)) {
+                // Use router.route() to ensure middleware is applied
+                const routeDef = exported as any;
+                this.router.route(routeDef.options, routeDef.handler);
+                this.logRouteLoaded(routeDef.options);
+              } else if (this.isRouteEntry(exported)) {
+                // Legacy support for direct RouteEntry (won't have middleware)
                 this.router.addRoute(exported as RouteEntry);
                 this.logRouteLoaded(exported as RouteEntry);
               } else if (typeof exported === 'function') {
@@ -185,6 +180,10 @@ export class Vector<TTypes extends VectorTypes = DefaultVectorTypes> {
     return Array.isArray(value) && value.length >= 3;
   }
 
+  private isRouteDefinition(value: any): boolean {
+    return value && typeof value === 'object' && 'entry' in value && 'options' in value && 'handler' in value;
+  }
+
   private logRouteLoaded(route: RouteEntry | RouteOptions): void {
     if (Array.isArray(route)) {
       console.log(`  ✓ Loaded route: ${route[0]} ${route[3] || route[1]}`);
@@ -198,6 +197,9 @@ export class Vector<TTypes extends VectorTypes = DefaultVectorTypes> {
       this.server.stop();
       this.server = null;
     }
+    // Don't reset managers - they should persist for the singleton
+    // Only clear route-specific state if needed
+    this.router.clearRoutes();
   }
 
   getServer(): VectorServer<TTypes> | null {
@@ -215,8 +217,12 @@ export class Vector<TTypes extends VectorTypes = DefaultVectorTypes> {
   getAuthManager(): AuthManager<TTypes> {
     return this.authManager;
   }
+
+  // Reset instance for testing purposes only
+  static resetInstance(): void {
+    Vector.instance = null as any;
+  }
 }
 
-const vector = Vector.getInstance();
-
-export default vector;
+// Export for internal use only
+export const getVectorInstance = Vector.getInstance;

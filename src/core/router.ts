@@ -256,4 +256,8 @@ export class VectorRouter<TTypes extends VectorTypes = DefaultVectorTypes> {
 
     return APIError.notFound('Route not found');
   }
+
+  clearRoutes(): void {
+    this.routes = [];
+  }
 }

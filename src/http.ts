@@ -33,13 +33,19 @@ interface ExtendedApiOptions extends ApiOptions {
   path: string;
 }
 
+export interface RouteDefinition<TTypes extends VectorTypes = DefaultVectorTypes> {
+  entry: RouteEntry;
+  options: ExtendedApiOptions;
+  handler: (req: VectorRequest<TTypes>) => Promise<unknown>;
+}
+
 export function route<TTypes extends VectorTypes = DefaultVectorTypes>(
   options: ExtendedApiOptions,
   fn: (req: VectorRequest<TTypes>) => Promise<unknown>
-): RouteEntry {
+): RouteDefinition<TTypes> {
   const handler = api(options, fn);
 
-  return [
+  const entry: RouteEntry = [
     options.method.toUpperCase(),
     RegExp(
       `^${
@@ -54,6 +60,12 @@ export function route<TTypes extends VectorTypes = DefaultVectorTypes>(
     [handler],
     options.path,
   ];
+
+  return {
+    entry,
+    options,
+    handler: fn
+  };
 }
 
 function stringifyData(data: unknown): string {
@@ -251,9 +263,11 @@ export const protectedRoute = async <
   responseContentType?: string
 ) => {
   // Get the Vector instance to access the protected handler
-  const vector = (await import("./core/vector")).default;
+  const { getVectorInstance } = await import("./core/vector");
+  const vector = getVectorInstance();
 
-  if (!vector.protected) {
+  const protectedHandler = vector.getProtectedHandler();
+  if (!protectedHandler) {
     throw APIError.unauthorized(
       "Authentication not configured",
       responseContentType
@@ -261,7 +275,7 @@ export const protectedRoute = async <
   }
 
   try {
-    const authUser = await vector.protected(request as any);
+    const authUser = await protectedHandler(request as any);
     request.authUser = authUser as GetAuthType<TTypes>;
   } catch (error) {
     throw APIError.unauthorized(
@@ -292,6 +306,8 @@ export function api<TTypes extends VectorTypes = DefaultVectorTypes>(
     responseContentType = CONTENT_TYPES.JSON,
   } = options;
 
+  // For backward compatibility with direct route usage (not auto-discovered)
+  // This wrapper is only used when routes are NOT auto-discovered
   return async (request: IRequest) => {
     if (!expose) {
       return APIError.forbidden("Forbidden");

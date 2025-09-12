@@ -1,19 +1,14 @@
-import { Vector } from './core/vector';
-import { route } from './http';
-import type { DefaultVectorTypes, VectorTypes } from './types';
+// Public exports for route definitions only
+import { route } from "./http";
 
-export { route, Vector };
-export { AuthManager } from './auth/protected';
-export { CacheManager } from './cache/manager';
-export { APIError, createResponse } from './http';
-export { MiddlewareManager } from './middleware/manager';
-export * from './types';
+// Export route function for defining routes
+export { route };
 
-// Create a typed Vector instance with custom types
-export function createVector<TTypes extends VectorTypes = DefaultVectorTypes>(): Vector<TTypes> {
-  return Vector.getInstance<TTypes>();
-}
+// Export utilities for route handlers
+export { APIError, createResponse } from "./http";
 
-// Default vector instance with default AuthUser type
-const vector = Vector.getInstance();
-export default vector;
+// Export types for TypeScript users
+export * from "./types";
+
+// Note: Vector framework is now config-driven and runs via CLI
+// Usage: Create vector.config.ts and run 'vector dev' or 'vector start'

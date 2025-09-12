@@ -72,6 +72,7 @@ export interface RouteOptions<TTypes extends VectorTypes = DefaultVectorTypes> {
   metadata?: GetMetadataType<TTypes>;
 }
 
+// Legacy config interface - will be deprecated
 export interface VectorConfig<TTypes extends VectorTypes = DefaultVectorTypes> {
   port?: number;
   hostname?: string;
@@ -82,6 +83,49 @@ export interface VectorConfig<TTypes extends VectorTypes = DefaultVectorTypes> {
   finally?: AfterMiddlewareHandler<TTypes>[];
   routesDir?: string;
   autoDiscover?: boolean;
+}
+
+// New config-driven schema
+export interface VectorConfigSchema<TTypes extends VectorTypes = DefaultVectorTypes> {
+  // Server configuration
+  server?: {
+    port?: number;
+    hostname?: string;
+    reusePort?: boolean;
+    development?: boolean;
+  };
+  
+  // Routes configuration
+  routes?: {
+    dir?: string;
+    autoDiscover?: boolean;
+  };
+  
+  // Middleware configuration - supports both file paths and direct functions
+  middleware?: {
+    before?: string[];
+    after?: string[];
+  };
+  
+  // Direct middleware functions (preferred approach)
+  before?: BeforeMiddlewareHandler<TTypes>[];
+  after?: AfterMiddlewareHandler<TTypes>[];
+  
+  // Handler configuration - supports both file paths and direct functions
+  handlers?: {
+    auth?: string;
+    cache?: string;
+  };
+  
+  // Direct handler functions (preferred approach)
+  auth?: ProtectedHandler<TTypes>;
+  cache?: CacheHandler;
+  
+  // CORS configuration
+  cors?: CorsOptions | boolean;
+  
+  // Custom types for TypeScript
+  types?: VectorTypes;
 }
 
 export interface CorsOptions {

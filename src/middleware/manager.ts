@@ -4,9 +4,11 @@ import type {
   DefaultVectorTypes,
   VectorRequest,
   VectorTypes,
-} from '../types';
+} from "../types";
 
-export class MiddlewareManager<TTypes extends VectorTypes = DefaultVectorTypes> {
+export class MiddlewareManager<
+  TTypes extends VectorTypes = DefaultVectorTypes
+> {
   private beforeHandlers: BeforeMiddlewareHandler<TTypes>[] = [];
   private finallyHandlers: AfterMiddlewareHandler<TTypes>[] = [];
 
@@ -18,7 +20,9 @@ export class MiddlewareManager<TTypes extends VectorTypes = DefaultVectorTypes> 
     this.finallyHandlers.push(...handlers);
   }
 
-  async executeBefore(request: VectorRequest<TTypes>): Promise<VectorRequest<TTypes> | Response> {
+  async executeBefore(
+    request: VectorRequest<TTypes>
+  ): Promise<VectorRequest<TTypes> | Response> {
     let currentRequest = request;
 
     for (const handler of this.beforeHandlers) {
@@ -34,7 +38,10 @@ export class MiddlewareManager<TTypes extends VectorTypes = DefaultVectorTypes> 
     return currentRequest;
   }
 
-  async executeFinally(response: Response, request: VectorRequest<TTypes>): Promise<Response> {
+  async executeFinally(
+    response: Response,
+    request: VectorRequest<TTypes>
+  ): Promise<Response> {
     let currentResponse = response;
 
     for (const handler of this.finallyHandlers) {
@@ -49,5 +56,10 @@ export class MiddlewareManager<TTypes extends VectorTypes = DefaultVectorTypes> 
     manager.beforeHandlers = [...this.beforeHandlers];
     manager.finallyHandlers = [...this.finallyHandlers];
     return manager;
+  }
+
+  clear(): void {
+    this.beforeHandlers = [];
+    this.finallyHandlers = [];
   }
 }

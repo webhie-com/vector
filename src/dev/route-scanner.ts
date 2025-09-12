@@ -64,7 +64,18 @@ export class RouteScanner {
           for (const [name, value] of Object.entries(module)) {
             if (name === 'default') continue;
 
-            if (Array.isArray(value) && value.length >= 4) {
+            // Check for new RouteDefinition format
+            if (value && typeof value === 'object' && 'entry' in value && 'options' in value && 'handler' in value) {
+              const routeDef = value as any;
+              routes.push({
+                name,
+                path: fullPath,
+                method: routeDef.options.method as string,
+                options: routeDef.options,
+              });
+            }
+            // Legacy RouteEntry format support
+            else if (Array.isArray(value) && value.length >= 4) {
               const [method, , , path] = value;
               routes.push({
                 name,

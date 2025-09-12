@@ -1,9 +1,9 @@
 #!/usr/bin/env bun
 
 import { watch } from "node:fs";
-import { join } from "node:path";
 import { parseArgs } from "node:util";
-import vector from "../core/vector";
+import { getVectorInstance } from "../core/vector";
+import { ConfigLoader } from "../core/config-loader";
 
 const { values, positionals } = parseArgs({
   args: Bun.argv.slice(2),
@@ -45,92 +45,133 @@ async function runDev() {
     `\n→ Starting Vector ${isDev ? "development" : "production"} server\n`
   );
 
-  const config: any = {
-    port: Number.parseInt(values.port as string),
-    hostname: values.host as string,
-    routesDir: values.routes as string,
-    development: isDev,
-    autoDiscover: true,
-    cors: values.cors
-      ? {
+  let server: any = null;
+  let vector: any = null;
+
+  async function startServer() {
+    try {
+      // Load configuration using ConfigLoader
+      const configLoader = new ConfigLoader();
+      const config = await configLoader.load();
+
+      // Merge CLI options with loaded config
+      config.port = config.port || Number.parseInt(values.port as string);
+      config.hostname = config.hostname || (values.host as string);
+      config.routesDir = config.routesDir || (values.routes as string);
+      config.development = isDev;
+      config.autoDiscover = true;
+
+      // Apply CLI CORS option if not set in config
+      if (!config.cors && values.cors) {
+        config.cors = {
           origin: "*",
           credentials: true,
           allowHeaders: "Content-Type, Authorization",
           allowMethods: "GET, POST, PUT, PATCH, DELETE, OPTIONS",
           exposeHeaders: "Authorization",
           maxAge: 86400,
-        }
-      : undefined,
-  };
+        };
+      }
+
+      // Get Vector instance and configure handlers
+      vector = getVectorInstance();
+
+      // Load and set auth handler if configured
+      const authHandler = await configLoader.loadAuthHandler();
+      if (authHandler) {
+        vector.setProtectedHandler(authHandler);
+      }
+
+      // Load and set cache handler if configured
+      const cacheHandler = await configLoader.loadCacheHandler();
+      if (cacheHandler) {
+        vector.setCacheHandler(cacheHandler);
+      }
+
+      // Start the server
+      server = await vector.startServer(config);
+
+      const gray = "\x1b[90m";
+      const reset = "\x1b[0m";
+      const cyan = "\x1b[36m";
+      const green = "\x1b[32m";
+
+      console.log(`  ${gray}Routes${reset}     ${config.routesDir}`);
+      if (isDev && values.watch) {
+        console.log(`  ${gray}Watching${reset}   All project files`);
+      }
+      console.log(
+        `  ${gray}CORS${reset}       ${values.cors ? "Enabled" : "Disabled"}`
+      );
+      console.log(
+        `  ${gray}Mode${reset}       ${isDev ? "Development" : "Production"}\n`
+      );
+      console.log(
+        `  ${green}Ready${reset} → ${cyan}http://${config.hostname}:${config.port}${reset}\n`
+      );
+
+      return { server, vector, config };
+    } catch (error) {
+      console.error("[ERROR] Failed to start server:", error);
+      throw error;
+    }
+  }
 
   try {
-    const userConfigPath = join(process.cwd(), "vector.config.ts");
-    try {
-      const userConfig = await import(userConfigPath);
-      if (userConfig.default) {
-        // Properly merge config, preserving middleware arrays
-        const {
-          before,
-          finally: finallyMiddleware,
-          ...otherConfig
-        } = userConfig.default;
+    // Start the server initially
+    const result = await startServer();
+    server = result.server;
 
-        // Merge non-middleware config
-        Object.assign(config, otherConfig);
-
-        // Handle middleware arrays properly - these need to be set after Object.assign
-        // to avoid being overwritten
-        if (before) {
-          config.before = before;
-        }
-        if (finallyMiddleware) {
-          config.finally = finallyMiddleware;
-        }
-      }
-    } catch {
-      // No user config file, use defaults
-    }
-
-    await vector.serve(config);
-
-    const gray = "\x1b[90m";
-    const reset = "\x1b[0m";
-    const cyan = "\x1b[36m";
-    const green = "\x1b[32m";
-
-    console.log(`  ${gray}Routes${reset}     ${config.routesDir}`);
+    // Setup file watching for hot reload
     if (isDev && values.watch) {
-      console.log(`  ${gray}Watching${reset}   All project files`);
-
       try {
+        let reloadTimeout: any = null;
+
         // Watch entire project directory for changes
         watch(process.cwd(), { recursive: true }, async (_, filename) => {
           if (
             filename &&
             (filename.endsWith(".ts") ||
               filename.endsWith(".js") ||
-              filename.endsWith(".json"))
+              filename.endsWith(".json")) &&
+            !filename.includes("node_modules") &&
+            !filename.includes(".git")
           ) {
-            console.log(`\n  🔄 File changed: ${filename}`);
-            console.log("  🔄 Restarting server...\n");
+            // Debounce reload to avoid multiple restarts
+            if (reloadTimeout) {
+              clearTimeout(reloadTimeout);
+            }
 
-            // Exit the current process, which will trigger a restart if using --watch flag
-            process.exit(0);
+            reloadTimeout = setTimeout(async () => {
+              console.log(`\n  🔄 File changed: ${filename}`);
+              console.log("  🔄 Reloading server...\n");
+
+              // Stop the current server
+              if (vector) {
+                vector.stop();
+              }
+
+              // Clear module cache to ensure fresh imports
+              for (const key in require.cache) {
+                if (!key.includes("node_modules")) {
+                  delete require.cache[key];
+                }
+              }
+
+              // Restart the server
+              try {
+                const result = await startServer();
+                server = result.server;
+              } catch (error) {
+                console.error("  ❌ Failed to reload server:", error);
+              }
+            }, 100); // 100ms debounce
           }
         });
       } catch (err) {
         console.warn("  ⚠️  File watching not available");
       }
     }
-    console.log(
-      `  ${gray}CORS${reset}       ${values.cors ? "Enabled" : "Disabled"}`
-    );
-    console.log(
-      `  ${gray}Mode${reset}       ${isDev ? "Development" : "Production"}\n`
-    );
-    console.log(
-      `  ${green}Ready${reset} → ${cyan}http://${config.hostname}:${config.port}${reset}\n`
-    );
   } catch (error) {
     console.error("[ERROR] Failed to start server:", error);
     process.exit(1);
