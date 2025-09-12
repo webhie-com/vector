@@ -1,4 +1,4 @@
-import { promises as fs } from 'node:fs';
+import { existsSync, promises as fs } from 'node:fs';
 import { join, relative, resolve, sep } from 'node:path';
 import type { GeneratedRoute } from '../types';
 
@@ -6,17 +6,29 @@ export class RouteScanner {
   private routesDir: string;
 
   constructor(routesDir = './routes') {
+    // Always resolve from the current working directory (user's project)
     this.routesDir = resolve(process.cwd(), routesDir);
   }
 
   async scan(): Promise<GeneratedRoute[]> {
     const routes: GeneratedRoute[] = [];
 
+    // Check if routes directory exists before attempting to scan
+    if (!existsSync(this.routesDir)) {
+      console.log(`  → Routes directory not found: ${this.routesDir}`);
+      console.log('  → No routes will be auto-discovered');
+      return [];
+    }
+
     try {
+      console.log(`  → Scanning routes from: ${this.routesDir}`);
       await this.scanDirectory(this.routesDir, routes);
+      if (routes.length > 0) {
+        console.log(`  ✓ Found ${routes.length} route${routes.length === 1 ? '' : 's'}`);
+      }
     } catch (error) {
       if ((error as any).code === 'ENOENT') {
-        console.warn(`Routes directory not found: ${this.routesDir}`);
+        console.warn(`  ✗ Routes directory not accessible: ${this.routesDir}`);
         return [];
       }
       throw error;

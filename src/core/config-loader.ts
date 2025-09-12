@@ -1,3 +1,4 @@
+import { existsSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { toFileUrl } from '../utils/path';
 import type {
@@ -15,25 +16,44 @@ import type {
 export class ConfigLoader<TTypes extends VectorTypes = DefaultVectorTypes> {
   private configPath: string;
   private config: VectorConfigSchema<TTypes> | null = null;
+  private configSource: 'user' | 'default' = 'default';
 
   constructor(configPath = 'vector.config.ts') {
+    // Always resolve from the current working directory (user's project)
     this.configPath = resolve(process.cwd(), configPath);
   }
 
   async load(): Promise<VectorConfig<TTypes>> {
-    try {
-      // Try to load user config
-      const userConfigPath = toFileUrl(this.configPath);
-      const userConfig = await import(userConfigPath);
-      this.config = userConfig.default || userConfig;
-    } catch (error) {
-      // No config file, use defaults
-      console.log('No vector.config.ts found, using defaults');
+    // Check if config file exists before attempting to load
+    if (existsSync(this.configPath)) {
+      try {
+        console.log(`→ Loading config from: ${this.configPath}`);
+        
+        // Use explicit file:// URL to ensure correct resolution
+        const userConfigPath = toFileUrl(this.configPath);
+        const userConfig = await import(userConfigPath);
+        this.config = userConfig.default || userConfig;
+        this.configSource = 'user';
+        
+        console.log('  ✓ User config loaded successfully');
+      } catch (error) {
+        console.error(`  ✗ Failed to load config from ${this.configPath}:`, error);
+        console.log('  → Using default configuration');
+        this.config = {};
+      }
+    } else {
+      // Config file doesn't exist, use defaults
+      console.log(`  → No config file found at: ${this.configPath}`);
+      console.log('  → Using default configuration');
       this.config = {};
     }
 
     // Convert new config schema to legacy VectorConfig format
     return await this.buildLegacyConfig();
+  }
+  
+  getConfigSource(): 'user' | 'default' {
+    return this.configSource;
   }
 
   private async buildLegacyConfig(): Promise<VectorConfig<TTypes>> {

@@ -1,6 +1,6 @@
 {
   "name": "vector-framework",
-  "version": "0.9.0",
+  "version": "0.9.1",
   "author": "",
   "repository": {
     "type": "git",
@@ -42,7 +42,7 @@
     }
   },
   "bin": {
-    "vector": "./src/cli/index.ts"
+    "vector": "./dist/cli.js"
   },
   "bugs": {
     "url": "https://github.com/webhie-com/vector/issues"
@@ -77,10 +77,11 @@
     "start": "bun run src/cli/index.ts start",
     "build": "bun run src/cli/index.ts build",
     "example": "bun run examples/server.ts",
-    "build:lib": "bun run build:clean && bun run build:ts && bun run build:bundle",
+    "build:lib": "bun run build:clean && bun run build:ts && bun run build:bundle && bun run build:cli",
     "build:clean": "rm -rf dist",
     "build:ts": "tsc",
     "build:bundle": "bun build src/index.ts --format esm --minify --outfile dist/index.mjs && bun build src/index.ts --format cjs --minify --outfile dist/index.js",
+    "build:cli": "bun build src/cli/index.ts --target node --outfile dist/cli.js && node -e \"const fs=require('fs'); let content=fs.readFileSync('dist/cli.js','utf8'); content=content.replace(/^#!.*\\n/, '#!/usr/bin/env node\\n'); fs.writeFileSync('dist/cli.js', content)\"",
     "test": "bun test tests/api-error.test.ts tests/cache.test.ts tests/middleware.test.ts tests/middleware-integration.test.ts tests/router.test.ts",
     "test:unit": "bun test tests/*.test.ts",
     "test:watch": "bun test --watch tests/*.test.ts",

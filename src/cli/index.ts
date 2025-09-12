@@ -53,6 +53,7 @@ async function runDev() {
       // Load configuration using ConfigLoader
       const configLoader = new ConfigLoader();
       const config = await configLoader.load();
+      const configSource = configLoader.getConfigSource();
 
       // Merge CLI options with loaded config
       config.port = config.port || Number.parseInt(values.port as string);
@@ -96,6 +97,7 @@ async function runDev() {
       const cyan = "\x1b[36m";
       const green = "\x1b[32m";
 
+      console.log(`  ${gray}Config${reset}     ${configSource === 'user' ? 'User config loaded' : 'Using defaults'}`);
       console.log(`  ${gray}Routes${reset}     ${config.routesDir}`);
       if (isDev && values.watch) {
         console.log(`  ${gray}Watching${reset}   All project files`);
