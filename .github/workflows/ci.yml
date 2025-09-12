@@ -136,8 +136,8 @@ jobs:
 
       - name: Run Docker tests
         run: |
-          docker-compose -f docker-compose.test.yml run test-unit
-          docker-compose -f docker-compose.test.yml run test-e2e
+          docker compose -f docker-compose.test.yml run test-unit
+          docker compose -f docker-compose.test.yml run test-e2e
 
   build:
     name: Build Distribution

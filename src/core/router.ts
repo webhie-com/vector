@@ -123,6 +123,16 @@ export class VectorRouter<TTypes extends VectorTypes = DefaultVectorTypes> {
         vectorRequest.context = {} as any;
       }
 
+      // Parse query parameters from URL (handles duplicate params as arrays)
+      if (!vectorRequest.query && vectorRequest.url) {
+        const url = new URL(vectorRequest.url);
+        const query: Record<string, string | string[]> = {};
+        for (let [k, v] of url.searchParams) {
+          query[k] = query[k] ? ([] as string[]).concat(query[k], v) : v;
+        }
+        vectorRequest.query = query;
+      }
+
       // Add metadata to request if provided
       if (options.metadata) {
         vectorRequest.metadata = options.metadata;

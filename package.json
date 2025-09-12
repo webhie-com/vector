@@ -85,7 +85,7 @@
     "test:unit": "bun test tests/*.test.ts",
     "test:watch": "bun test --watch tests/*.test.ts",
     "test:coverage": "bun test --coverage tests/*.test.ts",
-    "test:e2e": "bun run tests/e2e/e2e.test.ts",
+    "test:e2e": "bun test tests/e2e/e2e.test.ts",
     "test:load": "bun run tests/e2e/load.test.ts",
     "test:soak": "bun run tests/e2e/soak.test.ts",
     "test:benchmark": "bun run tests/e2e/benchmark.test.ts",
