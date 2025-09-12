@@ -140,7 +140,8 @@ export class VectorRouter<TTypes extends VectorTypes = DefaultVectorTypes> {
 
       request = vectorRequest;
       try {
-        if (!options.expose) {
+        // Default expose to true if not specified
+        if (options.expose === false) {
           return APIError.forbidden('Forbidden');
         }
 

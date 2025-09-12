@@ -105,12 +105,6 @@ export class Vector<TTypes extends VectorTypes = DefaultVectorTypes> {
     this.server = new VectorServer<TTypes>(this.router, this.config);
     const bunServer = await this.server.start();
 
-    if (this.config.development && this.routeScanner) {
-      this.routeScanner.enableWatch(async () => {
-        await this.discoverRoutes();
-      });
-    }
-
     return bunServer;
   }
 
@@ -163,7 +157,7 @@ export class Vector<TTypes extends VectorTypes = DefaultVectorTypes> {
         console.log(`✅ Loaded ${routes.length} routes from ${routesDir}`);
       }
     } catch (error) {
-      if ((error as any).code !== 'ENOENT') {
+      if ((error as any).code !== 'ENOENT' && (error as any).code !== 'ENOTDIR') {
         console.error('Failed to discover routes:', error);
       }
     }

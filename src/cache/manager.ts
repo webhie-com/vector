@@ -1,5 +1,10 @@
-import { DEFAULT_CONFIG } from '../constants';
-import type { CacheHandler, DefaultVectorTypes, GetCacheType, VectorTypes } from '../types';
+import { DEFAULT_CONFIG } from "../constants";
+import type {
+  CacheHandler,
+  DefaultVectorTypes,
+  GetCacheType,
+  VectorTypes,
+} from "../types";
 
 interface CacheEntry<T = any> {
   value: T;
@@ -126,8 +131,13 @@ export class CacheManager<TTypes extends VectorTypes = DefaultVectorTypes> {
 
   generateKey(request: Request, options?: { authUser?: any }): string {
     const url = new URL(request.url);
-    const parts = [request.method, url.pathname, url.search, options?.authUser?.id || 'anonymous'];
+    const parts = [
+      request.method,
+      url.pathname,
+      url.search,
+      options?.authUser?.id || "anonymous",
+    ];
 
-    return parts.join(':');
+    return parts.join(":");
   }
 }

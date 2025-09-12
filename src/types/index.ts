@@ -64,7 +64,7 @@ export interface RouteOptions<TTypes extends VectorTypes = DefaultVectorTypes> {
   method: string;
   path: string;
   auth?: boolean;
-  expose?: boolean;
+  expose?: boolean; // defaults to true
   cache?: CacheOptions | number;
   rawRequest?: boolean;
   rawResponse?: boolean;

@@ -1,6 +1,6 @@
 {
   "name": "vector-framework",
-  "version": "0.8.1",
+  "version": "0.8.2",
   "author": "",
   "repository": {
     "type": "git",
@@ -73,7 +73,7 @@
   ],
   "license": "MIT",
   "scripts": {
-    "dev": "bun run src/cli/index.ts dev",
+    "dev": "bun --watch run src/cli/index.ts dev",
     "start": "bun run src/cli/index.ts start",
     "build": "bun run src/cli/index.ts build",
     "example": "bun run examples/server.ts",
@@ -81,7 +81,7 @@
     "build:clean": "rm -rf dist",
     "build:ts": "tsc",
     "build:bundle": "bun build src/index.ts --format esm --minify --outfile dist/index.mjs && bun build src/index.ts --format cjs --minify --outfile dist/index.js",
-    "test": "bun test tests/api-error.test.ts tests/cache.test.ts tests/middleware.test.ts tests/router.test.ts tests/vector.test.ts",
+    "test": "bun test tests/api-error.test.ts tests/cache.test.ts tests/middleware.test.ts tests/router.test.ts tests/vector.test.ts tests/autodiscover.test.ts",
     "test:unit": "bun test tests/*.test.ts",
     "test:watch": "bun test --watch tests/*.test.ts",
     "test:coverage": "bun test --coverage tests/*.test.ts",

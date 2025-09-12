@@ -1,4 +1,4 @@
-import { readdir, stat } from 'node:fs/promises';
+import { promises as fs } from 'node:fs';
 import { join, relative, resolve, sep } from 'node:path';
 import type { GeneratedRoute } from '../types';
 
@@ -26,11 +26,11 @@ export class RouteScanner {
   }
 
   private async scanDirectory(dir: string, routes: GeneratedRoute[], basePath = ''): Promise<void> {
-    const entries = await readdir(dir);
+    const entries = await fs.readdir(dir);
 
     for (const entry of entries) {
       const fullPath = join(dir, entry);
-      const stats = await stat(fullPath);
+      const stats = await fs.stat(fullPath);
 
       if (stats.isDirectory()) {
         const newBasePath = basePath ? `${basePath}/${entry}` : entry;

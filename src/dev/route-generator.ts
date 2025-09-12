@@ -1,4 +1,4 @@
-import { mkdir, writeFile } from 'node:fs/promises';
+import { promises as fs } from 'node:fs';
 import { dirname, relative } from 'node:path';
 import type { GeneratedRoute } from '../types';
 
@@ -11,7 +11,7 @@ export class RouteGenerator {
 
   async generate(routes: GeneratedRoute[]): Promise<void> {
     const outputDir = dirname(this.outputPath);
-    await mkdir(outputDir, { recursive: true });
+    await fs.mkdir(outputDir, { recursive: true });
 
     const imports: string[] = [];
     const groupedByFile = new Map<string, GeneratedRoute[]>();
@@ -64,7 +64,7 @@ ${routeEntries.join('\n')}
 export default routes;
 `;
 
-    await writeFile(this.outputPath, content, 'utf-8');
+    await fs.writeFile(this.outputPath, content, 'utf-8');
     console.log(`Generated routes file: ${this.outputPath}`);
   }
 

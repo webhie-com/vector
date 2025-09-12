@@ -4,41 +4,51 @@
 
 Vector brings the blazing performance of Bun to developers who appreciate the simplicity and elegance of frameworks like Encore. Build production-ready APIs with a familiar, declarative syntax while leveraging Bun's incredible speed.
 
-## Why Vector?
-
-If you've been looking for Encore-like developer experience with Bun's performance, Vector is your answer. Define your routes declaratively, enjoy automatic type safety, and ship faster than ever.
-
-## Features
-
-- **Fast & Lightweight** - Built on Bun and itty-router for maximum performance
-- **Type-Safe** - Full TypeScript support with excellent type inference
-- **Auto Route Discovery** - Automatically discovers and loads routes from your filesystem
-- **Middleware System** - Flexible pre/post request middleware pipeline
-- **Built-in Authentication** - Simple but powerful authentication system
-- **Response Caching** - Automatic response caching with configurable TTL
-- **CORS Support** - Configurable CORS with sensible defaults
-- **Developer Experience** - Auto route discovery and CLI tools
-
 ## Quick Start
 
 ### Installation
 
 ```bash
-bun add vector
+bun add vector-framework
+```
+
+### Configuration
+
+Create a `vector.config.ts` file in your project root:
+
+```javascript
+// vector.config.js
+export default {
+  port: 3000, // Server port (default: 3000)
+  hostname: "localhost", // Server hostname (default: localhost)
+  routesDir: "./routes", // Routes directory (default: ./routes)
+  development: true, // Development mode
+  reusePort: true, // Reuse port (default: true)
+  autoDiscover: true, // Auto-discover routes (default: true)
+
+  // CORS configuration
+  cors: {
+    origin: "*", // String, array, or function
+    credentials: true, // Allow credentials
+    allowHeaders: ["Content-Type", "Authorization"],
+    allowMethods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    exposeHeaders: ["X-Total-Count"],
+    maxAge: 86400, // Preflight cache duration in seconds
+  },
+};
 ```
 
 ### Your First API (Encore-style)
 
 ```typescript
 // routes/hello.ts
-import { route } from "vector";
+import { route } from "vector-framework";
 
 // Public endpoint - clean and declarative
 export const hello = route(
   {
     method: "GET",
     path: "/hello/:name",
-    expose: true,
   },
   async (req) => {
     const { name } = req.params!;
@@ -51,7 +61,6 @@ export const getProfile = route(
   {
     method: "GET",
     path: "/profile",
-    expose: true,
     auth: true, // That's it! Auth handled.
   },
   async (req) => {
@@ -67,7 +76,7 @@ export const getProfile = route(
 
 ```typescript
 // server.ts
-import vector from "vector";
+import vector from "vector-framework";
 
 // Set up auth (once, globally)
 vector.protected = async (request) => {
@@ -83,13 +92,44 @@ vector.protected = async (request) => {
 vector.serve({ port: 3000 });
 ```
 
+### CLI Commands
+
+```bash
+# Run development server
+bun vector dev
+
+# Run production server
+bun vector start
+
+# Build for production
+bun vector build
+
+# Run with custom options
+bun vector dev --port 3000 --routes ./api
+```
+
+## Why Vector?
+
+If you've been looking for Encore-like developer experience with Bun's performance, Vector is your answer. Define your routes declaratively, enjoy automatic type safety, and ship faster than ever.
+
+## Features
+
+- **Fast & Lightweight** - Built on Bun and itty-router for maximum performance
+- **Type-Safe** - Full TypeScript support with excellent type inference
+- **Auto Route Discovery** - Automatically discovers and loads routes from your filesystem
+- **Middleware System** - Flexible pre/post request middleware pipeline
+- **Built-in Authentication** - Simple but powerful authentication system
+- **Response Caching** - Automatic response caching with configurable TTL
+- **CORS Support** - Configurable CORS with sensible defaults
+- **Developer Experience** - Auto route discovery and CLI tools
+
 ## Familiar Patterns, Modern Performance
 
 ### Real-World Example: User Service
 
 ```typescript
 // routes/users.ts
-import { route } from "vector";
+import { route } from "vector-framework";
 import { db } from "../db";
 
 // Public endpoint with caching
@@ -97,7 +137,6 @@ export const listUsers = route(
   {
     method: "GET",
     path: "/users",
-    expose: true,
     cache: 300, // Cache for 5 minutes
   },
   async () => {
@@ -111,7 +150,6 @@ export const createUser = route(
   {
     method: "POST",
     path: "/users",
-    expose: true,
     auth: true, // Auth required
   },
   async (req) => {
@@ -130,7 +168,6 @@ export const getUser = route(
   {
     method: "GET",
     path: "/users/:id",
-    expose: true,
   },
   async (req) => {
     const { id } = req.params!;
@@ -196,41 +233,13 @@ Switching from Encore? You'll feel right at home. Vector provides the same decla
 
 **The key difference:** Vector runs on Bun, giving you significantly better performance and lower resource usage while maintaining the developer experience you love.
 
-## CLI Commands
-
-Vector includes a built-in CLI for development and production:
-
-```bash
-# Development server
-bun run dev
-
-# Production server
-bun run start
-
-# Run with custom options
-bun run src/cli/index.ts dev --port 3000 --routes ./api
-```
-
-Or use npm scripts:
-
-```bash
-# Start development server
-bun run dev
-
-# Start production server
-bun run start
-
-# Build for production
-bun run build
-```
-
 ## Route Options
 
 ```typescript
 interface RouteOptions {
   method: string; // HTTP method (GET, POST, etc.)
   path: string; // Route path with params (/users/:id)
-  expose?: boolean; // Make route accessible (default: false)
+  expose?: boolean; // Make route accessible (default: true)
   auth?: boolean; // Require authentication (default: false)
   cache?:
     | number
@@ -324,6 +333,19 @@ interface VectorConfig {
   reusePort?: boolean; // Reuse port (default: true)
   development?: boolean; // Development mode
   routesDir?: string; // Routes directory (default: ./routes)
+  autoDiscover?: boolean; // Auto-discover routes (default: true)
+  cors?: CorsOptions; // CORS configuration
+  before?: BeforeMiddlewareHandler[]; // Pre-request middleware
+  finally?: AfterMiddlewareHandler[]; // Post-response middleware
+}
+
+interface CorsOptions {
+  origin?: string | string[] | ((origin: string) => boolean);
+  credentials?: boolean;
+  allowHeaders?: string | string[];
+  allowMethods?: string | string[];
+  exposeHeaders?: string | string[];
+  maxAge?: number;
 }
 ```
 
@@ -363,8 +385,8 @@ my-app/
 Vector is written in TypeScript and provides full type safety with customizable types:
 
 ```typescript
-import { createVector, route, APIError } from "vector";
-import type { VectorRequest, VectorTypes } from "vector";
+import { createVector, route, APIError } from "vector-framework";
+import type { VectorRequest, VectorTypes } from "vector-framework";
 
 // Define your custom user type
 interface MyUser {
@@ -413,7 +435,7 @@ Vector provides comprehensive built-in error responses for all HTTP status codes
 ### Common Client Errors (4xx)
 
 ```typescript
-import { APIError } from "vector";
+import { APIError } from "vector-framework";
 
 // Basic errors
 APIError.badRequest("Invalid input"); // 400
