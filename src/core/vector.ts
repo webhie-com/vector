@@ -149,7 +149,6 @@ export class Vector<TTypes extends VectorTypes = DefaultVectorTypes> {
 
         // Ensure routes are properly sorted after loading all
         this.router.sortRoutes();
-        console.log(`✅ Loaded ${routes.length} routes from ${routesDir}`);
       }
     } catch (error) {
       if ((error as any).code !== 'ENOENT' && (error as any).code !== 'ENOTDIR') {
@@ -185,11 +184,7 @@ export class Vector<TTypes extends VectorTypes = DefaultVectorTypes> {
   }
 
   private logRouteLoaded(route: RouteEntry | RouteOptions): void {
-    if (Array.isArray(route)) {
-      console.log(`  ✓ Loaded route: ${route[0]} ${route[3] || route[1]}`);
-    } else {
-      console.log(`  ✓ Loaded route: ${route.method} ${route.path}`);
-    }
+    // Silent - no logging
   }
 
   stop(): void {

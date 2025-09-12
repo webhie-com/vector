@@ -65,7 +65,6 @@ export default routes;
 `;
 
     await fs.writeFile(this.outputPath, content, 'utf-8');
-    console.log(`Generated routes file: ${this.outputPath}`);
   }
 
   async generateDynamic(routes: GeneratedRoute[]): Promise<string> {

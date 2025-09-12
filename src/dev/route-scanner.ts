@@ -15,17 +15,11 @@ export class RouteScanner {
 
     // Check if routes directory exists before attempting to scan
     if (!existsSync(this.routesDir)) {
-      console.log(`  → Routes directory not found: ${this.routesDir}`);
-      console.log('  → No routes will be auto-discovered');
       return [];
     }
 
     try {
-      console.log(`  → Scanning routes from: ${this.routesDir}`);
       await this.scanDirectory(this.routesDir, routes);
-      if (routes.length > 0) {
-        console.log(`  ✓ Found ${routes.length} route${routes.length === 1 ? '' : 's'}`);
-      }
     } catch (error) {
       if ((error as any).code === 'ENOENT') {
         console.warn(`  ✗ Routes directory not accessible: ${this.routesDir}`);

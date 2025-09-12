@@ -16,15 +16,17 @@ bun add vector-framework
 
 Create a `vector.config.ts` file in your project root:
 
-```javascript
-// vector.config.js
-export default {
+```typescript
+// vector.config.ts
+import type { VectorConfigSchema } from "vector-framework";
+
+const config: VectorConfigSchema = {
+  // Server configuration
   port: 3000, // Server port (default: 3000)
   hostname: "localhost", // Server hostname (default: localhost)
   routesDir: "./routes", // Routes directory (default: ./routes)
-  development: true, // Development mode
+  development: process.env.NODE_ENV !== "production", // Development mode
   reusePort: true, // Reuse port (default: true)
-  autoDiscover: true, // Auto-discover routes (default: true)
 
   // CORS configuration
   cors: {
@@ -36,6 +38,8 @@ export default {
     maxAge: 86400, // Preflight cache duration in seconds
   },
 };
+
+export default config;
 ```
 
 ### Your First API (Encore-style)

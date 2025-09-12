@@ -85,39 +85,20 @@ export interface VectorConfig<TTypes extends VectorTypes = DefaultVectorTypes> {
   autoDiscover?: boolean;
 }
 
-// New config-driven schema
+// New config-driven schema - flat structure
 export interface VectorConfigSchema<TTypes extends VectorTypes = DefaultVectorTypes> {
   // Server configuration
-  server?: {
-    port?: number;
-    hostname?: string;
-    reusePort?: boolean;
-    development?: boolean;
-  };
+  port?: number;
+  hostname?: string;
+  reusePort?: boolean;
+  development?: boolean;
+  routesDir?: string;
   
-  // Routes configuration
-  routes?: {
-    dir?: string;
-    autoDiscover?: boolean;
-  };
-  
-  // Middleware configuration - supports both file paths and direct functions
-  middleware?: {
-    before?: string[];
-    after?: string[];
-  };
-  
-  // Direct middleware functions (preferred approach)
+  // Middleware functions
   before?: BeforeMiddlewareHandler<TTypes>[];
   after?: AfterMiddlewareHandler<TTypes>[];
   
-  // Handler configuration - supports both file paths and direct functions
-  handlers?: {
-    auth?: string;
-    cache?: string;
-  };
-  
-  // Direct handler functions (preferred approach)
+  // Handler functions
   auth?: ProtectedHandler<TTypes>;
   cache?: CacheHandler;
   

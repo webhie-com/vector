@@ -64,8 +64,8 @@ async function runDev() {
       config.port = config.port ?? Number.parseInt(values.port as string);
       config.hostname = config.hostname ?? (values.host as string);
       config.routesDir = config.routesDir ?? (values.routes as string);
-      config.development = isDev;
-      config.autoDiscover = true;
+      config.development = config.development ?? isDev;
+      config.autoDiscover = true; // Always auto-discover routes
 
       // Apply CLI CORS option if not set in config
       if (!config.cors && values.cors) {
@@ -112,10 +112,10 @@ async function runDev() {
         console.log(`  ${gray}Watching${reset}   All project files`);
       }
       console.log(
-        `  ${gray}CORS${reset}       ${values.cors ? "Enabled" : "Disabled"}`
+        `  ${gray}CORS${reset}       ${config.cors ? "Enabled" : "Disabled"}`
       );
       console.log(
-        `  ${gray}Mode${reset}       ${isDev ? "Development" : "Production"}\n`
+        `  ${gray}Mode${reset}       ${config.development ? "Development" : "Production"}\n`
       );
       console.log(
         `  ${green}Ready${reset} → ${cyan}http://${config.hostname}:${config.port}${reset}\n`
