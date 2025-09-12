@@ -30,6 +30,14 @@ jobs:
 
       - name: Install dependencies
         run: bun install
+      
+      - name: Install platform-specific oxlint binary
+        run: |
+          if [ "${{ runner.os }}" = "Linux" ]; then
+            bun add -d @oxlint/linux-x64-gnu
+          elif [ "${{ runner.os }}" = "macOS" ]; then
+            bun add -d @oxlint/darwin-x64 @oxlint/darwin-arm64
+          fi
 
       - name: Lint code
         run: bun run lint
@@ -57,6 +65,14 @@ jobs:
 
       - name: Install dependencies
         run: bun install
+      
+      - name: Install platform-specific oxlint binary
+        run: |
+          if [ "${{ runner.os }}" = "Linux" ]; then
+            bun add -d @oxlint/linux-x64-gnu
+          elif [ "${{ runner.os }}" = "macOS" ]; then
+            bun add -d @oxlint/darwin-x64 @oxlint/darwin-arm64
+          fi
 
       - name: Run tests
         run: bun run test
@@ -85,6 +101,14 @@ jobs:
 
       - name: Install dependencies
         run: bun install
+      
+      - name: Install platform-specific oxlint binary
+        run: |
+          if [ "${{ runner.os }}" = "Linux" ]; then
+            bun add -d @oxlint/linux-x64-gnu
+          elif [ "${{ runner.os }}" = "macOS" ]; then
+            bun add -d @oxlint/darwin-x64 @oxlint/darwin-arm64
+          fi
 
       - name: Build
         run: bun run build:lib
@@ -131,6 +155,14 @@ jobs:
 
       - name: Install dependencies
         run: bun install
+      
+      - name: Install platform-specific oxlint binary
+        run: |
+          if [ "${{ runner.os }}" = "Linux" ]; then
+            bun add -d @oxlint/linux-x64-gnu
+          elif [ "${{ runner.os }}" = "macOS" ]; then
+            bun add -d @oxlint/darwin-x64 @oxlint/darwin-arm64
+          fi
 
       - name: Build library
         run: bun run build:lib
