@@ -6,7 +6,8 @@ import { getVectorInstance } from "../core/vector";
 import { ConfigLoader } from "../core/config-loader";
 
 // Compatibility layer for both Node and Bun
-const args = typeof Bun !== 'undefined' ? Bun.argv.slice(2) : process.argv.slice(2);
+const args =
+  typeof Bun !== "undefined" ? Bun.argv.slice(2) : process.argv.slice(2);
 
 const { values, positionals } = parseArgs({
   args,
@@ -101,7 +102,11 @@ async function runDev() {
       const cyan = "\x1b[36m";
       const green = "\x1b[32m";
 
-      console.log(`  ${gray}Config${reset}     ${configSource === 'user' ? 'User config loaded' : 'Using defaults'}`);
+      console.log(
+        `  ${gray}Config${reset}     ${
+          configSource === "user" ? "User config loaded" : "Using defaults"
+        }`
+      );
       console.log(`  ${gray}Routes${reset}     ${config.routesDir}`);
       if (isDev && values.watch) {
         console.log(`  ${gray}Watching${reset}   All project files`);
@@ -132,30 +137,52 @@ async function runDev() {
     if (isDev && values.watch) {
       try {
         let reloadTimeout: any = null;
+        let isReloading = false;
+        const changedFiles = new Set<string>();
+        let lastReloadTime = 0;
 
         // Watch entire project directory for changes
         watch(process.cwd(), { recursive: true }, async (_, filename) => {
+          // Skip if already reloading or if it's too soon after last reload
+          const now = Date.now();
+          if (isReloading || now - lastReloadTime < 1000) return;
+
           if (
             filename &&
             (filename.endsWith(".ts") ||
               filename.endsWith(".js") ||
               filename.endsWith(".json")) &&
             !filename.includes("node_modules") &&
-            !filename.includes(".git")
+            !filename.includes(".git") &&
+            !filename.includes(".vector") && // Ignore generated files
+            !filename.includes("dist") && // Ignore dist folder
+            !filename.includes("bun.lockb") && // Ignore lock files
+            !filename.endsWith(".generated.ts") // Ignore generated files
           ) {
+            // Track changed files
+            changedFiles.add(filename);
+
             // Debounce reload to avoid multiple restarts
             if (reloadTimeout) {
               clearTimeout(reloadTimeout);
             }
 
             reloadTimeout = setTimeout(async () => {
-              console.log(`\n  🔄 File changed: ${filename}`);
-              console.log("  🔄 Reloading server...\n");
+              if (isReloading || changedFiles.size === 0) return;
+
+              isReloading = true;
+              lastReloadTime = Date.now();
+
+              // Clear changed files
+              changedFiles.clear();
 
               // Stop the current server
               if (vector) {
                 vector.stop();
               }
+
+              // Small delay to ensure file system operations complete
+              await new Promise((resolve) => setTimeout(resolve, 100));
 
               // Clear module cache to ensure fresh imports
               for (const key in require.cache) {
@@ -168,10 +195,16 @@ async function runDev() {
               try {
                 const result = await startServer();
                 server = result.server;
+                vector = result.vector;
               } catch (error) {
                 console.error("  ❌ Failed to reload server:", error);
+              } finally {
+                // Reset flag after a delay
+                setTimeout(() => {
+                  isReloading = false;
+                }, 2000); // 2 second cooldown
               }
-            }, 100); // 100ms debounce
+            }, 500); // Increased debounce to 500ms
           }
         });
       } catch (err) {
@@ -200,7 +233,7 @@ async function runBuild() {
     console.log(`  Generated ${routes.length} routes`);
 
     // Use spawn based on runtime
-    if (typeof Bun !== 'undefined') {
+    if (typeof Bun !== "undefined") {
       const buildProcess = Bun.spawn([
         "bun",
         "build",
@@ -212,11 +245,15 @@ async function runBuild() {
       await buildProcess.exited;
     } else {
       // For Node.js, use child_process
-      const { spawnSync } = await import('child_process');
-      spawnSync('bun', ['build', 'src/index.ts', '--outdir', 'dist', '--minify'], {
-        stdio: 'inherit',
-        shell: true
-      });
+      const { spawnSync } = await import("child_process");
+      spawnSync(
+        "bun",
+        ["build", "src/index.ts", "--outdir", "dist", "--minify"],
+        {
+          stdio: "inherit",
+          shell: true,
+        }
+      );
     }
 
     console.log("\n  ✓ Build complete\n");

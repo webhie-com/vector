@@ -102,28 +102,22 @@ export class ConfigLoader<TTypes extends VectorTypes = DefaultVectorTypes> {
     // Load middleware - support both direct functions and file paths
     if (this.config?.before) {
       // Direct functions provided
-      console.log('Using direct before middleware functions:', this.config.before.length);
       config.before = this.config.before;
     } else if (this.config?.middleware?.before) {
       // File paths provided (legacy)
-      console.log('Loading before middleware from file paths:', this.config.middleware.before);
       config.before = await this.loadMiddleware<BeforeMiddlewareHandler<TTypes>>(
         this.config.middleware.before
       );
-      console.log('Loaded before middleware:', config.before?.length);
     }
 
     if (this.config?.after) {
       // Direct functions provided
-      console.log('Using direct after middleware functions:', this.config.after.length);
       config.finally = this.config.after;
     } else if (this.config?.middleware?.after) {
       // File paths provided (legacy)
-      console.log('Loading after middleware from file paths:', this.config.middleware.after);
       config.finally = await this.loadMiddleware<AfterMiddlewareHandler<TTypes>>(
         this.config.middleware.after
       );
-      console.log('Loaded after middleware:', config.finally?.length);
     }
 
     return config;
@@ -155,7 +149,6 @@ export class ConfigLoader<TTypes extends VectorTypes = DefaultVectorTypes> {
   async loadAuthHandler(): Promise<ProtectedHandler<TTypes> | null> {
     // Direct function provided
     if (this.config?.auth) {
-      console.log('Using direct auth handler function');
       return this.config.auth;
     }
 
@@ -185,7 +178,6 @@ export class ConfigLoader<TTypes extends VectorTypes = DefaultVectorTypes> {
   async loadCacheHandler(): Promise<CacheHandler | null> {
     // Direct function provided
     if (this.config?.cache) {
-      console.log('Using direct cache handler function');
       return this.config.cache;
     }
 
