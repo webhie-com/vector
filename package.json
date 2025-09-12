@@ -1,0 +1,112 @@
+{
+  "name": "vector",
+  "version": "0.8.0",
+  "description": "A modern TypeScript API framework built with Bun and itty-router",
+  "main": "./dist/index.js",
+  "module": "./dist/index.mjs",
+  "types": "./dist/index.d.ts",
+  "type": "module",
+  "bin": {
+    "vector": "./src/cli/index.ts"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.mjs",
+      "require": "./dist/index.js"
+    },
+    "./middleware": {
+      "types": "./dist/middleware/index.d.ts",
+      "import": "./dist/middleware/index.mjs",
+      "require": "./dist/middleware/index.js"
+    },
+    "./types": {
+      "types": "./dist/types/index.d.ts",
+      "import": "./dist/types/index.mjs",
+      "require": "./dist/types/index.js"
+    },
+    "./errors": {
+      "types": "./dist/errors/index.d.ts",
+      "import": "./dist/errors/index.mjs",
+      "require": "./dist/errors/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "src",
+    "README.md",
+    "LICENSE",
+    "package.json"
+  ],
+  "scripts": {
+    "dev": "bun run src/cli/index.ts dev",
+    "start": "bun run src/cli/index.ts start",
+    "build": "bun run src/cli/index.ts build",
+    "example": "bun run examples/server.ts",
+    "build:lib": "bun run build:clean && bun run build:ts && bun run build:bundle",
+    "build:clean": "rm -rf dist",
+    "build:ts": "tsc",
+    "build:bundle": "bun build src/index.ts --outdir dist --format esm --minify && bun build src/index.ts --outdir dist --format cjs --minify --outfile dist/index.js",
+    "test": "bun test",
+    "test:watch": "bun test --watch",
+    "test:coverage": "bun test --coverage",
+    "test:e2e": "bun run tests/e2e/e2e.test.ts",
+    "test:load": "bun run tests/e2e/load.test.ts",
+    "test:soak": "bun run tests/e2e/soak.test.ts",
+    "test:benchmark": "bun run tests/e2e/benchmark.test.ts",
+    "test:all": "bun test && bun run test:e2e",
+    "test:perf": "bun run test:load && bun run test:soak && bun run test:benchmark",
+    "docker:build": "docker build -t vector:latest .",
+    "docker:build:test": "docker build -t vector:test --target test .",
+    "docker:run": "docker-compose up",
+    "docker:run:dev": "docker-compose --profile dev up",
+    "docker:test": "docker-compose -f docker-compose.test.yml run test-all",
+    "docker:test:unit": "docker-compose -f docker-compose.test.yml run test-unit",
+    "docker:test:e2e": "docker-compose -f docker-compose.test.yml run test-e2e",
+    "docker:test:load": "docker-compose -f docker-compose.test.yml run test-load",
+    "docker:test:benchmark": "docker-compose -f docker-compose.test.yml run test-benchmark",
+    "lint": "biome check .",
+    "lint:fix": "biome check --write .",
+    "format": "biome format --write .",
+    "format:check": "biome format .",
+    "typecheck": "tsc --noEmit",
+    "prepublishOnly": "bun run build:lib && bun run test"
+  },
+  "keywords": [
+    "api",
+    "framework",
+    "bun",
+    "itty-router",
+    "typescript",
+    "rest",
+    "http",
+    "server",
+    "middleware",
+    "router"
+  ],
+  "author": "",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/webhie-com/vector.git"
+  },
+  "bugs": {
+    "url": "https://github.com/webhie-com/vector/issues"
+  },
+  "homepage": "https://github.com/webhie-com/vector#readme",
+  "engines": {
+    "bun": ">=1.0.0"
+  },
+  "dependencies": {
+    "itty-router": "^5.0.0"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^2.2.4",
+    "@biomejs/cli-win32-x64": "^2.2.4",
+    "@types/bun": "latest",
+    "typescript": "^5.0.0"
+  },
+  "peerDependencies": {
+    "bun": ">=1.0.0"
+  }
+}

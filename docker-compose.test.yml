@@ -1,0 +1,121 @@
+version: '3.8'
+
+services:
+  # Unit tests
+  test-unit:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: test
+    environment:
+      NODE_ENV: test
+    command: ["bun", "test", "--coverage"]
+    networks:
+      - test-network
+
+  # E2E tests
+  test-e2e:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: e2e-test
+    environment:
+      NODE_ENV: test
+    command: ["bun", "run", "tests/e2e/e2e.test.ts"]
+    networks:
+      - test-network
+
+  # Load tests
+  test-load:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: load-test
+    environment:
+      NODE_ENV: test
+    command: ["bun", "run", "tests/e2e/load.test.ts"]
+    networks:
+      - test-network
+    depends_on:
+      - test-server
+
+  # Soak tests
+  test-soak:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: test
+    environment:
+      NODE_ENV: test
+    command: ["bun", "run", "tests/e2e/soak.test.ts"]
+    networks:
+      - test-network
+    depends_on:
+      - test-server
+
+  # Benchmark tests
+  test-benchmark:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: benchmark
+    environment:
+      NODE_ENV: test
+    command: ["bun", "run", "tests/e2e/benchmark.test.ts"]
+    networks:
+      - test-network
+    volumes:
+      - ./benchmark-results:/app/benchmark-results
+    depends_on:
+      - test-server
+
+  # Test server (shared by performance tests)
+  test-server:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: test
+    environment:
+      NODE_ENV: test
+      PORT: 3000
+    command: ["bun", "run", "tests/e2e/test-server.ts"]
+    networks:
+      - test-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
+
+  # All tests runner
+  test-all:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: test
+    environment:
+      NODE_ENV: test
+    command: |
+      sh -c "
+        echo '🧪 Running Unit Tests...' &&
+        bun test --coverage &&
+        echo '\n🧪 Running E2E Tests...' &&
+        bun run tests/e2e/e2e.test.ts &&
+        echo '\n🧪 Running Load Tests...' &&
+        bun run tests/e2e/load.test.ts &&
+        echo '\n🧪 Running Soak Tests...' &&
+        bun run tests/e2e/soak.test.ts &&
+        echo '\n🧪 Running Benchmarks...' &&
+        bun run tests/e2e/benchmark.test.ts &&
+        echo '\n✅ All tests completed!'
+      "
+    networks:
+      - test-network
+    volumes:
+      - ./test-results:/app/test-results
+      - ./coverage:/app/coverage
+
+networks:
+  test-network:
+    driver: bridge

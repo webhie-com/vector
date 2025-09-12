@@ -1,0 +1,104 @@
+# Dependencies
+node_modules/
+bun.lockb
+package-lock.json
+yarn.lock
+pnpm-lock.yaml
+
+# Build output
+dist/
+build/
+out/
+*.tsbuildinfo
+*.d.ts.map
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Environment variables
+.env
+.env.local
+.env.*.local
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Testing
+coverage/
+.nyc_output/
+*.test.js
+*.test.d.ts
+test-results/
+junit.xml
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+
+# Generated files
+.vector/
+*.generated.ts
+*.generated.js
+*.generated.mjs
+*.generated.cjs
+routes.generated.ts
+
+# Cache
+.cache/
+.parcel-cache/
+.turbo/
+.next/
+.nuxt/
+
+# Claude
+.claude/
+CLAUDE.md
+
+# Test results
+soak-test-results.json
+benchmark-results.json
+load-test-results.json
+
+# Docker
+.dockerignore
+docker-compose.override.yml
+
+# OS files
+Thumbs.db
+.Spotlight-V100
+.Trashes
+
+# Editor directories and files
+*.sublime-project
+*.sublime-workspace
+.project
+.classpath
+.settings/
+
+# Biome
+.biome/
+
+# TypeScript
+*.tsbuildinfo
+tsconfig.tsbuildinfo
+
+# Bun specific
+bun-error.log
+.bun/
+
+# Production files
+*.production.ts
+*.production.js
+
+# Local config
+config.local.ts
+config.local.js

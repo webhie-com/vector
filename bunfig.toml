@@ -1,0 +1,11 @@
+[install]
+auto = "fallback"
+dev = true
+optional = false
+
+[test]
+coverage = true
+coverageThreshold = 0.8
+
+[run]
+silent = false
