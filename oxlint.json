@@ -1,0 +1,57 @@
+{
+  "rules": {
+    "no-unused-vars": "warn",
+    "no-console": "off",
+    "no-debugger": "error",
+    "no-undef": "error",
+    "no-empty": "error",
+    "no-duplicate-case": "error",
+    "no-extra-semi": "error",
+    "no-func-assign": "error",
+    "no-irregular-whitespace": "error",
+    "no-unreachable": "error",
+    "no-unsafe-finally": "error",
+    "use-isnan": "error",
+    "valid-typeof": "error",
+    "eqeqeq": ["error", "always"],
+    "no-eval": "error",
+    "no-implied-eval": "error",
+    "no-return-await": "error",
+    "no-self-compare": "error",
+    "no-throw-literal": "error",
+    "no-unused-expressions": "error",
+    "no-useless-catch": "error",
+    "no-with": "error",
+    "require-await": "error",
+    "no-shadow": "warn",
+    "no-use-before-define": "error",
+    "prefer-const": "error",
+    "no-var": "error",
+    "prefer-template": "error",
+    "prefer-arrow-callback": "error",
+    "arrow-body-style": ["error", "as-needed"],
+    "no-duplicate-imports": "error",
+    "typescript/no-explicit-any": "warn",
+    "typescript/no-non-null-assertion": "warn",
+    "typescript/no-unused-vars": ["warn", { "argsIgnorePattern": "^_" }],
+    "typescript/explicit-module-boundary-types": "off",
+    "typescript/consistent-type-imports": ["error", { "prefer": "type-imports" }]
+  },
+  "env": {
+    "browser": false,
+    "node": true,
+    "es2022": true
+  },
+  "globals": {
+    "Bun": "readonly"
+  },
+  "ignorePatterns": [
+    "dist/**",
+    "node_modules/**",
+    "coverage/**",
+    "*.min.js",
+    "*.d.ts",
+    "test-results/**",
+    "benchmark-results/**"
+  ]
+}
