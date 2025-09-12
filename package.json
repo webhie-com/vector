@@ -12,7 +12,6 @@
     "itty-router": "^5.0.0"
   },
   "devDependencies": {
-    "@oxlint/win32-x64": "^1.15.0",
     "@types/bun": "latest",
     "oxlint": "^1.15.0",
     "typescript": "^5.0.0"
@@ -82,15 +81,15 @@
     "build:clean": "rm -rf dist",
     "build:ts": "tsc",
     "build:bundle": "bun build src/index.ts --outdir dist --format esm --minify && bun build src/index.ts --outdir dist --format cjs --minify --outfile dist/index.js",
-    "test": "bun test --ignore=tests/e2e",
-    "test:unit": "bun test --ignore=tests/e2e",
-    "test:watch": "bun test --watch --ignore=tests/e2e",
-    "test:coverage": "bun test --coverage --ignore=tests/e2e",
+    "test": "bun test tests/api-error.test.ts tests/cache.test.ts tests/middleware.test.ts tests/router.test.ts tests/vector.test.ts",
+    "test:unit": "bun test tests/*.test.ts",
+    "test:watch": "bun test --watch tests/*.test.ts",
+    "test:coverage": "bun test --coverage tests/*.test.ts",
     "test:e2e": "bun run tests/e2e/e2e.test.ts",
     "test:load": "bun run tests/e2e/load.test.ts",
     "test:soak": "bun run tests/e2e/soak.test.ts",
     "test:benchmark": "bun run tests/e2e/benchmark.test.ts",
-    "test:all": "bun test && bun run test:e2e",
+    "test:all": "bun test 'tests/**/*.test.ts'",
     "test:perf": "bun run test:load && bun run test:soak && bun run test:benchmark",
     "docker:build": "docker build -t vector:latest .",
     "docker:build:test": "docker build -t vector:test --target test .",
