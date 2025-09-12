@@ -104,9 +104,9 @@ export class Vector<TTypes extends VectorTypes = DefaultVectorTypes> {
   private async discoverRoutes() {
     const routesDir = this.config.routesDir || './routes';
 
-    if (!this.routeScanner) {
-      this.routeScanner = new RouteScanner(routesDir);
-    }
+    // Always create a new RouteScanner with the current config's routesDir
+    // to ensure we're using the correct path from the user's config
+    this.routeScanner = new RouteScanner(routesDir);
 
     if (!this.routeGenerator) {
       this.routeGenerator = new RouteGenerator();

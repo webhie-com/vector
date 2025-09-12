@@ -59,9 +59,10 @@ async function runDev() {
       const configSource = configLoader.getConfigSource();
 
       // Merge CLI options with loaded config
-      config.port = config.port || Number.parseInt(values.port as string);
-      config.hostname = config.hostname || (values.host as string);
-      config.routesDir = config.routesDir || (values.routes as string);
+      // Only use CLI values if config doesn't have them
+      config.port = config.port ?? Number.parseInt(values.port as string);
+      config.hostname = config.hostname ?? (values.host as string);
+      config.routesDir = config.routesDir ?? (values.routes as string);
       config.development = isDev;
       config.autoDiscover = true;
 

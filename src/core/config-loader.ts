@@ -67,10 +67,15 @@ export class ConfigLoader<TTypes extends VectorTypes = DefaultVectorTypes> {
       config.development = this.config.server.development;
     }
 
-    // Routes configuration
+    // Routes configuration - support both new and legacy formats
     if (this.config?.routes) {
+      // New format: { routes: { dir: string } }
       config.routesDir = this.config.routes.dir || './routes';
       config.autoDiscover = this.config.routes.autoDiscover !== false;
+    } else if ((this.config as any)?.routesDir) {
+      // Legacy format: { routesDir: string }
+      config.routesDir = (this.config as any).routesDir;
+      config.autoDiscover = (this.config as any).autoDiscover !== false;
     } else {
       config.routesDir = './routes';
       config.autoDiscover = true;
