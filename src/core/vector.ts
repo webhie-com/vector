@@ -1,11 +1,11 @@
-import type { Server } from 'bun';
-import type { RouteEntry } from 'itty-router';
-import { AuthManager } from '../auth/protected';
-import { CacheManager } from '../cache/manager';
-import { RouteGenerator } from '../dev/route-generator';
-import { RouteScanner } from '../dev/route-scanner';
-import { MiddlewareManager } from '../middleware/manager';
-import { toFileUrl } from '../utils/path';
+import type { Server } from "bun";
+import type { RouteEntry } from "itty-router";
+import { AuthManager } from "../auth/protected";
+import { CacheManager } from "../cache/manager";
+import { RouteGenerator } from "../dev/route-generator";
+import { RouteScanner } from "../dev/route-scanner";
+import { MiddlewareManager } from "../middleware/manager";
+import { toFileUrl } from "../utils/path";
 import type {
   CacheHandler,
   DefaultVectorTypes,
@@ -14,9 +14,9 @@ import type {
   RouteOptions,
   VectorConfig,
   VectorTypes,
-} from '../types';
-import { VectorRouter } from './router';
-import { VectorServer } from './server';
+} from "../types";
+import { VectorRouter } from "./router";
+import { VectorServer } from "./server";
 
 // Internal-only class - not exposed to users
 export class Vector<TTypes extends VectorTypes = DefaultVectorTypes> {
@@ -72,7 +72,10 @@ export class Vector<TTypes extends VectorTypes = DefaultVectorTypes> {
   }
 
   // Internal method to add route
-  addRoute(options: RouteOptions<TTypes>, handler: RouteHandler<TTypes>): RouteEntry {
+  addRoute(
+    options: RouteOptions<TTypes>,
+    handler: RouteHandler<TTypes>
+  ): RouteEntry {
     return this.router.route(options, handler);
   }
 
@@ -102,7 +105,7 @@ export class Vector<TTypes extends VectorTypes = DefaultVectorTypes> {
   }
 
   private async discoverRoutes() {
-    const routesDir = this.config.routesDir || './routes';
+    const routesDir = this.config.routesDir || "./routes";
 
     // Always create a new RouteScanner with the current config's routesDir
     // to ensure we're using the correct path from the user's config
@@ -125,7 +128,8 @@ export class Vector<TTypes extends VectorTypes = DefaultVectorTypes> {
             const importPath = toFileUrl(route.path);
 
             const module = await import(importPath);
-            const exported = route.name === 'default' ? module.default : module[route.name];
+            const exported =
+              route.name === "default" ? module.default : module[route.name];
 
             if (exported) {
               if (this.isRouteDefinition(exported)) {
@@ -137,13 +141,16 @@ export class Vector<TTypes extends VectorTypes = DefaultVectorTypes> {
                 // Legacy support for direct RouteEntry (won't have middleware)
                 this.router.addRoute(exported as RouteEntry);
                 this.logRouteLoaded(exported as RouteEntry);
-              } else if (typeof exported === 'function') {
+              } else if (typeof exported === "function") {
                 this.router.route(route.options as any, exported);
                 this.logRouteLoaded(route.options);
               }
             }
           } catch (error) {
-            console.error(`Failed to load route ${route.name} from ${route.path}:`, error);
+            console.error(
+              `Failed to load route ${route.name} from ${route.path}:`,
+              error
+            );
           }
         }
 
@@ -151,21 +158,24 @@ export class Vector<TTypes extends VectorTypes = DefaultVectorTypes> {
         this.router.sortRoutes();
       }
     } catch (error) {
-      if ((error as any).code !== 'ENOENT' && (error as any).code !== 'ENOTDIR') {
-        console.error('Failed to discover routes:', error);
+      if (
+        (error as any).code !== "ENOENT" &&
+        (error as any).code !== "ENOTDIR"
+      ) {
+        console.error("Failed to discover routes:", error);
       }
     }
   }
 
   async loadRoute(routeModule: any) {
-    if (typeof routeModule === 'function') {
+    if (typeof routeModule === "function") {
       const routeEntry = routeModule();
       if (Array.isArray(routeEntry)) {
         this.router.addRoute(routeEntry as RouteEntry);
       }
-    } else if (routeModule && typeof routeModule === 'object') {
+    } else if (routeModule && typeof routeModule === "object") {
       for (const [, value] of Object.entries(routeModule)) {
-        if (typeof value === 'function') {
+        if (typeof value === "function") {
           const routeEntry = (value as any)();
           if (Array.isArray(routeEntry)) {
             this.router.addRoute(routeEntry as RouteEntry);
@@ -180,10 +190,16 @@ export class Vector<TTypes extends VectorTypes = DefaultVectorTypes> {
   }
 
   private isRouteDefinition(value: any): boolean {
-    return value && typeof value === 'object' && 'entry' in value && 'options' in value && 'handler' in value;
+    return (
+      value &&
+      typeof value === "object" &&
+      "entry" in value &&
+      "options" in value &&
+      "handler" in value
+    );
   }
 
-  private logRouteLoaded(route: RouteEntry | RouteOptions): void {
+  private logRouteLoaded(_: RouteEntry | RouteOptions): void {
     // Silent - no logging
   }
 

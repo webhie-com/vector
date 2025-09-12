@@ -1,9 +1,7 @@
-import { existsSync } from 'node:fs';
-import { resolve } from 'node:path';
-import { toFileUrl } from '../utils/path';
+import { existsSync } from "node:fs";
+import { resolve } from "node:path";
+import { toFileUrl } from "../utils/path";
 import type {
-  AfterMiddlewareHandler,
-  BeforeMiddlewareHandler,
   CacheHandler,
   CorsOptions,
   DefaultVectorTypes,
@@ -11,14 +9,14 @@ import type {
   VectorConfig,
   VectorConfigSchema,
   VectorTypes,
-} from '../types';
+} from "../types";
 
 export class ConfigLoader<TTypes extends VectorTypes = DefaultVectorTypes> {
   private configPath: string;
   private config: VectorConfigSchema<TTypes> | null = null;
-  private configSource: 'user' | 'default' = 'default';
+  private configSource: "user" | "default" = "default";
 
-  constructor(configPath = 'vector.config.ts') {
+  constructor(configPath = "vector.config.ts") {
     // Always resolve from the current working directory (user's project)
     this.configPath = resolve(process.cwd(), configPath);
   }
@@ -28,31 +26,34 @@ export class ConfigLoader<TTypes extends VectorTypes = DefaultVectorTypes> {
     if (existsSync(this.configPath)) {
       try {
         console.log(`→ Loading config from: ${this.configPath}`);
-        
+
         // Use explicit file:// URL to ensure correct resolution
         const userConfigPath = toFileUrl(this.configPath);
         const userConfig = await import(userConfigPath);
         this.config = userConfig.default || userConfig;
-        this.configSource = 'user';
-        
-        console.log('  ✓ User config loaded successfully');
+        this.configSource = "user";
+
+        console.log("  ✓ User config loaded successfully");
       } catch (error) {
-        console.error(`  ✗ Failed to load config from ${this.configPath}:`, error);
-        console.log('  → Using default configuration');
+        console.error(
+          `  ✗ Failed to load config from ${this.configPath}:`,
+          error
+        );
+        console.log("  → Using default configuration");
         this.config = {};
       }
     } else {
       // Config file doesn't exist, use defaults
       console.log(`  → No config file found at: ${this.configPath}`);
-      console.log('  → Using default configuration');
+      console.log("  → Using default configuration");
       this.config = {};
     }
 
     // Convert new config schema to legacy VectorConfig format
     return await this.buildLegacyConfig();
   }
-  
-  getConfigSource(): 'user' | 'default' {
+
+  getConfigSource(): "user" | "default" {
     return this.configSource;
   }
 
@@ -65,22 +66,22 @@ export class ConfigLoader<TTypes extends VectorTypes = DefaultVectorTypes> {
       config.hostname = this.config.hostname;
       config.reusePort = this.config.reusePort;
       config.development = this.config.development;
-      config.routesDir = this.config.routesDir || './routes';
+      config.routesDir = this.config.routesDir || "./routes";
     }
-    
+
     // Always auto-discover routes
     config.autoDiscover = true;
 
     // CORS configuration
     if (this.config?.cors) {
-      if (typeof this.config.cors === 'boolean') {
+      if (typeof this.config.cors === "boolean") {
         config.cors = this.config.cors
           ? {
-              origin: '*',
+              origin: "*",
               credentials: true,
-              allowHeaders: 'Content-Type, Authorization',
-              allowMethods: 'GET, POST, PUT, PATCH, DELETE, OPTIONS',
-              exposeHeaders: 'Authorization',
+              allowHeaders: "Content-Type, Authorization",
+              allowMethods: "GET, POST, PUT, PATCH, DELETE, OPTIONS",
+              exposeHeaders: "Authorization",
               maxAge: 86400,
             }
           : undefined;
@@ -100,7 +101,6 @@ export class ConfigLoader<TTypes extends VectorTypes = DefaultVectorTypes> {
 
     return config;
   }
-
 
   async loadAuthHandler(): Promise<ProtectedHandler<TTypes> | null> {
     return this.config?.auth || null;
