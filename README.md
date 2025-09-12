@@ -166,13 +166,17 @@ Moving from Express, Fastify, or Encore? Vector makes it simple:
 
 ```typescript
 // Encore-style (what you know)
-api.get("/hello/:name", async (name: string) => {
-  return { message: `Hello ${name}!` };
-});
+export const get = api(
+  { expose: true, method: "GET", path: "/hello/:name" },
+  async ({ name }: { name: string }): Promise<Response> => {
+    const msg = `Hello ${name}!`;
+    return { message: msg };
+  }
+);
 
 // Vector-style (what you write)
 export const hello = route(
-  { method: "GET", path: "/hello/:name", expose: true },
+  { expose: true, method: "GET", path: "/hello/:name" },
   async (req) => {
     return { message: `Hello ${req.params.name}!` };
   }
@@ -183,13 +187,12 @@ export const hello = route(
 
 Switching from Encore? You'll feel right at home. Vector provides the same declarative, type-safe API design with the performance benefits of Bun:
 
-| Encore                         | Vector                                                |
-| ------------------------------ | ----------------------------------------------------- |
-| `api.get("/users", listUsers)` | `route({ method: 'GET', path: '/users' }, listUsers)` |
-| `api.requireAuth()`            | `{ auth: true }` in route config                      |
-| Auto-generated clients         | Not yet available                                     |
-| Built-in tracing               | Middleware support                                    |
-| Cloud deployment               | Deploy anywhere Bun runs                              |
+| Encore                 | Vector                           |
+| ---------------------- | -------------------------------- |
+| `api.requireAuth()`    | `{ auth: true }` in route config |
+| Auto-generated clients | Not yet available                |
+| Built-in tracing       | Middleware support               |
+| Cloud deployment       | Deploy anywhere Bun runs         |
 
 **The key difference:** Vector runs on Bun, giving you significantly better performance and lower resource usage while maintaining the developer experience you love.
 
