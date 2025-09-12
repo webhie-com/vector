@@ -46,7 +46,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest]
+        os: [ubuntu-latest, macos-latest]
+        # Windows excluded due to Bun CI compatibility issues
     
     steps:
       - uses: actions/checkout@v4

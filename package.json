@@ -47,9 +47,10 @@
     "build:clean": "rm -rf dist",
     "build:ts": "tsc",
     "build:bundle": "bun build src/index.ts --outdir dist --format esm --minify && bun build src/index.ts --outdir dist --format cjs --minify --outfile dist/index.js",
-    "test": "bun test",
-    "test:watch": "bun test --watch",
-    "test:coverage": "bun test --coverage",
+    "test": "bun test --ignore=tests/e2e",
+    "test:unit": "bun test --ignore=tests/e2e",
+    "test:watch": "bun test --watch --ignore=tests/e2e",
+    "test:coverage": "bun test --coverage --ignore=tests/e2e",
     "test:e2e": "bun run tests/e2e/e2e.test.ts",
     "test:load": "bun run tests/e2e/load.test.ts",
     "test:soak": "bun run tests/e2e/soak.test.ts",
@@ -102,9 +103,18 @@
   },
   "devDependencies": {
     "@biomejs/biome": "^2.2.4",
-    "@biomejs/cli-win32-x64": "^2.2.4",
     "@types/bun": "latest",
     "typescript": "^5.0.0"
+  },
+  "optionalDependencies": {
+    "@biomejs/cli-darwin-arm64": "2.2.4",
+    "@biomejs/cli-darwin-x64": "2.2.4",
+    "@biomejs/cli-linux-arm64": "2.2.4",
+    "@biomejs/cli-linux-arm64-musl": "2.2.4",
+    "@biomejs/cli-linux-x64": "2.2.4",
+    "@biomejs/cli-linux-x64-musl": "2.2.4",
+    "@biomejs/cli-win32-arm64": "2.2.4",
+    "@biomejs/cli-win32-x64": "2.2.4"
   },
   "peerDependencies": {
     "bun": ">=1.0.0"
