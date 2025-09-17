@@ -27,6 +27,7 @@ const config: VectorConfigSchema = {
   routesDir: "./routes", // Routes directory (default: ./routes)
   development: process.env.NODE_ENV !== "production", // Development mode
   reusePort: true, // Reuse port (default: true)
+  idleTimeout: 60, // Idle timeout in seconds (default: 60)
 
   // CORS configuration
   cors: {
@@ -338,6 +339,7 @@ interface VectorConfig {
   development?: boolean; // Development mode
   routesDir?: string; // Routes directory (default: ./routes)
   autoDiscover?: boolean; // Auto-discover routes (default: true)
+  idleTimeout?: number; // Idle timeout in seconds (default: 60)
   cors?: CorsOptions; // CORS configuration
   before?: BeforeMiddlewareHandler[]; // Pre-request middleware
   finally?: AfterMiddlewareHandler[]; // Post-response middleware
