@@ -83,6 +83,7 @@ export interface VectorConfig<TTypes extends VectorTypes = DefaultVectorTypes> {
   finally?: AfterMiddlewareHandler<TTypes>[];
   routesDir?: string;
   autoDiscover?: boolean;
+  idleTimeout?: number;
 }
 
 // New config-driven schema - flat structure
@@ -93,18 +94,19 @@ export interface VectorConfigSchema<TTypes extends VectorTypes = DefaultVectorTy
   reusePort?: boolean;
   development?: boolean;
   routesDir?: string;
-  
+  idleTimeout?: number;
+
   // Middleware functions
   before?: BeforeMiddlewareHandler<TTypes>[];
   after?: AfterMiddlewareHandler<TTypes>[];
-  
+
   // Handler functions
   auth?: ProtectedHandler<TTypes>;
   cache?: CacheHandler;
-  
+
   // CORS configuration
   cors?: CorsOptions | boolean;
-  
+
   // Custom types for TypeScript
   types?: VectorTypes;
 }

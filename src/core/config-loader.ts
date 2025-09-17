@@ -1,5 +1,5 @@
 import { existsSync } from "node:fs";
-import { resolve } from "node:path";
+import { resolve, isAbsolute } from "node:path";
 import { toFileUrl } from "../utils/path";
 import type {
   CacheHandler,
@@ -16,9 +16,14 @@ export class ConfigLoader<TTypes extends VectorTypes = DefaultVectorTypes> {
   private config: VectorConfigSchema<TTypes> | null = null;
   private configSource: "user" | "default" = "default";
 
-  constructor(configPath = "vector.config.ts") {
-    // Always resolve from the current working directory (user's project)
-    this.configPath = resolve(process.cwd(), configPath);
+  constructor(configPath?: string) {
+    // Use provided config path or default to vector.config.ts
+    const path = configPath || "vector.config.ts";
+
+    // Handle absolute vs relative paths
+    this.configPath = isAbsolute(path)
+      ? path
+      : resolve(process.cwd(), path);
   }
 
   async load(): Promise<VectorConfig<TTypes>> {
@@ -67,6 +72,7 @@ export class ConfigLoader<TTypes extends VectorTypes = DefaultVectorTypes> {
       config.reusePort = this.config.reusePort;
       config.development = this.config.development;
       config.routesDir = this.config.routesDir || "./routes";
+      config.idleTimeout = this.config.idleTimeout;
     }
 
     // Always auto-discover routes

@@ -36,6 +36,10 @@ const { values, positionals } = parseArgs({
       type: "boolean",
       default: true,
     },
+    config: {
+      type: "string",
+      short: "c",
+    },
   },
   strict: true,
   allowPositionals: true,
@@ -55,7 +59,7 @@ async function runDev() {
   async function startServer() {
     try {
       // Load configuration using ConfigLoader
-      const configLoader = new ConfigLoader();
+      const configLoader = new ConfigLoader(values.config as string | undefined);
       const config = await configLoader.load();
       const configSource = configLoader.getConfigSource();
 
@@ -289,6 +293,7 @@ Options:
   -h, --host <host>      Hostname to bind to (default: localhost)
   -r, --routes <dir>     Routes directory (default: ./routes)
   -w, --watch            Watch for file changes (default: true)
+  -c, --config <path>    Path to config file (default: vector.config.ts)
   --cors                 Enable CORS (default: true)
 `);
     process.exit(1);

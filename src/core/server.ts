@@ -1,7 +1,12 @@
-import type { Server } from 'bun';
-import { cors } from 'itty-router';
-import type { CorsOptions, DefaultVectorTypes, VectorConfig, VectorTypes } from '../types';
-import type { VectorRouter } from './router';
+import type { Server } from "bun";
+import { cors } from "itty-router";
+import type {
+  CorsOptions,
+  DefaultVectorTypes,
+  VectorConfig,
+  VectorTypes,
+} from "../types";
+import type { VectorRouter } from "./router";
 
 export class VectorServer<TTypes extends VectorTypes = DefaultVectorTypes> {
   private server: Server | null = null;
@@ -14,36 +19,38 @@ export class VectorServer<TTypes extends VectorTypes = DefaultVectorTypes> {
     this.config = config;
 
     if (config.cors) {
-      const { preflight, corsify } = cors(this.normalizeCorsOptions(config.cors));
+      const { preflight, corsify } = cors(
+        this.normalizeCorsOptions(config.cors)
+      );
       this.corsHandler = { preflight, corsify };
     }
   }
 
   private normalizeCorsOptions(options: CorsOptions): any {
     return {
-      origin: options.origin || '*',
+      origin: options.origin || "*",
       credentials: options.credentials !== false,
       allowHeaders: Array.isArray(options.allowHeaders)
-        ? options.allowHeaders.join(', ')
-        : options.allowHeaders || 'Content-Type, Authorization',
+        ? options.allowHeaders.join(", ")
+        : options.allowHeaders || "Content-Type, Authorization",
       allowMethods: Array.isArray(options.allowMethods)
-        ? options.allowMethods.join(', ')
-        : options.allowMethods || 'GET, POST, PUT, PATCH, DELETE, OPTIONS',
+        ? options.allowMethods.join(", ")
+        : options.allowMethods || "GET, POST, PUT, PATCH, DELETE, OPTIONS",
       exposeHeaders: Array.isArray(options.exposeHeaders)
-        ? options.exposeHeaders.join(', ')
-        : options.exposeHeaders || 'Authorization',
+        ? options.exposeHeaders.join(", ")
+        : options.exposeHeaders || "Authorization",
       maxAge: options.maxAge || 86400,
     };
   }
 
   async start(): Promise<Server> {
     const port = this.config.port || 3000;
-    const hostname = this.config.hostname || 'localhost';
+    const hostname = this.config.hostname || "localhost";
 
     const fetch = async (request: Request): Promise<Response> => {
       try {
         // Handle CORS preflight
-        if (this.corsHandler && request.method === 'OPTIONS') {
+        if (this.corsHandler && request.method === "OPTIONS") {
           return this.corsHandler.preflight(request);
         }
 
@@ -57,8 +64,8 @@ export class VectorServer<TTypes extends VectorTypes = DefaultVectorTypes> {
 
         return response;
       } catch (error) {
-        console.error('Server error:', error);
-        return new Response('Internal Server Error', { status: 500 });
+        console.error("Server error:", error);
+        return new Response("Internal Server Error", { status: 500 });
       }
     };
 
@@ -67,9 +74,10 @@ export class VectorServer<TTypes extends VectorTypes = DefaultVectorTypes> {
       hostname,
       reusePort: this.config.reusePort !== false,
       fetch,
+      idleTimeout: this.config.idleTimeout || 60,
       error: (error) => {
-        console.error('[ERROR] Server error:', error);
-        return new Response('Internal Server Error', { status: 500 });
+        console.error("[ERROR] Server error:", error);
+        return new Response("Internal Server Error", { status: 500 });
       },
     });
 
@@ -83,7 +91,7 @@ export class VectorServer<TTypes extends VectorTypes = DefaultVectorTypes> {
     if (this.server) {
       this.server.stop();
       this.server = null;
-      console.log('Server stopped');
+      console.log("Server stopped");
     }
   }
 
@@ -96,7 +104,7 @@ export class VectorServer<TTypes extends VectorTypes = DefaultVectorTypes> {
   }
 
   getHostname(): string {
-    return this.server?.hostname || this.config.hostname || 'localhost';
+    return this.server?.hostname || this.config.hostname || "localhost";
   }
 
   getUrl(): string {
