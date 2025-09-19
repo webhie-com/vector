@@ -94,41 +94,38 @@ jobs:
           echo "" >> release_notes.md
           
           if [ -n "$PREVIOUS_TAG" ]; then
-            # Get merged PRs since last tag
+            # Get merged PRs between the two tags by checking merge commit dates
             echo "#### Pull Requests" >> release_notes.md
-            gh pr list \
-              --state merged \
-              --limit 100 \
-              --json number,title,author,mergedAt \
-              --jq ".[] | select(.mergedAt > \"$(git log -1 --format=%aI $PREVIOUS_TAG)\") | \"- #\\(.number): \\(.title) (@\\(.author.login))\"" \
+
+            # Get the date of the previous tag and current HEAD
+            PREVIOUS_TAG_DATE=$(git log -1 --format=%aI $PREVIOUS_TAG)
+            CURRENT_HEAD_DATE=$(git log -1 --format=%aI HEAD)
+
+            # Find PRs merged between the two dates using gh api
+            gh api \
+              -H "Accept: application/vnd.github+json" \
+              "/repos/${{ github.repository }}/pulls?state=closed&sort=updated&direction=desc&per_page=100" \
+              --jq ".[] | select(.merged_at != null) | select(.merged_at > \"${PREVIOUS_TAG_DATE}\") | select(.merged_at <= \"${CURRENT_HEAD_DATE}\") | \"- #\\(.number): \\(.title) (@\\(.user.login))\"" \
               >> release_notes.md || echo "No PRs found" >> release_notes.md
-            
+
             echo "" >> release_notes.md
             echo "#### Commits" >> release_notes.md
             git log ${PREVIOUS_TAG}..HEAD --pretty=format:"- %s (%an)" >> release_notes.md
           else
-            # First release - show all PRs
+            # First release - show recent merged PRs
             echo "#### Pull Requests" >> release_notes.md
-            gh pr list \
-              --state merged \
-              --limit 100 \
-              --json number,title,author \
-              --jq '.[] | "- #\(.number): \(.title) (@\(.author.login))"' \
+            gh api \
+              -H "Accept: application/vnd.github+json" \
+              "/repos/${{ github.repository }}/pulls?state=closed&sort=updated&direction=desc&per_page=20" \
+              --jq '.[] | select(.merged_at != null) | "- #\(.number): \(.title) (@\(.user.login))"' \
               >> release_notes.md || echo "No PRs found" >> release_notes.md
-            
+
             echo "" >> release_notes.md
             echo "#### Commits" >> release_notes.md
             git log --pretty=format:"- %s (%an)" --max-count=50 >> release_notes.md
           fi
           
-          echo "" >> release_notes.md
-          echo "### Contributors" >> release_notes.md
-          if [ -n "$PREVIOUS_TAG" ]; then
-            git log ${PREVIOUS_TAG}..HEAD --pretty=format:"%an" | sort -u | sed 's/^/- @/' >> release_notes.md
-          else
-            git log --pretty=format:"%an" | sort -u | sed 's/^/- @/' >> release_notes.md
-          fi
-          
+
           # Save release notes to output
           echo "RELEASE_NOTES<<EOF" >> $GITHUB_OUTPUT
           cat release_notes.md >> $GITHUB_OUTPUT
