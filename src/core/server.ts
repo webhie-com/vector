@@ -69,22 +69,43 @@ export class VectorServer<TTypes extends VectorTypes = DefaultVectorTypes> {
       }
     };
 
-    this.server = Bun.serve({
-      port,
-      hostname,
-      reusePort: this.config.reusePort !== false,
-      fetch,
-      idleTimeout: this.config.idleTimeout || 60,
-      error: (error) => {
-        console.error("[ERROR] Server error:", error);
-        return new Response("Internal Server Error", { status: 500 });
-      },
-    });
+    try {
+      this.server = Bun.serve({
+        port,
+        hostname,
+        reusePort: this.config.reusePort !== false,
+        fetch,
+        idleTimeout: this.config.idleTimeout || 60,
+        error: (error) => {
+          console.error("[ERROR] Server error:", error);
+          return new Response("Internal Server Error", { status: 500 });
+        },
+      });
 
-    // Server logs are handled by CLI, keep this minimal
-    console.log(`→ Vector server running at http://${hostname}:${port}`);
+      // Validate that the server actually started
+      if (!this.server || !this.server.port) {
+        throw new Error(`Failed to start server on ${hostname}:${port} - server object is invalid`);
+      }
 
-    return this.server;
+      // Server logs are handled by CLI, keep this minimal
+      console.log(`→ Vector server running at http://${hostname}:${port}`);
+
+      return this.server;
+    } catch (error: any) {
+      // Enhance error message with context for common issues
+      if (error.code === 'EADDRINUSE' || error.message?.includes('address already in use')) {
+        error.message = `Port ${port} is already in use`;
+        error.port = port;
+      } else if (error.code === 'EACCES' || error.message?.includes('permission denied')) {
+        error.message = `Permission denied to bind to port ${port}`;
+        error.port = port;
+      } else if (error.message?.includes('EADDRNOTAVAIL')) {
+        error.message = `Cannot bind to hostname ${hostname}`;
+        error.hostname = hostname;
+      }
+
+      throw error;
+    }
   }
 
   stop() {
