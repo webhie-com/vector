@@ -2,10 +2,10 @@
 
 **Blazing fast, secure, and developer-friendly API framework for Bun**
 
-- 🚀 **70,000+ requests/second** - Optimized for extreme performance
-- 🔒 **Single dependency** - Only itty-router, minimizing security risks
-- ⚡ **Zero build step** - Native TypeScript execution with Bun
-- 💝 **Encore-like DX** - Declarative, type-safe APIs you'll love
+- **70,000+ requests/second** - Optimized for extreme performance
+- **Single dependency** - Only itty-router, minimizing security risks
+- **Zero build step** - Native TypeScript execution with Bun
+- **Encore-like DX** - Declarative, type-safe APIs you'll love
 
 ## Quick Start
 
