@@ -126,10 +126,11 @@ jobs:
           fi
           
 
-          # Save release notes to output
-          echo "RELEASE_NOTES<<EOF" >> $GITHUB_OUTPUT
+          # Save release notes to output using a unique delimiter
+          DELIMITER="EOF_$(date +%s)_EOF"
+          echo "RELEASE_NOTES<<$DELIMITER" >> $GITHUB_OUTPUT
           cat release_notes.md >> $GITHUB_OUTPUT
-          echo "EOF" >> $GITHUB_OUTPUT
+          echo "$DELIMITER" >> $GITHUB_OUTPUT
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       
