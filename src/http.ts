@@ -1,17 +1,13 @@
-import {
-  cors,
-  type IRequest,
-  type RouteEntry,
-  withContent,
-  withCookies,
-} from "itty-router";
+import { cors, type IRequest, type RouteEntry, withContent } from "itty-router";
 import { CONTENT_TYPES, HTTP_STATUS } from "./constants";
 import type {
+  CacheOptions,
   DefaultVectorTypes,
   GetAuthType,
   VectorRequest,
   VectorTypes,
 } from "./types";
+import { getVectorInstance } from "./core/vector";
 
 export interface ProtectedRequest<
   TTypes extends VectorTypes = DefaultVectorTypes
@@ -33,7 +29,9 @@ interface ExtendedApiOptions extends ApiOptions {
   path: string;
 }
 
-export interface RouteDefinition<TTypes extends VectorTypes = DefaultVectorTypes> {
+export interface RouteDefinition<
+  TTypes extends VectorTypes = DefaultVectorTypes
+> {
   entry: RouteEntry;
   options: ExtendedApiOptions;
   handler: (req: VectorRequest<TTypes>) => Promise<unknown>;
@@ -64,7 +62,7 @@ export function route<TTypes extends VectorTypes = DefaultVectorTypes>(
   return {
     entry,
     options,
-    handler: fn
+    handler: fn,
   };
 }
 
@@ -263,7 +261,6 @@ export const protectedRoute = async <
   responseContentType?: string
 ) => {
   // Get the Vector instance to access the protected handler
-  const { getVectorInstance } = await import("./core/vector");
   const vector = getVectorInstance();
 
   const protectedHandler = vector.getProtectedHandler();
@@ -290,7 +287,7 @@ export interface ApiOptions {
   expose?: boolean;
   rawRequest?: boolean;
   rawResponse?: boolean;
-  cache?: number | null;
+  cache?: CacheOptions | number | null;
   responseContentType?: string;
 }
 
@@ -324,8 +321,6 @@ export function api<TTypes extends VectorTypes = DefaultVectorTypes>(
       if (!rawRequest) {
         await withContent(request);
       }
-
-      withCookies(request);
 
       // Cache handling is now done in the router
       const result = await fn(request as any as VectorRequest<TTypes>);

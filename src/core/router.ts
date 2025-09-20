@@ -1,4 +1,5 @@
 import type { RouteEntry } from 'itty-router';
+import { withCookies } from 'itty-router';
 import type { AuthManager } from '../auth/protected';
 import type { CacheManager } from '../cache/manager';
 import { APIError, createResponse } from '../http';
@@ -113,30 +114,63 @@ export class VectorRouter<TTypes extends VectorTypes = DefaultVectorTypes> {
     );
   }
 
+  private prepareRequest(
+    request: VectorRequest<TTypes>,
+    options?: {
+      params?: Record<string, string>;
+      route?: string;
+      metadata?: any;
+    }
+  ): void {
+    // Initialize context if not present
+    if (!request.context) {
+      request.context = {} as any;
+    }
+
+    // Set params and route if provided
+    if (options?.params !== undefined) {
+      request.params = options.params;
+    }
+    if (options?.route !== undefined) {
+      request.route = options.route;
+    }
+    if (options?.metadata !== undefined) {
+      request.metadata = options.metadata;
+    }
+
+    // Parse query parameters from URL if not already parsed
+    if (!request.query && request.url) {
+      const url = new URL(request.url);
+      const query: Record<string, string | string[]> = {};
+      for (const [key, value] of url.searchParams) {
+        if (key in query) {
+          if (Array.isArray(query[key])) {
+            (query[key] as string[]).push(value);
+          } else {
+            query[key] = [query[key] as string, value];
+          }
+        } else {
+          query[key] = value;
+        }
+      }
+      request.query = query;
+    }
+
+    // Parse cookies if not already parsed
+    if (!request.cookies) {
+      withCookies(request as any);
+    }
+  }
+
   private wrapHandler(options: RouteOptions<TTypes>, handler: RouteHandler<TTypes>) {
     return async (request: any) => {
       // Ensure request has required properties
       const vectorRequest = request as VectorRequest<TTypes>;
 
-      // Initialize context if not present
-      if (!vectorRequest.context) {
-        vectorRequest.context = {} as any;
-      }
-
-      // Parse query parameters from URL (handles duplicate params as arrays)
-      if (!vectorRequest.query && vectorRequest.url) {
-        const url = new URL(vectorRequest.url);
-        const query: Record<string, string | string[]> = {};
-        for (let [k, v] of url.searchParams) {
-          query[k] = query[k] ? ([] as string[]).concat(query[k], v) : v;
-        }
-        vectorRequest.query = query;
-      }
-
-      // Add metadata to request if provided
-      if (options.metadata) {
-        vectorRequest.metadata = options.metadata;
-      }
+      // Prepare the request with common logic
+      this.prepareRequest(vectorRequest, {
+        metadata: options.metadata
+      });
 
       request = vectorRequest;
       try {
@@ -182,20 +216,43 @@ export class VectorRouter<TTypes extends VectorTypes = DefaultVectorTypes> {
         let result;
         const cacheOptions = options.cache;
 
+        // Create cache factory that handles Response objects
+        const cacheFactory = async () => {
+          const res = await handler(request);
+          // If Response, extract data for caching
+          if (res instanceof Response) {
+            return {
+              _isResponse: true,
+              body: await res.text(),
+              status: res.status,
+              headers: Object.fromEntries(res.headers.entries())
+            };
+          }
+          return res;
+        };
+
         if (cacheOptions && typeof cacheOptions === 'number' && cacheOptions > 0) {
           const cacheKey = this.cacheManager.generateKey(request as any, {
             authUser: request.authUser,
           });
-          result = await this.cacheManager.get(cacheKey, () => handler(request), cacheOptions);
+          result = await this.cacheManager.get(cacheKey, cacheFactory, cacheOptions);
         } else if (cacheOptions && typeof cacheOptions === 'object' && cacheOptions.ttl) {
           const cacheKey =
             cacheOptions.key ||
             this.cacheManager.generateKey(request as any, {
               authUser: request.authUser,
             });
-          result = await this.cacheManager.get(cacheKey, () => handler(request), cacheOptions.ttl);
+          result = await this.cacheManager.get(cacheKey, cacheFactory, cacheOptions.ttl);
         } else {
           result = await handler(request);
+        }
+
+        // Reconstruct Response if it was cached
+        if (result && typeof result === 'object' && result._isResponse === true) {
+          result = new Response(result.body, {
+            status: result.status,
+            headers: result.headers
+          });
         }
 
         let response: Response;
@@ -235,16 +292,17 @@ export class VectorRouter<TTypes extends VectorTypes = DefaultVectorTypes> {
     const url = new URL(request.url);
     const pathname = url.pathname;
 
-    for (const [method, regex, handlers] of this.routes) {
+    for (const [method, regex, handlers, path] of this.routes) {
       if (request.method === 'OPTIONS' || request.method === method) {
         const match = pathname.match(regex);
         if (match) {
           const req = request as any as VectorRequest<TTypes>;
-          // Initialize context for new request
-          if (!req.context) {
-            req.context = {} as any;
-          }
-          req.params = match.groups || {};
+
+          // Prepare the request with common logic
+          this.prepareRequest(req, {
+            params: match.groups || {},
+            route: path || pathname
+          });
 
           for (const handler of handlers) {
             const response = await handler(req as any);
