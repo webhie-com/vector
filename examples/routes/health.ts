@@ -1,20 +1,20 @@
-import { route } from '../../src/index';
+import { route } from "../../src/index";
 
 // Health check endpoint
 export const healthCheck = route(
   {
-    method: 'GET',
-    path: '/health',
+    method: "GET",
+    path: "/health",
     expose: true,
     rawResponse: false,
   },
   async () => {
     return {
-      status: 'healthy',
+      status: "healthy",
       timestamp: new Date().toISOString(),
       uptime: process.uptime(),
       memory: process.memoryUsage(),
-      version: '1.0.0',
+      version: "1.0.0",
     };
   }
 );
@@ -22,8 +22,8 @@ export const healthCheck = route(
 // Readiness check
 export const readiness = route(
   {
-    method: 'GET',
-    path: '/ready',
+    method: "GET",
+    path: "/ready",
     expose: true,
   },
   async () => {
@@ -47,11 +47,11 @@ export const readiness = route(
 // Metrics endpoint (protected)
 export const metrics = route(
   {
-    method: 'GET',
-    path: '/metrics',
+    method: "GET",
+    path: "/metrics",
     expose: true,
     auth: true,
-    responseContentType: 'text/plain',
+    responseContentType: "text/plain",
   },
   async (req) => {
     // Return prometheus-style metrics
@@ -68,7 +68,7 @@ response_time_seconds_bucket{le="1"} 1300
 response_time_seconds_sum 567.89
 response_time_seconds_count 1300
 
-# User: ${req.authUser.id}
+# User: ${req.authUser?.id}
 `;
   }
 );

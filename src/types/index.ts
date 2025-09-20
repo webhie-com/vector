@@ -51,6 +51,9 @@ export interface VectorRequest<TTypes extends VectorTypes = DefaultVectorTypes>
   metadata?: GetMetadataType<TTypes>;
   content?: any;
   params?: Record<string, string>;
+  query: { [key: string]: string | string[] | undefined };
+  headers: Headers;
+  cookies?: Record<string, string>;
   startTime?: number;
   [key: string]: any;
 }
