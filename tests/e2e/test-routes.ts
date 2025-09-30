@@ -67,7 +67,7 @@ export const getUser = route(
     expose: true,
     auth: true,
   },
-  async (req: VectorRequest) => {
+  async (_req: VectorRequest) => {
     trackRequest();
     // The auth middleware should have already validated the token
     // and attached the user to the request

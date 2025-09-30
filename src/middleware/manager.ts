@@ -45,7 +45,13 @@ export class MiddlewareManager<
     let currentResponse = response;
 
     for (const handler of this.finallyHandlers) {
-      currentResponse = await handler(currentResponse, request);
+      try {
+        currentResponse = await handler(currentResponse, request);
+      } catch (error) {
+        // Log but don't throw - we don't want to break the response chain
+        console.error('After middleware error:', error);
+        // Continue with the current response
+      }
     }
 
     return currentResponse;

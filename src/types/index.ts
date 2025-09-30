@@ -85,6 +85,7 @@ export interface VectorConfig<TTypes extends VectorTypes = DefaultVectorTypes> {
   before?: BeforeMiddlewareHandler<TTypes>[];
   finally?: AfterMiddlewareHandler<TTypes>[];
   routesDir?: string;
+  routeExcludePatterns?: string[];
   autoDiscover?: boolean;
   idleTimeout?: number;
 }
@@ -97,6 +98,7 @@ export interface VectorConfigSchema<TTypes extends VectorTypes = DefaultVectorTy
   reusePort?: boolean;
   development?: boolean;
   routesDir?: string;
+  routeExcludePatterns?: string[];
   idleTimeout?: number;
 
   // Middleware functions

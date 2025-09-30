@@ -67,7 +67,8 @@ const config: VectorConfigSchema = {
   ],
   after: [
     async (response, request) => {
-      response.headers.set("X-Response-Time", `${Date.now() - request.startTime}ms`);
+      const duration = Date.now() - (request.startTime || Date.now());
+      response.headers.set("X-Response-Time", `${duration}ms`);
       return response;
     }
   ],
@@ -302,6 +303,7 @@ interface VectorConfigSchema {
   reusePort?: boolean;        // Reuse port (default: true)
   development?: boolean;      // Development mode
   routesDir?: string;         // Routes directory (default: ./routes)
+  routeExcludePatterns?: string[]; // Patterns to exclude from route scanning
   idleTimeout?: number;       // Idle timeout in seconds
 
   // CORS
@@ -330,6 +332,7 @@ const config: VectorConfigSchema = {
   hostname: "0.0.0.0",
   development: process.env.NODE_ENV !== "production",
   routesDir: "./api/routes",
+  routeExcludePatterns: ["*.test.ts", "*.spec.ts"], // Optional: custom exclusions
   idleTimeout: 60,
 
   cors: {
@@ -377,7 +380,7 @@ const config: VectorConfigSchema = {
   after: [
     // Response time header
     async (response, request) => {
-      const duration = Date.now() - request.startTime;
+      const duration = Date.now() - (request.startTime || Date.now());
       response.headers.set("X-Response-Time", `${duration}ms`);
       return response;
     },
@@ -421,6 +424,7 @@ my-app/
 ├── routes/              # Auto-discovered routes
 │   ├── users.ts        # /users endpoints
 │   ├── posts.ts        # /posts endpoints
+│   ├── users.test.ts   # Test file (automatically excluded)
 │   └── admin/          # Nested routes
 │       └── stats.ts    # /admin/stats endpoints
 ├── lib/                # Your libraries
@@ -428,6 +432,33 @@ my-app/
 │   ├── db.ts
 │   └── redis.ts
 └── package.json
+```
+
+## Route Discovery
+
+Vector automatically discovers and loads route files from your `routesDir` (default: `./routes`). By default, the following file patterns are excluded from route scanning:
+
+- `*.test.ts`, `*.test.js`, `*.test.tsx`, `*.test.jsx` - Test files
+- `*.spec.ts`, `*.spec.js`, `*.spec.tsx`, `*.spec.jsx` - Spec files
+- `*.tests.ts`, `*.tests.js` - Test suite files
+- `**/__tests__/**` - Test directories
+- `*.interface.ts`, `*.type.ts` - Type definition files
+- `*.d.ts` - TypeScript declaration files
+
+You can customize the exclusion patterns using the `routeExcludePatterns` configuration option:
+
+```typescript
+// vector.config.ts
+const config: VectorConfigSchema = {
+  routesDir: "./routes",
+  // Custom exclusion patterns (overrides defaults)
+  routeExcludePatterns: [
+    "*.test.ts",
+    "*.spec.ts",
+    "*.mock.ts",
+    "_*.ts", // Exclude files starting with underscore
+  ],
+};
 ```
 
 ## Performance

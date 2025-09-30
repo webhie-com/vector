@@ -1,7 +1,6 @@
 import { beforeEach, describe, expect, it } from 'bun:test';
 import { getVectorInstance } from '../src/core/vector';
-import { ConfigLoader } from '../src/core/config-loader';
-import type { VectorRequest, VectorConfig, BeforeMiddlewareHandler, AfterMiddlewareHandler } from '../src/types';
+import type { VectorConfig, BeforeMiddlewareHandler, AfterMiddlewareHandler } from '../src/types';
 
 describe('Middleware Integration with Auto-Discovery', () => {
   beforeEach(() => {
@@ -12,7 +11,6 @@ describe('Middleware Integration with Auto-Discovery', () => {
 
   it('should execute before middleware for auto-discovered routes', async () => {
     let middlewareExecuted = false;
-    let routeExecuted = false;
 
     const beforeMiddleware: BeforeMiddlewareHandler = async (request) => {
       middlewareExecuted = true;
@@ -33,7 +31,6 @@ describe('Middleware Integration with Auto-Discovery', () => {
 
     // Make a request to test the middleware
     const response = await fetch('http://localhost:3001/hello');
-    const data = await response.json();
 
     expect(middlewareExecuted).toBe(true);
     expect(response.status).toBe(200);
@@ -42,9 +39,7 @@ describe('Middleware Integration with Auto-Discovery', () => {
   });
 
   it('should stop execution when before middleware returns Response', async () => {
-    let routeExecuted = false;
-
-    const beforeMiddleware: BeforeMiddlewareHandler = async (request) => {
+    const beforeMiddleware: BeforeMiddlewareHandler = async (_request) => {
       // Return early response
       return new Response('Blocked by middleware', { status: 403 });
     };
@@ -74,7 +69,7 @@ describe('Middleware Integration with Auto-Discovery', () => {
     let finallyExecuted = false;
     const customHeader = 'X-Custom-Header';
 
-    const afterMiddleware: AfterMiddlewareHandler = async (response, request) => {
+    const afterMiddleware: AfterMiddlewareHandler = async (response, _request) => {
       finallyExecuted = true;
       const headers = new Headers(response.headers);
       headers.set(customHeader, 'middleware-added');
@@ -105,7 +100,7 @@ describe('Middleware Integration with Auto-Discovery', () => {
   });
 
   it('should handle errors thrown in before middleware', async () => {
-    const beforeMiddleware: BeforeMiddlewareHandler = async (request) => {
+    const beforeMiddleware: BeforeMiddlewareHandler = async (_request) => {
       throw new Error('Middleware error');
     };
 
@@ -178,7 +173,7 @@ describe('Middleware Integration with Auto-Discovery', () => {
       return request;
     };
 
-    const testAfterMiddleware: AfterMiddlewareHandler = async (response, request) => {
+    const testAfterMiddleware: AfterMiddlewareHandler = async (response, _request) => {
       const headers = new Headers(response.headers);
       headers.set('X-Test-Middleware', 'true');
       return new Response(response.body, {

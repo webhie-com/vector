@@ -83,8 +83,9 @@ export class Vector<TTypes extends VectorTypes = DefaultVectorTypes> {
   async startServer(config?: VectorConfig<TTypes>): Promise<Server> {
     this.config = { ...this.config, ...config };
 
-    // Clear previous middleware to avoid accumulation across multiple starts
+    // Clear previous middleware and routes to avoid accumulation across multiple starts
     this.middlewareManager.clear();
+    this.router.clearRoutes();
 
     if (config?.before) {
       this.middlewareManager.addBefore(...config.before);
@@ -106,10 +107,11 @@ export class Vector<TTypes extends VectorTypes = DefaultVectorTypes> {
 
   private async discoverRoutes() {
     const routesDir = this.config.routesDir || "./routes";
+    const excludePatterns = this.config.routeExcludePatterns;
 
     // Always create a new RouteScanner with the current config's routesDir
     // to ensure we're using the correct path from the user's config
-    this.routeScanner = new RouteScanner(routesDir);
+    this.routeScanner = new RouteScanner(routesDir, excludePatterns);
 
     if (!this.routeGenerator) {
       this.routeGenerator = new RouteGenerator();

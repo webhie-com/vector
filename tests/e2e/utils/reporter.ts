@@ -166,7 +166,6 @@ export class Reporter {
 
   static printTestResult(passed: boolean, message: string): void {
     const marker = passed ? '✓' : '✗';
-    const prefix = passed ? 'PASS' : 'FAIL';
     console.log(`  ${marker} ${message}`);
   }
 

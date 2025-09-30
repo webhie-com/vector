@@ -134,7 +134,7 @@ describe('CacheManager', () => {
       let customHandlerCalled = false;
       const customValue = { custom: true };
 
-      cacheManager.setCacheHandler(async (key, factory, ttl) => {
+      cacheManager.setCacheHandler(async (_key, _factory, _ttl) => {
         customHandlerCalled = true;
         return customValue;
       });

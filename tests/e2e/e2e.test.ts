@@ -2,7 +2,6 @@ import { afterAll, beforeAll, describe, expect, it } from 'bun:test';
 import type { Server } from 'bun';
 import testServer from './test-server';
 import { createClient, withRetry } from './utils/http-client';
-import { Reporter } from './utils/reporter';
 
 describe('E2E Tests', () => {
   let server: Server;

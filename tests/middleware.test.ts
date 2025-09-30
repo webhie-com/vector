@@ -103,7 +103,7 @@ describe('MiddlewareManager', () => {
     });
 
     it('should allow middleware to modify response', async () => {
-      manager.addFinally(async (res, req) => {
+      manager.addFinally(async (res, _req) => {
         const headers = new Headers(res.headers);
         headers.set('X-Custom', 'value');
         return new Response(res.body, {

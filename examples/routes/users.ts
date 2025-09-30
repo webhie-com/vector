@@ -8,7 +8,7 @@ export const getUsers = route(
     expose: true,
     cache: 60, // Cache for 60 seconds
   },
-  async (req) => {
+  async (_req) => {
     return {
       users: [
         { id: 1, name: "Alice", email: "alice@example.com" },

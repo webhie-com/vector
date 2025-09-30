@@ -1,7 +1,7 @@
 import type { VectorRequest } from '../src/types';
 
 // CORS headers middleware - runs after route handlers
-export default async function corsHeaders(response: Response, request: VectorRequest) {
+export default async function corsHeaders(response: Response, _request: VectorRequest) {
   const headers = new Headers(response.headers);
   
   // Add custom CORS headers if needed

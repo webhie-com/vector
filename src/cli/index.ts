@@ -66,83 +66,80 @@ async function runDev() {
 
     // Create the actual server start promise
     const serverStartPromise = (async (): Promise<{ server: any; vector: any; config: any }> => {
-      try {
-        // Load configuration using ConfigLoader
-        const configLoader = new ConfigLoader(values.config as string | undefined);
-        const config = await configLoader.load();
-        const configSource = configLoader.getConfigSource();
+      // Load configuration using ConfigLoader
+      const configLoader = new ConfigLoader(values.config as string | undefined);
+      const config = await configLoader.load();
+      const configSource = configLoader.getConfigSource();
 
-        // Merge CLI options with loaded config
-        // Only use CLI values if config doesn't have them
-        config.port = config.port ?? Number.parseInt(values.port as string);
-        config.hostname = config.hostname ?? (values.host as string);
-        config.routesDir = config.routesDir ?? (values.routes as string);
-        config.development = config.development ?? isDev;
-        config.autoDiscover = true; // Always auto-discover routes
+      // Merge CLI options with loaded config
+      // Only use CLI values if config doesn't have them
+      config.port = config.port ?? Number.parseInt(values.port as string);
+      config.hostname = config.hostname ?? (values.host as string);
+      config.routesDir = config.routesDir ?? (values.routes as string);
+      config.development = config.development ?? isDev;
+      config.autoDiscover = true; // Always auto-discover routes
 
-        // Apply CLI CORS option if not set in config
-        if (!config.cors && values.cors) {
-          config.cors = {
-            origin: "*",
-            credentials: true,
-            allowHeaders: "Content-Type, Authorization",
-            allowMethods: "GET, POST, PUT, PATCH, DELETE, OPTIONS",
-            exposeHeaders: "Authorization",
-            maxAge: 86400,
-          };
-        }
-
-        // Get Vector instance and configure handlers
-        vector = getVectorInstance();
-
-        // Load and set auth handler if configured
-        const authHandler = await configLoader.loadAuthHandler();
-        if (authHandler) {
-          vector.setProtectedHandler(authHandler);
-        }
-
-        // Load and set cache handler if configured
-        const cacheHandler = await configLoader.loadCacheHandler();
-        if (cacheHandler) {
-          vector.setCacheHandler(cacheHandler);
-        }
-
-        // Start the server
-        server = await vector.startServer(config);
-
-        // Verify the server is actually running
-        if (!server || !server.port) {
-          throw new Error("Server started but is not responding correctly");
-        }
-
-        const gray = "\x1b[90m";
-        const reset = "\x1b[0m";
-        const cyan = "\x1b[36m";
-        const green = "\x1b[32m";
-
-        console.log(
-          `  ${gray}Config${reset}     ${
-            configSource === "user" ? "User config loaded" : "Using defaults"
-          }`
-        );
-        console.log(`  ${gray}Routes${reset}     ${config.routesDir}`);
-        if (isDev && values.watch) {
-          console.log(`  ${gray}Watching${reset}   All project files`);
-        }
-        console.log(
-          `  ${gray}CORS${reset}       ${config.cors ? "Enabled" : "Disabled"}`
-        );
-        console.log(
-          `  ${gray}Mode${reset}       ${config.development ? "Development" : "Production"}\n`
-        );
-        console.log(
-          `  ${green}Ready${reset} → ${cyan}http://${config.hostname}:${config.port}${reset}\n`
-        );
-
-        return { server, vector, config };
-      } catch (error) {
-        throw error;
+      // Apply CLI CORS option if not explicitly set in config
+      // Only apply default CORS if config.cors is undefined (not set)
+      if (config.cors === undefined && values.cors) {
+        config.cors = {
+          origin: "*",
+          credentials: true,
+          allowHeaders: "Content-Type, Authorization",
+          allowMethods: "GET, POST, PUT, PATCH, DELETE, OPTIONS",
+          exposeHeaders: "Authorization",
+          maxAge: 86400,
+        };
       }
+
+      // Get Vector instance and configure handlers
+      vector = getVectorInstance();
+
+      // Load and set auth handler if configured
+      const authHandler = await configLoader.loadAuthHandler();
+      if (authHandler) {
+        vector.setProtectedHandler(authHandler);
+      }
+
+      // Load and set cache handler if configured
+      const cacheHandler = await configLoader.loadCacheHandler();
+      if (cacheHandler) {
+        vector.setCacheHandler(cacheHandler);
+      }
+
+      // Start the server
+      server = await vector.startServer(config);
+
+      // Verify the server is actually running
+      if (!server || !server.port) {
+        throw new Error("Server started but is not responding correctly");
+      }
+
+      const gray = "\x1b[90m";
+      const reset = "\x1b[0m";
+      const cyan = "\x1b[36m";
+      const green = "\x1b[32m";
+
+      console.log(
+        `  ${gray}Config${reset}     ${
+          configSource === "user" ? "User config loaded" : "Using defaults"
+        }`
+      );
+      console.log(`  ${gray}Routes${reset}     ${config.routesDir}`);
+      if (isDev && values.watch) {
+        console.log(`  ${gray}Watching${reset}   All project files`);
+      }
+      console.log(
+        `  ${gray}CORS${reset}       ${config.cors ? "Enabled" : "Disabled"}`
+      );
+      console.log(
+        `  ${gray}Mode${reset}       ${config.development ? "Development" : "Production"}\n`
+      );
+      console.log(
+        `  ${green}Ready${reset} → ${cyan}http://${config.hostname}:${config.port}${reset}\n`
+      );
+
+      return { server, vector, config };
     })();
 
     // Race between server startup and timeout
@@ -206,9 +203,13 @@ async function runDev() {
               await new Promise((resolve) => setTimeout(resolve, 100));
 
               // Clear module cache to ensure fresh imports
-              for (const key in require.cache) {
-                if (!key.includes("node_modules")) {
-                  delete require.cache[key];
+              // Note: Bun uses ESM and doesn't have require.cache
+              // The Loader API will handle module reloading automatically
+              if (typeof require !== 'undefined' && require.cache) {
+                for (const key in require.cache) {
+                  if (!key.includes("node_modules")) {
+                    delete require.cache[key];
+                  }
                 }
               }
 
@@ -221,15 +222,14 @@ async function runDev() {
                 console.error("\n[Reload Error]", error.message || error);
                 // Don't exit the process on reload failures, just continue watching
               } finally {
-                // Reset flag after a delay
-                setTimeout(() => {
-                  isReloading = false;
-                }, 2000); // 2 second cooldown
+                // Reset flag immediately after reload completes
+                // The lastReloadTime check provides additional protection
+                isReloading = false;
               }
             }, 500); // Increased debounce to 500ms
           }
         });
-      } catch (err) {
+      } catch {
         console.warn("  ⚠️  File watching not available");
       }
     }

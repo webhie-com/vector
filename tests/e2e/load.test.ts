@@ -57,7 +57,7 @@ async function runLoadTest() {
       // Prepare requests
       const requests = Array(scenario.total)
         .fill(null)
-        .map((_, i) => {
+        .map(() => {
           // Mix of different endpoints
           const endpoints = [
             { path: '/health', weight: 3 },
@@ -92,7 +92,6 @@ async function runLoadTest() {
         `\nExecuting ${scenario.total} requests with ${scenario.concurrent} concurrent connections...`
       );
 
-      const startTime = Date.now();
       let completed = 0;
       const batchSize = scenario.concurrent;
 
@@ -112,8 +111,6 @@ async function runLoadTest() {
         completed += batch.length;
         Reporter.printProgress(completed, scenario.total, 'Requests');
       }
-
-      const duration = Date.now() - startTime;
 
       // Stop monitoring
       metrics.stop();
