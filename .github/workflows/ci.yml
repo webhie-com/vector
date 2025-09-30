@@ -29,15 +29,12 @@ jobs:
           bun-version: latest
 
       - name: Install dependencies
-        run: bun install
+        run: bun install --frozen-lockfile
 
-      - name: Install platform-specific oxlint binary
+      - name: Install oxlint platform binary
         run: |
-          if [ "${{ runner.os }}" = "Linux" ]; then
-            bun add -d @oxlint/linux-x64-gnu
-          elif [ "${{ runner.os }}" = "macOS" ]; then
-            bun add -d @oxlint/darwin-x64 @oxlint/darwin-arm64
-          fi
+          # Explicitly install the platform-specific binary
+          bun add -d @oxlint/linux-x64-gnu@^1.15.0
 
       - name: Lint code
         run: bun run lint
@@ -61,14 +58,15 @@ jobs:
           bun-version: latest
 
       - name: Install dependencies
-        run: bun install
+        run: bun install --frozen-lockfile
 
-      - name: Install platform-specific oxlint binary
+      - name: Install oxlint platform binary
         run: |
-          if [ "${{ runner.os }}" = "Linux" ]; then
-            bun add -d @oxlint/linux-x64-gnu
-          elif [ "${{ runner.os }}" = "macOS" ]; then
-            bun add -d @oxlint/darwin-x64 @oxlint/darwin-arm64
+          # Explicitly install the platform-specific binary
+          if [ "$RUNNER_OS" == "Linux" ]; then
+            bun add -d @oxlint/linux-x64-gnu@^1.15.0
+          elif [ "$RUNNER_OS" == "macOS" ]; then
+            bun add -d @oxlint/darwin-arm64@^1.15.0
           fi
 
       - name: Run tests
@@ -97,15 +95,10 @@ jobs:
           bun-version: latest
 
       - name: Install dependencies
-        run: bun install
+        run: bun install --frozen-lockfile
 
-      - name: Install platform-specific oxlint binary
-        run: |
-          if [ "${{ runner.os }}" = "Linux" ]; then
-            bun add -d @oxlint/linux-x64-gnu
-          elif [ "${{ runner.os }}" = "macOS" ]; then
-            bun add -d @oxlint/darwin-x64 @oxlint/darwin-arm64
-          fi
+      - name: Install oxlint platform binary
+        run: bun add -d @oxlint/linux-x64-gnu@^1.15.0
 
       - name: Build
         run: bun run build:lib
@@ -150,15 +143,10 @@ jobs:
           bun-version: latest
 
       - name: Install dependencies
-        run: bun install
+        run: bun install --frozen-lockfile
 
-      - name: Install platform-specific oxlint binary
-        run: |
-          if [ "${{ runner.os }}" = "Linux" ]; then
-            bun add -d @oxlint/linux-x64-gnu
-          elif [ "${{ runner.os }}" = "macOS" ]; then
-            bun add -d @oxlint/darwin-x64 @oxlint/darwin-arm64
-          fi
+      - name: Install oxlint platform binary
+        run: bun add -d @oxlint/linux-x64-gnu@^1.15.0
 
       - name: Build library
         run: bun run build:lib
