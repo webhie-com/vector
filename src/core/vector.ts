@@ -83,9 +83,13 @@ export class Vector<TTypes extends VectorTypes = DefaultVectorTypes> {
   async startServer(config?: VectorConfig<TTypes>): Promise<Server> {
     this.config = { ...this.config, ...config };
 
-    // Clear previous middleware and routes to avoid accumulation across multiple starts
+    // Clear previous middleware to avoid accumulation across multiple starts
     this.middlewareManager.clear();
-    this.router.clearRoutes();
+
+    // Only clear routes if we're doing auto-discovery
+    if (this.config.autoDiscover !== false) {
+      this.router.clearRoutes();
+    }
 
     if (config?.before) {
       this.middlewareManager.addBefore(...config.before);
@@ -210,9 +214,8 @@ export class Vector<TTypes extends VectorTypes = DefaultVectorTypes> {
       this.server.stop();
       this.server = null;
     }
-    // Don't reset managers - they should persist for the singleton
-    // Only clear route-specific state if needed
-    this.router.clearRoutes();
+    // Don't reset managers or routes - they persist for the singleton
+    // Routes will be cleared on next startServer() call
   }
 
   getServer(): VectorServer<TTypes> | null {
