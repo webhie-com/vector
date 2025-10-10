@@ -87,8 +87,7 @@ export class VectorServer<TTypes extends VectorTypes = DefaultVectorTypes> {
         throw new Error(`Failed to start server on ${hostname}:${port} - server object is invalid`);
       }
 
-      // Server logs are handled by CLI, keep this minimal
-      console.log(`→ Vector server running at http://${hostname}:${port}`);
+      // Server logs are handled by CLI
 
       return this.server;
     } catch (error: any) {

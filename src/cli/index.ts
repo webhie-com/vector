@@ -49,9 +49,6 @@ const command = positionals[0] || "dev";
 
 async function runDev() {
   const isDev = command === "dev";
-  console.log(
-    `\n→ Starting Vector ${isDev ? "development" : "production"} server\n`
-  );
 
   let server: any = null;
   let vector: any = null;
@@ -69,7 +66,6 @@ async function runDev() {
       // Load configuration using ConfigLoader
       const configLoader = new ConfigLoader(values.config as string | undefined);
       const config = await configLoader.load();
-      const configSource = configLoader.getConfigSource();
 
       // Merge CLI options with loaded config
       // Only use CLI values if config doesn't have them
@@ -115,28 +111,11 @@ async function runDev() {
         throw new Error("Server started but is not responding correctly");
       }
 
-      const gray = "\x1b[90m";
-      const reset = "\x1b[0m";
       const cyan = "\x1b[36m";
-      const green = "\x1b[32m";
+      const reset = "\x1b[0m";
 
       console.log(
-        `  ${gray}Config${reset}     ${
-          configSource === "user" ? "User config loaded" : "Using defaults"
-        }`
-      );
-      console.log(`  ${gray}Routes${reset}     ${config.routesDir}`);
-      if (isDev && values.watch) {
-        console.log(`  ${gray}Watching${reset}   All project files`);
-      }
-      console.log(
-        `  ${gray}CORS${reset}       ${config.cors ? "Enabled" : "Disabled"}`
-      );
-      console.log(
-        `  ${gray}Mode${reset}       ${config.development ? "Development" : "Production"}\n`
-      );
-      console.log(
-        `  ${green}Ready${reset} → ${cyan}http://${config.hostname}:${config.port}${reset}\n`
+        `\nListening on ${cyan}http://${config.hostname}:${config.port}${reset}\n`
       );
 
       return { server, vector, config };
@@ -230,75 +209,85 @@ async function runDev() {
           }
         });
       } catch {
-        console.warn("  ⚠️  File watching not available");
+        const yellow = "\x1b[33m";
+        const reset = "\x1b[0m";
+        console.warn(`${yellow}Warning: File watching not available${reset}`);
       }
     }
   } catch (error: any) {
     const red = "\x1b[31m";
     const reset = "\x1b[0m";
 
-    console.error(`\n${red}[ERROR] Failed to start server${reset}\n`);
+    console.error(`\n${red}Error: ${error.message || error}${reset}\n`);
 
-    // Always show the error message and stack trace
-    if (error.message) {
-      console.error(`Message: ${error.message}`);
-    }
-
-    if (error.stack) {
-      console.error(`\nStack trace:`);
+    if (error.stack && process.env.NODE_ENV === "development") {
       console.error(error.stack);
-    } else if (!error.message) {
-      // If no message or stack, show the raw error
-      console.error(`Raw error:`, error);
     }
 
-    // Ensure we exit with error code
     process.exit(1);
   }
 }
 
 async function runBuild() {
-  console.log("\n→ Building Vector application\n");
-
   try {
     const { RouteScanner } = await import("../dev/route-scanner");
     const { RouteGenerator } = await import("../dev/route-generator");
 
+    // Step 1: Scan and generate routes
     const scanner = new RouteScanner(values.routes as string);
     const generator = new RouteGenerator();
 
     const routes = await scanner.scan();
     await generator.generate(routes);
 
-    console.log(`  Generated ${routes.length} routes`);
-
-    // Use spawn based on runtime
+    // Step 2: Build the application with Bun
     if (typeof Bun !== "undefined") {
+      // Build the CLI as an executable
       const buildProcess = Bun.spawn([
         "bun",
         "build",
-        "src/index.ts",
-        "--outdir",
-        "dist",
+        "src/cli/index.ts",
+        "--target",
+        "bun",
+        "--outfile",
+        "dist/server.js",
         "--minify",
       ]);
-      await buildProcess.exited;
+
+      const exitCode = await buildProcess.exited;
+      if (exitCode !== 0) {
+        throw new Error(`Build failed with exit code ${exitCode}`);
+      }
     } else {
       // For Node.js, use child_process
       const { spawnSync } = await import("child_process");
-      spawnSync(
+      const result = spawnSync(
         "bun",
-        ["build", "src/index.ts", "--outdir", "dist", "--minify"],
+        [
+          "build",
+          "src/cli/index.ts",
+          "--target",
+          "bun",
+          "--outfile",
+          "dist/server.js",
+          "--minify",
+        ],
         {
           stdio: "inherit",
           shell: true,
         }
       );
+
+      if (result.status !== 0) {
+        throw new Error(`Build failed with exit code ${result.status}`);
+      }
     }
 
-    console.log("\n  ✓ Build complete\n");
-  } catch (error) {
-    console.error("[ERROR] Build failed:", error);
+    console.log("\nBuild complete: dist/server.js\n");
+  } catch (error: any) {
+    const red = "\x1b[31m";
+    const reset = "\x1b[0m";
+    console.error(`\n${red}Error: ${error.message || error}${reset}\n`);
     process.exit(1);
   }
 }

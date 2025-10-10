@@ -30,27 +30,21 @@ export class ConfigLoader<TTypes extends VectorTypes = DefaultVectorTypes> {
     // Check if config file exists before attempting to load
     if (existsSync(this.configPath)) {
       try {
-        console.log(`→ Loading config from: ${this.configPath}`);
-
         // Use explicit file:// URL to ensure correct resolution
         const userConfigPath = toFileUrl(this.configPath);
         const userConfig = await import(userConfigPath);
         this.config = userConfig.default || userConfig;
         this.configSource = "user";
-
-        console.log("  ✓ User config loaded successfully");
-      } catch (error) {
+      } catch (error: any) {
+        const red = "\x1b[31m";
+        const reset = "\x1b[0m";
         console.error(
-          `  ✗ Failed to load config from ${this.configPath}:`,
-          error
+          `${red}Error loading config: ${error.message || error}${reset}`
         );
-        console.log("  → Using default configuration");
         this.config = {};
       }
     } else {
       // Config file doesn't exist, use defaults
-      console.log(`  → No config file found at: ${this.configPath}`);
-      console.log("  → Using default configuration");
       this.config = {};
     }
 

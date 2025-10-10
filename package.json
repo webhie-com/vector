@@ -1,7 +1,7 @@
 {
   "name": "vector-framework",
-  "version": "0.9.9",
-  "author": "",
+  "version": "1.0.0",
+  "author": "webhie-com",
   "repository": {
     "type": "git",
     "url": "https://github.com/webhie-com/vector.git"
@@ -76,6 +76,7 @@
     "dev": "bun run src/cli/index.ts dev",
     "start": "bun run src/cli/index.ts start",
     "build": "bun run src/cli/index.ts build",
+    "build:app": "bun run src/cli/index.ts build",
     "build:lib": "bun run build:clean && bun run build:ts && bun run build:bundle && bun run build:cli",
     "build:clean": "rm -rf dist",
     "build:ts": "tsc",
