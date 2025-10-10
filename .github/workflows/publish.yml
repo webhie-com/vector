@@ -116,15 +116,16 @@ jobs:
           fi
           
 
-          # Save release notes to output using a delimiter
+          # Save release notes to output using a random delimiter (GitHub recommended approach)
+          delimiter="ghadelimiter_$(uuidgen || echo $RANDOM)"
           {
-            echo 'RELEASE_NOTES<<EOF'
+            echo "RELEASE_NOTES<<${delimiter}"
             cat release_notes.md
-            echo 'EOF'
+            echo "${delimiter}"
           } >> $GITHUB_OUTPUT
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      
+
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v1
         with:
