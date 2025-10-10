@@ -121,6 +121,7 @@ jobs:
           {
             echo "RELEASE_NOTES<<${delimiter}"
             cat release_notes.md
+            echo ""
             echo "${delimiter}"
           } >> $GITHUB_OUTPUT
         env:
