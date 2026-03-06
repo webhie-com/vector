@@ -1,5 +1,3 @@
-import { cors, type IRequest, type RouteEntry, withContent } from 'itty-router';
-import { buildRouteRegex } from './utils/path';
 import { CONTENT_TYPES, HTTP_STATUS } from './constants';
 import type {
   CacheOptions,
@@ -10,27 +8,13 @@ import type {
 } from './types';
 import { getVectorInstance } from './core/vector';
 
-export interface ProtectedRequest<TTypes extends VectorTypes = DefaultVectorTypes>
-  extends IRequest {
-  authUser?: GetAuthType<TTypes>;
-}
-
-export const { preflight, corsify } = cors({
-  origin: '*',
-  credentials: true,
-  allowHeaders: 'Content-Type, Authorization',
-  allowMethods: 'GET, POST, PUT, PATCH, DELETE, OPTIONS',
-  exposeHeaders: 'Authorization',
-  maxAge: 86_400,
-});
-
 interface ExtendedApiOptions extends ApiOptions {
   method: string;
   path: string;
 }
 
 export interface RouteDefinition<TTypes extends VectorTypes = DefaultVectorTypes> {
-  entry: RouteEntry;
+  entry: { method: string; path: string };
   options: ExtendedApiOptions;
   handler: (req: VectorRequest<TTypes>) => Promise<unknown>;
 }
@@ -41,35 +25,29 @@ export function route<TTypes extends VectorTypes = DefaultVectorTypes>(
 ): RouteDefinition<TTypes> {
   const handler = api(options, fn);
 
-  const entry: RouteEntry = [
-    options.method.toUpperCase(),
-    buildRouteRegex(options.path),
-    [handler],
-    options.path,
-  ];
-
   return {
-    entry,
+    entry: {
+      method: options.method.toUpperCase(),
+      path: options.path,
+    },
     options,
     handler: fn,
-  };
-}
-
-function hasBigInt(value: unknown, depth = 0): boolean {
-  if (typeof value === 'bigint') return true;
-  if (depth > 4 || value === null || typeof value !== 'object') return false;
-  for (const v of Object.values(value as object)) {
-    if (hasBigInt(v, depth + 1)) return true;
-  }
-  return false;
+    _handler: handler,
+  } as any;
 }
 
 function stringifyData(data: unknown): string {
   const val = data ?? null;
-  if (!hasBigInt(val)) return JSON.stringify(val);
-  return JSON.stringify(val, (_key, value) =>
-    typeof value === 'bigint' ? value.toString() : value
-  );
+  try {
+    return JSON.stringify(val);
+  } catch (e) {
+    if (e instanceof TypeError) {
+      return JSON.stringify(val, (_key, value) =>
+        typeof value === 'bigint' ? value.toString() : value
+      );
+    }
+    throw e;
+  }
 }
 
 const ApiResponse = {
@@ -238,7 +216,6 @@ export const protectedRoute = async <TTypes extends VectorTypes = DefaultVectorT
   request: VectorRequest<TTypes>,
   responseContentType?: string
 ) => {
-  // Get the Vector instance to access the protected handler
   const vector = getVectorInstance();
 
   const protectedHandler = vector.getProtectedHandler();
@@ -278,32 +255,42 @@ export function api<TTypes extends VectorTypes = DefaultVectorTypes>(
     responseContentType = CONTENT_TYPES.JSON,
   } = options;
 
-  // For backward compatibility with direct route usage (not auto-discovered)
-  // This wrapper is only used when routes are NOT auto-discovered
-  return async (request: IRequest) => {
+  return async (request: Request) => {
+    const req = request as VectorRequest<TTypes>;
+
     if (!expose) {
       return APIError.forbidden('Forbidden');
     }
 
     try {
       if (auth) {
-        await protectedRoute(request as any as VectorRequest<TTypes>, responseContentType);
+        await protectedRoute(req, responseContentType);
       }
 
-      if (!rawRequest) {
-        await withContent(request);
+      if (!rawRequest && req.method !== 'GET' && req.method !== 'HEAD') {
+        try {
+          const contentType = req.headers.get('content-type');
+          if (contentType?.startsWith('application/json')) {
+            req.content = await req.json();
+          } else if (contentType?.startsWith('application/x-www-form-urlencoded')) {
+            req.content = Object.fromEntries(await req.formData());
+          } else if (contentType?.startsWith('multipart/form-data')) {
+            req.content = await req.formData();
+          } else {
+            req.content = await req.text();
+          }
+        } catch {
+          req.content = null;
+        }
       }
 
-      // Cache handling is now done in the router
-      const result = await fn(request as any as VectorRequest<TTypes>);
+      const result = await fn(req);
 
       return rawResponse ? result : ApiResponse.success(result, responseContentType);
     } catch (err: unknown) {
-      // Ensure we return a Response object
       if (err instanceof Response) {
         return err;
       }
-      // For non-Response errors, wrap them
       return APIError.internalServerError(String(err), responseContentType);
     }
   };

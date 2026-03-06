@@ -1,5 +1,3 @@
-import type { IRequest } from 'itty-router';
-
 // Default AuthUser type - users can override this with their own type
 export interface DefaultAuthUser {
   id: string;
@@ -44,8 +42,12 @@ export type GetMetadataType<T extends VectorTypes> = T['metadata'] extends undef
 // Legacy support - keep AuthUser for backward compatibility
 export type AuthUser = DefaultAuthUser;
 
+export type BunRouteHandler = (req: Request) => Response | Promise<Response>;
+export type BunMethodMap = Record<string, BunRouteHandler>;
+export type BunRouteTable = Record<string, BunMethodMap | Response>;
+
 export interface VectorRequest<TTypes extends VectorTypes = DefaultVectorTypes>
-  extends Omit<IRequest, 'params'> {
+  extends Omit<Request, 'json' | 'text' | 'formData' | 'arrayBuffer' | 'blob'> {
   authUser?: GetAuthType<TTypes>;
   context: GetContextType<TTypes>;
   metadata?: GetMetadataType<TTypes>;

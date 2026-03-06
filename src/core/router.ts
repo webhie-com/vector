@@ -1,23 +1,24 @@
-import type { RouteEntry } from 'itty-router';
 import type { AuthManager } from '../auth/protected';
 import type { CacheManager } from '../cache/manager';
 import { APIError, createResponse } from '../http';
 import type { MiddlewareManager } from '../middleware/manager';
+import { STATIC_RESPONSES } from '../constants';
 import type {
+  BunMethodMap,
+  BunRouteTable,
   DefaultVectorTypes,
   RouteHandler,
   RouteOptions,
   VectorRequest,
   VectorTypes,
 } from '../types';
-import { buildRouteRegex } from '../utils/path';
 
 export class VectorRouter<TTypes extends VectorTypes = DefaultVectorTypes> {
   private middlewareManager: MiddlewareManager<TTypes>;
   private authManager: AuthManager<TTypes>;
   private cacheManager: CacheManager<TTypes>;
-  private routes: RouteEntry[] = [];
-  private specificityCache: Map<string, number> = new Map();
+  private routeTable: BunRouteTable = {};
+  private corsHeadersEntries: [string, string][] | null = null;
 
   constructor(
     middlewareManager: MiddlewareManager<TTypes>,
@@ -29,88 +30,63 @@ export class VectorRouter<TTypes extends VectorTypes = DefaultVectorTypes> {
     this.cacheManager = cacheManager;
   }
 
-  private getRouteSpecificity(path: string): number {
-    const cached = this.specificityCache.get(path);
-    if (cached !== undefined) return cached;
+  setCorsHeaders(entries: [string, string][] | null): void {
+    this.corsHeadersEntries = entries;
+  }
 
-    const STATIC_SEGMENT_WEIGHT = 1000;
-    const PARAM_SEGMENT_WEIGHT = 10;
-    const WILDCARD_WEIGHT = 1;
-    const EXACT_MATCH_BONUS = 10000;
+  route(options: RouteOptions<TTypes>, handler: RouteHandler<TTypes>): void {
+    const method = options.method.toUpperCase();
+    const path = options.path;
+    const wrappedHandler = this.wrapHandler(options, handler);
 
-    let score = 0;
-    const segments = path.split('/').filter(Boolean);
+    if (!this.routeTable[path]) {
+      this.routeTable[path] = {};
+    }
+    (this.routeTable[path] as BunMethodMap)[method] = wrappedHandler;
+  }
 
-    for (const segment of segments) {
-      if (this.isStaticSegment(segment)) {
-        score += STATIC_SEGMENT_WEIGHT;
-      } else if (this.isParamSegment(segment)) {
-        score += PARAM_SEGMENT_WEIGHT;
-      } else if (this.isWildcardSegment(segment)) {
-        score += WILDCARD_WEIGHT;
+  addRoute(entry: [string, RegExp, any[], string?]): void {
+    const [method, , handlers, path] = entry;
+    if (!path) return;
+
+    if (!this.routeTable[path]) {
+      this.routeTable[path] = {};
+    }
+    (this.routeTable[path] as BunMethodMap)[method.toUpperCase()] = handlers[0];
+  }
+
+  bulkAddRoutes(entries: [string, RegExp, any[], string?][]): void {
+    for (const entry of entries) {
+      this.addRoute(entry);
+    }
+  }
+
+  addStaticRoute(path: string, response: Response): void {
+    this.routeTable[path] = response;
+  }
+
+  getRouteTable(): BunRouteTable {
+    return this.routeTable;
+  }
+
+  // Legacy compatibility: returns route entries in a flat list for tests
+  getRoutes(): [string, RegExp, any[], string][] {
+    const result: [string, RegExp, any[], string][] = [];
+    for (const [path, value] of Object.entries(this.routeTable)) {
+      if (value instanceof Response) continue;
+      for (const [method, handler] of Object.entries(value as BunMethodMap)) {
+        result.push([method, /.*/, [handler], path]);
       }
     }
-
-    score += path.length;
-
-    if (this.isExactPath(path)) {
-      score += EXACT_MATCH_BONUS;
-    }
-
-    this.specificityCache.set(path, score);
-    return score;
+    return result;
   }
 
-  private isStaticSegment(segment: string): boolean {
-    return !segment.startsWith(':') && !segment.includes('*');
+  clearRoutes(): void {
+    this.routeTable = {};
   }
 
-  private isParamSegment(segment: string): boolean {
-    return segment.startsWith(':');
-  }
-
-  private isWildcardSegment(segment: string): boolean {
-    return segment.includes('*');
-  }
-
-  private isExactPath(path: string): boolean {
-    return !path.includes(':') && !path.includes('*');
-  }
-
-  sortRoutes(): void {
-    this.routes.sort((a, b) => {
-      const pathA = this.extractPath(a);
-      const pathB = this.extractPath(b);
-
-      const scoreA = this.getRouteSpecificity(pathA);
-      const scoreB = this.getRouteSpecificity(pathB);
-
-      return scoreB - scoreA;
-    });
-  }
-
-  private extractPath(route: RouteEntry): string {
-    const PATH_INDEX = 3;
-    return route[PATH_INDEX] || '';
-  }
-
-  route(options: RouteOptions<TTypes>, handler: RouteHandler<TTypes>): RouteEntry {
-    const wrappedHandler = this.wrapHandler(options, handler);
-    const routeEntry: RouteEntry = [
-      options.method.toUpperCase(),
-      this.createRouteRegex(options.path),
-      [wrappedHandler],
-      options.path,
-    ];
-
-    this.routes.push(routeEntry);
-    this.sortRoutes(); // Sort routes after adding
-    return routeEntry;
-  }
-
-  private createRouteRegex(path: string): RegExp {
-    return buildRouteRegex(path);
-  }
+  // Legacy shim — no-op (Bun handles route priority natively)
+  sortRoutes(): void {}
 
   private prepareRequest(
     request: VectorRequest<TTypes>,
@@ -120,14 +96,16 @@ export class VectorRouter<TTypes extends VectorTypes = DefaultVectorTypes> {
       metadata?: any;
     }
   ): void {
-    // Initialize context if not present
     if (!request.context) {
       request.context = {} as any;
     }
 
-    // Set params and route if provided
-    if (options?.params !== undefined) {
-      request.params = options.params;
+    if (options?.params !== undefined && request.params === undefined) {
+      try {
+        request.params = options.params;
+      } catch {
+        // params is readonly (set by Bun natively) — use as-is
+      }
     }
     if (options?.route !== undefined) {
       request.route = options.route;
@@ -136,7 +114,6 @@ export class VectorRouter<TTypes extends VectorTypes = DefaultVectorTypes> {
       request.metadata = options.metadata;
     }
 
-    // Parse query parameters from URL if not already parsed
     if (!request.query && request.url) {
       const url = (request as any)._parsedUrl ?? new URL(request.url);
       const query: Record<string, string | string[]> = {};
@@ -154,7 +131,6 @@ export class VectorRouter<TTypes extends VectorTypes = DefaultVectorTypes> {
       request.query = query;
     }
 
-    // Lazy cookie parsing — only parse the Cookie header when first accessed
     if (!Object.getOwnPropertyDescriptor(request, 'cookies')) {
       Object.defineProperty(request, 'cookies', {
         get() {
@@ -183,31 +159,31 @@ export class VectorRouter<TTypes extends VectorTypes = DefaultVectorTypes> {
   }
 
   private wrapHandler(options: RouteOptions<TTypes>, handler: RouteHandler<TTypes>) {
-    return async (request: any) => {
-      // Ensure request has required properties
+    const routePath = options.path;
+    const corsEntries = () => this.corsHeadersEntries;
+
+    return async (request: Request) => {
       const vectorRequest = request as VectorRequest<TTypes>;
 
-      // Prepare the request with common logic
       this.prepareRequest(vectorRequest, {
+        route: routePath,
         metadata: options.metadata,
       });
 
-      request = vectorRequest;
       try {
-        // Default expose to true if not specified
         if (options.expose === false) {
           return APIError.forbidden('Forbidden');
         }
 
-        const beforeResult = await this.middlewareManager.executeBefore(request);
+        const beforeResult = await this.middlewareManager.executeBefore(vectorRequest);
         if (beforeResult instanceof Response) {
           return beforeResult;
         }
-        request = beforeResult as any;
+        const req = beforeResult as VectorRequest<TTypes>;
 
         if (options.auth) {
           try {
-            await this.authManager.authenticate(request);
+            await this.authManager.authenticate(req);
           } catch (error) {
             return APIError.unauthorized(
               error instanceof Error ? error.message : 'Authentication failed',
@@ -216,58 +192,64 @@ export class VectorRouter<TTypes extends VectorTypes = DefaultVectorTypes> {
           }
         }
 
-        if (!options.rawRequest && request.method !== 'GET' && request.method !== 'HEAD') {
+        if (!options.rawRequest && req.method !== 'GET' && req.method !== 'HEAD') {
           try {
-            const contentType = request.headers.get('content-type');
-            if (contentType?.includes('application/json')) {
-              request.content = await request.json();
-            } else if (contentType?.includes('application/x-www-form-urlencoded')) {
-              request.content = Object.fromEntries(await request.formData());
-            } else if (contentType?.includes('multipart/form-data')) {
-              request.content = await request.formData();
+            const contentType = req.headers.get('content-type');
+            if (contentType?.startsWith('application/json')) {
+              req.content = await req.json();
+            } else if (contentType?.startsWith('application/x-www-form-urlencoded')) {
+              req.content = Object.fromEntries(await req.formData());
+            } else if (contentType?.startsWith('multipart/form-data')) {
+              req.content = await req.formData();
             } else {
-              request.content = await request.text();
+              req.content = await req.text();
             }
           } catch {
-            request.content = null;
+            req.content = null;
           }
         }
 
         let result;
         const cacheOptions = options.cache;
 
-        // Create cache factory that handles Response objects
-        const cacheFactory = async () => {
-          const res = await handler(request);
-          // If Response, extract data for caching
-          if (res instanceof Response) {
-            return {
-              _isResponse: true,
-              body: await res.text(),
-              status: res.status,
-              headers: Object.fromEntries(res.headers.entries()),
-            };
-          }
-          return res;
-        };
-
         if (cacheOptions && typeof cacheOptions === 'number' && cacheOptions > 0) {
-          const cacheKey = this.cacheManager.generateKey(request as any, {
-            authUser: request.authUser,
+          const cacheKey = this.cacheManager.generateKey(req as any, {
+            authUser: req.authUser,
           });
-          result = await this.cacheManager.get(cacheKey, cacheFactory, cacheOptions);
+          result = await this.cacheManager.get(cacheKey, async () => {
+            const res = await handler(req);
+            if (res instanceof Response) {
+              return {
+                _isResponse: true,
+                body: await res.text(),
+                status: res.status,
+                headers: Object.fromEntries(res.headers.entries()),
+              };
+            }
+            return res;
+          }, cacheOptions);
         } else if (cacheOptions && typeof cacheOptions === 'object' && cacheOptions.ttl) {
           const cacheKey =
             cacheOptions.key ||
-            this.cacheManager.generateKey(request as any, {
-              authUser: request.authUser,
+            this.cacheManager.generateKey(req as any, {
+              authUser: req.authUser,
             });
-          result = await this.cacheManager.get(cacheKey, cacheFactory, cacheOptions.ttl);
+          result = await this.cacheManager.get(cacheKey, async () => {
+            const res = await handler(req);
+            if (res instanceof Response) {
+              return {
+                _isResponse: true,
+                body: await res.text(),
+                status: res.status,
+                headers: Object.fromEntries(res.headers.entries()),
+              };
+            }
+            return res;
+          }, cacheOptions.ttl);
         } else {
-          result = await handler(request);
+          result = await handler(req);
         }
 
-        // Reconstruct Response if it was cached
         if (result && typeof result === 'object' && result._isResponse === true) {
           result = new Response(result.body, {
             status: result.status,
@@ -282,7 +264,15 @@ export class VectorRouter<TTypes extends VectorTypes = DefaultVectorTypes> {
           response = createResponse(200, result, options.responseContentType);
         }
 
-        response = await this.middlewareManager.executeFinally(response, request);
+        response = await this.middlewareManager.executeFinally(response, req);
+
+        // Apply pre-built CORS headers if configured
+        const entries = corsEntries();
+        if (entries) {
+          for (const [k, v] of entries) {
+            response.headers.set(k, v);
+          }
+        }
 
         return response;
       } catch (error) {
@@ -298,58 +288,6 @@ export class VectorRouter<TTypes extends VectorTypes = DefaultVectorTypes> {
       }
     };
   }
-
-  addRoute(routeEntry: RouteEntry) {
-    this.routes.push(routeEntry);
-    this.sortRoutes(); // Sort routes after adding a new one
-  }
-
-  bulkAddRoutes(entries: RouteEntry[]): void {
-    for (const entry of entries) {
-      this.routes.push(entry);
-    }
-    this.sortRoutes(); // Sort once after all routes are added — O(n log n) instead of O(n²)
-  }
-
-  getRoutes(): RouteEntry[] {
-    return this.routes;
-  }
-
-  async handle(request: Request): Promise<Response> {
-    let url: URL;
-    try {
-      url = new URL(request.url);
-    } catch {
-      return APIError.badRequest('Malformed request URL');
-    }
-    (request as any)._parsedUrl = url;
-    const pathname = url.pathname;
-
-    for (const [method, regex, handlers, path] of this.routes) {
-      if (request.method === 'OPTIONS' || request.method === method) {
-        const match = pathname.match(regex);
-        if (match) {
-          const req = request as any as VectorRequest<TTypes>;
-
-          // Prepare the request with common logic
-          this.prepareRequest(req, {
-            params: match.groups || {},
-            route: path || pathname,
-          });
-
-          for (const handler of handlers) {
-            const response = await handler(req as any);
-            if (response) return response;
-          }
-        }
-      }
-    }
-
-    return APIError.notFound('Route not found');
-  }
-
-  clearRoutes(): void {
-    this.routes = [];
-    this.specificityCache.clear();
-  }
 }
+
+export { STATIC_RESPONSES };

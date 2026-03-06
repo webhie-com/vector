@@ -1,5 +1,4 @@
 import type { Server } from 'bun';
-import type { RouteEntry } from 'itty-router';
 import { AuthManager } from '../auth/protected';
 import { CacheManager } from '../cache/manager';
 import { RouteGenerator } from '../dev/route-generator';
@@ -72,8 +71,8 @@ export class Vector<TTypes extends VectorTypes = DefaultVectorTypes> {
   }
 
   // Internal method to add route
-  addRoute(options: RouteOptions<TTypes>, handler: RouteHandler<TTypes>): RouteEntry {
-    return this.router.route(options, handler);
+  addRoute(options: RouteOptions<TTypes>, handler: RouteHandler<TTypes>): void {
+    this.router.route(options, handler);
   }
 
   // Internal method to start server - only called by CLI
@@ -141,8 +140,8 @@ export class Vector<TTypes extends VectorTypes = DefaultVectorTypes> {
                 this.logRouteLoaded(routeDef.options);
               } else if (this.isRouteEntry(exported)) {
                 // Legacy support for direct RouteEntry (won't have middleware)
-                this.router.addRoute(exported as RouteEntry);
-                this.logRouteLoaded(exported as RouteEntry);
+                this.router.addRoute(exported as any);
+                this.logRouteLoaded(exported as any);
               } else if (typeof exported === 'function') {
                 this.router.route(route.options as any, exported);
                 this.logRouteLoaded(route.options);
@@ -153,8 +152,6 @@ export class Vector<TTypes extends VectorTypes = DefaultVectorTypes> {
           }
         }
 
-        // Ensure routes are properly sorted after loading all
-        this.router.sortRoutes();
       }
     } catch (error) {
       if ((error as any).code !== 'ENOENT' && (error as any).code !== 'ENOTDIR') {
@@ -167,14 +164,14 @@ export class Vector<TTypes extends VectorTypes = DefaultVectorTypes> {
     if (typeof routeModule === 'function') {
       const routeEntry = routeModule();
       if (Array.isArray(routeEntry)) {
-        this.router.addRoute(routeEntry as RouteEntry);
+        this.router.addRoute(routeEntry as any);
       }
     } else if (routeModule && typeof routeModule === 'object') {
       for (const [, value] of Object.entries(routeModule)) {
         if (typeof value === 'function') {
           const routeEntry = (value as any)();
           if (Array.isArray(routeEntry)) {
-            this.router.addRoute(routeEntry as RouteEntry);
+            this.router.addRoute(routeEntry as any);
           }
         }
       }
@@ -195,7 +192,7 @@ export class Vector<TTypes extends VectorTypes = DefaultVectorTypes> {
     );
   }
 
-  private logRouteLoaded(_: RouteEntry | RouteOptions): void {
+  private logRouteLoaded(_: any): void {
     // Silent - no logging
   }
 

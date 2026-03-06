@@ -8,9 +8,7 @@
   },
   "main": "./dist/index.js",
   "module": "./dist/index.mjs",
-  "dependencies": {
-    "itty-router": "^5.0.0"
-  },
+  "dependencies": {},
   "devDependencies": {
     "@biomejs/biome": "^2.4.6",
     "@biomejs/cli-darwin-arm64": "^2.4.6",
@@ -49,7 +47,7 @@
   "bugs": {
     "url": "https://github.com/webhie-com/vector/issues"
   },
-  "description": "A modern TypeScript API framework built with Bun and itty-router",
+  "description": "A modern TypeScript API framework built with Bun",
   "engines": {
     "bun": ">=1.0.0"
   },
@@ -65,7 +63,6 @@
     "api",
     "framework",
     "bun",
-    "itty-router",
     "typescript",
     "rest",
     "http",
