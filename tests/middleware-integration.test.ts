@@ -19,7 +19,7 @@ describe('Middleware Integration with Auto-Discovery', () => {
     };
 
     const config: VectorConfig = {
-      port: 3001,
+      port: 0,
       hostname: 'localhost',
       routesDir: './tests/fixtures/routes',
       autoDiscover: true,
@@ -28,9 +28,10 @@ describe('Middleware Integration with Auto-Discovery', () => {
 
     const vector = getVectorInstance();
     const server = await vector.startServer(config);
+    const port = server.port;
 
     // Make a request to test the middleware
-    const response = await fetch('http://localhost:3001/hello');
+    const response = await fetch(`http://localhost:${port}/hello`);
 
     expect(middlewareExecuted).toBe(true);
     expect(response.status).toBe(200);
@@ -45,7 +46,7 @@ describe('Middleware Integration with Auto-Discovery', () => {
     };
 
     const config: VectorConfig = {
-      port: 3002,
+      port: 0,
       hostname: 'localhost',
       routesDir: './tests/fixtures/routes',
       autoDiscover: true,
@@ -54,9 +55,10 @@ describe('Middleware Integration with Auto-Discovery', () => {
 
     const vector = getVectorInstance();
     const server = await vector.startServer(config);
+    const port = server.port;
 
     // Make a request - should be blocked by middleware
-    const response = await fetch('http://localhost:3002/hello');
+    const response = await fetch(`http://localhost:${port}/hello`);
     const text = await response.text();
 
     expect(response.status).toBe(403);
@@ -80,7 +82,7 @@ describe('Middleware Integration with Auto-Discovery', () => {
     };
 
     const config: VectorConfig = {
-      port: 3003,
+      port: 0,
       hostname: 'localhost',
       routesDir: './tests/fixtures/routes',
       autoDiscover: true,
@@ -89,9 +91,10 @@ describe('Middleware Integration with Auto-Discovery', () => {
 
     const vector = getVectorInstance();
     const server = await vector.startServer(config);
+    const port = server.port;
 
     // Make a request to test the after middleware
-    const response = await fetch('http://localhost:3003/hello');
+    const response = await fetch(`http://localhost:${port}/hello`);
 
     expect(finallyExecuted).toBe(true);
     expect(response.headers.get(customHeader)).toBe('middleware-added');
@@ -105,7 +108,7 @@ describe('Middleware Integration with Auto-Discovery', () => {
     };
 
     const config: VectorConfig = {
-      port: 3004,
+      port: 0,
       hostname: 'localhost',
       routesDir: './tests/fixtures/routes',
       autoDiscover: true,
@@ -114,9 +117,10 @@ describe('Middleware Integration with Auto-Discovery', () => {
 
     const vector = getVectorInstance();
     const server = await vector.startServer(config);
+    const port = server.port;
 
     // Make a request - should get error response
-    const response = await fetch('http://localhost:3004/hello');
+    const response = await fetch(`http://localhost:${port}/hello`);
     const data = await response.json();
 
     expect(response.status).toBe(500);
@@ -148,7 +152,7 @@ describe('Middleware Integration with Auto-Discovery', () => {
     };
 
     const config: VectorConfig = {
-      port: 3005,
+      port: 0,
       hostname: 'localhost',
       routesDir: './tests/fixtures/routes',
       autoDiscover: true,
@@ -157,9 +161,10 @@ describe('Middleware Integration with Auto-Discovery', () => {
 
     const vector = getVectorInstance();
     const server = await vector.startServer(config);
+    const port = server.port;
 
     // Make a request
-    await fetch('http://localhost:3005/hello');
+    await fetch(`http://localhost:${port}/hello`);
 
     expect(executionOrder).toEqual(['first', 'second', 'third']);
 
@@ -183,7 +188,7 @@ describe('Middleware Integration with Auto-Discovery', () => {
     };
 
     const config: VectorConfig = {
-      port: 3006,
+      port: 0,
       hostname: 'localhost',
       routesDir: './tests/fixtures/routes',
       autoDiscover: true,
@@ -193,8 +198,9 @@ describe('Middleware Integration with Auto-Discovery', () => {
 
     const vector = getVectorInstance();
     const server = await vector.startServer(config);
+    const port = server.port;
 
-    const response = await fetch('http://localhost:3006/hello');
+    const response = await fetch(`http://localhost:${port}/hello`);
     const data = await response.json();
 
     expect(response.status).toBe(200);

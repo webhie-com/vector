@@ -29,7 +29,7 @@ export const listProducts = route(
     trackRequest();
     // Simulate some processing time for first request
     if (requestCount === 1) {
-      await new Promise(resolve => setTimeout(resolve, 10));
+      await new Promise((resolve) => setTimeout(resolve, 10));
     }
     return {
       products,
@@ -49,12 +49,12 @@ export const getProduct = route(
   async (req: VectorRequest) => {
     trackRequest();
     const id = parseInt(req.params?.id as string);
-    const product = products.find(p => p.id === id);
-    
+    const product = products.find((p) => p.id === id);
+
     if (!product) {
       throw APIError.notFound('Product not found');
     }
-    
+
     return product;
   }
 );
@@ -77,7 +77,7 @@ export const getUser = route(
         email: 'test@example.com',
         name: 'Test User',
         role: 'admin',
-      }
+      },
     };
   }
 );
@@ -93,20 +93,20 @@ export const createData = route(
   async (req: VectorRequest) => {
     trackRequest();
     const body = req.content as any;
-    
+
     if (!body || !body.name) {
       throw APIError.badRequest('Name is required');
     }
-    
+
     const newData = {
       id: dataStore.length + 1,
       name: body.name,
       value: body.value || 0,
       createdAt: new Date().toISOString(),
     };
-    
+
     dataStore.push(newData);
-    
+
     return {
       success: true,
       id: newData.id,
@@ -126,7 +126,7 @@ export const testError = route(
     trackRequest();
     const url = new URL(req.url);
     const errorType = url.searchParams.get('type');
-    
+
     switch (errorType) {
       case 'bad-request':
         throw APIError.badRequest('Bad request error');
@@ -159,17 +159,17 @@ export const compute = route(
     trackRequest();
     const url = new URL(req.url);
     const iterations = parseInt(url.searchParams.get('iterations') || '1000');
-    
+
     const startTime = Date.now();
-    
+
     // Simulate compute-intensive work
     let result = 0;
     for (let i = 0; i < iterations; i++) {
       result += Math.sqrt(i);
     }
-    
+
     const computeTime = Date.now() - startTime;
-    
+
     return {
       iterations,
       result,
@@ -189,9 +189,9 @@ export const slowResponse = route(
     trackRequest();
     const url = new URL(req.url);
     const delay = parseInt(url.searchParams.get('delay') || '1000');
-    
-    await new Promise(resolve => setTimeout(resolve, delay));
-    
+
+    await new Promise((resolve) => setTimeout(resolve, delay));
+
     return {
       delay,
       message: `Response delayed by ${delay}ms`,
@@ -210,7 +210,7 @@ export const getMetrics = route(
     trackRequest();
     const uptime = Date.now() - serverStartTime;
     const memoryUsage = process.memoryUsage();
-    
+
     return {
       uptime,
       requests: {
@@ -238,13 +238,20 @@ export const resetData = route(
     trackRequest();
     // Reset data store
     dataStore.length = 0;
-    
+
     return {
       message: 'Test data reset',
       success: true,
     };
   }
 );
+
+// Reset all module-level mutable state back to initial values.
+// Call this in beforeEach / afterEach in tests to prevent cross-test pollution.
+export function resetState(): void {
+  dataStore.length = 0;
+  requestCount = 0;
+}
 
 // Memory allocation endpoint
 export const memoryAllocation = route(
@@ -258,12 +265,12 @@ export const memoryAllocation = route(
     // Allocate some memory (10MB)
     const size = 10 * 1024 * 1024;
     const buffer = Buffer.alloc(size);
-    
+
     // Fill with some data to ensure allocation
     for (let i = 0; i < 100; i++) {
       buffer[i] = i % 256;
     }
-    
+
     return {
       allocated: '10MB',
       memory: process.memoryUsage(),

@@ -1,54 +1,53 @@
 #!/usr/bin/env bun
 
-import { watch } from "node:fs";
-import { parseArgs } from "node:util";
-import { getVectorInstance } from "../core/vector";
-import { ConfigLoader } from "../core/config-loader";
+import { watch } from 'node:fs';
+import { parseArgs } from 'node:util';
+import { getVectorInstance } from '../core/vector';
+import { ConfigLoader } from '../core/config-loader';
 
 // Compatibility layer for both Node and Bun
-const args =
-  typeof Bun !== "undefined" ? Bun.argv.slice(2) : process.argv.slice(2);
+const args = typeof Bun !== 'undefined' ? Bun.argv.slice(2) : process.argv.slice(2);
 
 const { values, positionals } = parseArgs({
   args,
   options: {
     port: {
-      type: "string",
-      short: "p",
-      default: "3000",
+      type: 'string',
+      short: 'p',
+      default: '3000',
     },
     host: {
-      type: "string",
-      short: "h",
-      default: "localhost",
+      type: 'string',
+      short: 'h',
+      default: 'localhost',
     },
     routes: {
-      type: "string",
-      short: "r",
-      default: "./routes",
+      type: 'string',
+      short: 'r',
+      default: './routes',
     },
     watch: {
-      type: "boolean",
-      short: "w",
+      type: 'boolean',
+      short: 'w',
       default: true,
     },
     cors: {
-      type: "boolean",
+      type: 'boolean',
       default: true,
     },
     config: {
-      type: "string",
-      short: "c",
+      type: 'string',
+      short: 'c',
     },
   },
   strict: true,
   allowPositionals: true,
 });
 
-const command = positionals[0] || "dev";
+const command = positionals[0] || 'dev';
 
 async function runDev() {
-  const isDev = command === "dev";
+  const isDev = command === 'dev';
 
   let server: any = null;
   let vector: any = null;
@@ -57,7 +56,7 @@ async function runDev() {
     // Create a timeout promise that rejects after 10 seconds
     const timeoutPromise = new Promise<never>((_, reject) => {
       setTimeout(() => {
-        reject(new Error("Server startup timed out (10s)"));
+        reject(new Error('Server startup timed out (10s)'));
       }, 10000);
     });
 
@@ -79,11 +78,11 @@ async function runDev() {
       // Only apply default CORS if config.cors is undefined (not set)
       if (config.cors === undefined && values.cors) {
         config.cors = {
-          origin: "*",
+          origin: '*',
           credentials: true,
-          allowHeaders: "Content-Type, Authorization",
-          allowMethods: "GET, POST, PUT, PATCH, DELETE, OPTIONS",
-          exposeHeaders: "Authorization",
+          allowHeaders: 'Content-Type, Authorization',
+          allowMethods: 'GET, POST, PUT, PATCH, DELETE, OPTIONS',
+          exposeHeaders: 'Authorization',
           maxAge: 86400,
         };
       }
@@ -108,15 +107,13 @@ async function runDev() {
 
       // Verify the server is actually running
       if (!server || !server.port) {
-        throw new Error("Server started but is not responding correctly");
+        throw new Error('Server started but is not responding correctly');
       }
 
-      const cyan = "\x1b[36m";
-      const reset = "\x1b[0m";
+      const cyan = '\x1b[36m';
+      const reset = '\x1b[0m';
 
-      console.log(
-        `\nListening on ${cyan}http://${config.hostname}:${config.port}${reset}\n`
-      );
+      console.log(`\nListening on ${cyan}http://${config.hostname}:${config.port}${reset}\n`);
 
       return { server, vector, config };
     })();
@@ -144,17 +141,16 @@ async function runDev() {
           const now = Date.now();
           if (isReloading || now - lastReloadTime < 1000) return;
 
+          const segments = filename ? filename.split(/[/\\]/) : [];
+          const excluded = segments.some((s) =>
+            ['node_modules', '.git', '.vector', 'dist'].includes(s)
+          );
           if (
             filename &&
-            (filename.endsWith(".ts") ||
-              filename.endsWith(".js") ||
-              filename.endsWith(".json")) &&
-            !filename.includes("node_modules") &&
-            !filename.includes(".git") &&
-            !filename.includes(".vector") && // Ignore generated files
-            !filename.includes("dist") && // Ignore dist folder
-            !filename.includes("bun.lockb") && // Ignore lock files
-            !filename.endsWith(".generated.ts") // Ignore generated files
+            (filename.endsWith('.ts') || filename.endsWith('.js') || filename.endsWith('.json')) &&
+            !excluded &&
+            !filename.includes('bun.lockb') && // Ignore lock files
+            !filename.endsWith('.generated.ts') // Ignore generated files
           ) {
             // Track changed files
             changedFiles.add(filename);
@@ -181,24 +177,13 @@ async function runDev() {
               // Small delay to ensure file system operations complete
               await new Promise((resolve) => setTimeout(resolve, 100));
 
-              // Clear module cache to ensure fresh imports
-              // Note: Bun uses ESM and doesn't have require.cache
-              // The Loader API will handle module reloading automatically
-              if (typeof require !== 'undefined' && require.cache) {
-                for (const key in require.cache) {
-                  if (!key.includes("node_modules")) {
-                    delete require.cache[key];
-                  }
-                }
-              }
-
               // Restart the server
               try {
                 const result = await startServer();
                 server = result.server;
                 vector = result.vector;
               } catch (error: any) {
-                console.error("\n[Reload Error]", error.message || error);
+                console.error('\n[Reload Error]', error.message || error);
                 // Don't exit the process on reload failures, just continue watching
               } finally {
                 // Reset flag immediately after reload completes
@@ -209,18 +194,18 @@ async function runDev() {
           }
         });
       } catch {
-        const yellow = "\x1b[33m";
-        const reset = "\x1b[0m";
+        const yellow = '\x1b[33m';
+        const reset = '\x1b[0m';
         console.warn(`${yellow}Warning: File watching not available${reset}`);
       }
     }
   } catch (error: any) {
-    const red = "\x1b[31m";
-    const reset = "\x1b[0m";
+    const red = '\x1b[31m';
+    const reset = '\x1b[0m';
 
     console.error(`\n${red}Error: ${error.message || error}${reset}\n`);
 
-    if (error.stack && process.env.NODE_ENV === "development") {
+    if (error.stack && process.env.NODE_ENV === 'development') {
       console.error(error.stack);
     }
 
@@ -230,8 +215,8 @@ async function runDev() {
 
 async function runBuild() {
   try {
-    const { RouteScanner } = await import("../dev/route-scanner");
-    const { RouteGenerator } = await import("../dev/route-generator");
+    const { RouteScanner } = await import('../dev/route-scanner');
+    const { RouteGenerator } = await import('../dev/route-generator');
 
     // Step 1: Scan and generate routes
     const scanner = new RouteScanner(values.routes as string);
@@ -241,17 +226,17 @@ async function runBuild() {
     await generator.generate(routes);
 
     // Step 2: Build the application with Bun
-    if (typeof Bun !== "undefined") {
+    if (typeof Bun !== 'undefined') {
       // Build the CLI as an executable
       const buildProcess = Bun.spawn([
-        "bun",
-        "build",
-        "src/cli/index.ts",
-        "--target",
-        "bun",
-        "--outfile",
-        "dist/server.js",
-        "--minify",
+        'bun',
+        'build',
+        'src/cli/index.ts',
+        '--target',
+        'bun',
+        '--outfile',
+        'dist/server.js',
+        '--minify',
       ]);
 
       const exitCode = await buildProcess.exited;
@@ -260,20 +245,12 @@ async function runBuild() {
       }
     } else {
       // For Node.js, use child_process
-      const { spawnSync } = await import("child_process");
+      const { spawnSync } = await import('child_process');
       const result = spawnSync(
-        "bun",
-        [
-          "build",
-          "src/cli/index.ts",
-          "--target",
-          "bun",
-          "--outfile",
-          "dist/server.js",
-          "--minify",
-        ],
+        'bun',
+        ['build', 'src/cli/index.ts', '--target', 'bun', '--outfile', 'dist/server.js', '--minify'],
         {
-          stdio: "inherit",
+          stdio: 'inherit',
           shell: true,
         }
       );
@@ -283,24 +260,24 @@ async function runBuild() {
       }
     }
 
-    console.log("\nBuild complete: dist/server.js\n");
+    console.log('\nBuild complete: dist/server.js\n');
   } catch (error: any) {
-    const red = "\x1b[31m";
-    const reset = "\x1b[0m";
+    const red = '\x1b[31m';
+    const reset = '\x1b[0m';
     console.error(`\n${red}Error: ${error.message || error}${reset}\n`);
     process.exit(1);
   }
 }
 
 switch (command) {
-  case "dev":
+  case 'dev':
     await runDev();
     break;
-  case "build":
+  case 'build':
     await runBuild();
     break;
-  case "start":
-    process.env.NODE_ENV = "production";
+  case 'start':
+    process.env.NODE_ENV = 'production';
     await runDev();
     break;
   default:

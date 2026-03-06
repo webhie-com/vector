@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   # Unit tests
   test-unit:
@@ -33,11 +31,13 @@ services:
       target: load-test
     environment:
       NODE_ENV: test
+      TEST_SERVER_URL: http://test-server:3004
     command: ["bun", "test", "tests/e2e/load.test.ts"]
     networks:
       - test-network
     depends_on:
-      - test-server
+      test-server:
+        condition: service_healthy
 
   # Soak tests
   test-soak:
@@ -47,13 +47,15 @@ services:
       target: test
     environment:
       NODE_ENV: test
+      TEST_SERVER_URL: http://test-server:3004
     command: ["bun", "test", "tests/e2e/soak.test.ts"]
     networks:
       - test-network
     depends_on:
-      - test-server
+      test-server:
+        condition: service_healthy
 
-  # Benchmark tests
+  # Benchmark tests (spawns its own server internally — no test-server dependency)
   test-benchmark:
     build:
       context: .
@@ -61,15 +63,13 @@ services:
       target: benchmark
     environment:
       NODE_ENV: test
-    command: ["bun", "test", "tests/e2e/benchmark.test.ts"]
+    command: ["bun", "run", "tests/e2e/benchmark.test.ts"]
     networks:
       - test-network
     volumes:
       - ./benchmark-results:/app/benchmark-results
-    depends_on:
-      - test-server
 
-  # Test server (shared by performance tests)
+  # Test server (shared by load and soak tests)
   test-server:
     build:
       context: .
@@ -77,12 +77,12 @@ services:
       target: test
     environment:
       NODE_ENV: test
-      PORT: 3000
-    command: ["bun", "run", "tests/e2e/test-server.ts"]
+      PORT: 3004
+    command: ["bun", "run", "tests/e2e/test-server-process.ts"]
     networks:
       - test-network
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
+      test: ["CMD", "curl", "-f", "http://localhost:3004/health"]
       interval: 5s
       timeout: 3s
       retries: 5
@@ -96,25 +96,30 @@ services:
       target: test
     environment:
       NODE_ENV: test
+      TEST_SERVER_URL: http://test-server:3004
     command: |
       sh -c "
-        echo '🧪 Running Unit Tests...' &&
+        echo 'Running Unit Tests...' &&
         bun test --coverage &&
-        echo '\n🧪 Running E2E Tests...' &&
+        echo '\nRunning E2E Tests...' &&
         bun test tests/e2e/e2e.test.ts &&
-        echo '\n🧪 Running Load Tests...' &&
+        echo '\nRunning Load Tests...' &&
         bun test tests/e2e/load.test.ts &&
-        echo '\n🧪 Running Soak Tests...' &&
+        echo '\nRunning Soak Tests...' &&
         bun test tests/e2e/soak.test.ts &&
-        echo '\n🧪 Running Benchmarks...' &&
-        bun test tests/e2e/benchmark.test.ts &&
-        echo '\n✅ All tests completed!'
+        echo '\nRunning Benchmarks...' &&
+        bun run tests/e2e/benchmark.test.ts &&
+        echo '\nAll tests completed!'
       "
     networks:
       - test-network
     volumes:
       - ./test-results:/app/test-results
       - ./coverage:/app/coverage
+      - ./benchmark-results:/app/benchmark-results
+    depends_on:
+      test-server:
+        condition: service_healthy
 
 networks:
   test-network:

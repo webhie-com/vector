@@ -65,7 +65,7 @@ CLAUDE.md
 
 # Test results
 soak-test-results.json
-benchmark-results.json
+benchmark-results/
 load-test-results.json
 
 # Docker

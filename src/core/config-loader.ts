@@ -1,6 +1,6 @@
-import { existsSync } from "node:fs";
-import { resolve, isAbsolute } from "node:path";
-import { toFileUrl } from "../utils/path";
+import { existsSync } from 'node:fs';
+import { resolve, isAbsolute } from 'node:path';
+import { toFileUrl } from '../utils/path';
 import type {
   CacheHandler,
   CorsOptions,
@@ -9,21 +9,19 @@ import type {
   VectorConfig,
   VectorConfigSchema,
   VectorTypes,
-} from "../types";
+} from '../types';
 
 export class ConfigLoader<TTypes extends VectorTypes = DefaultVectorTypes> {
   private configPath: string;
   private config: VectorConfigSchema<TTypes> | null = null;
-  private configSource: "user" | "default" = "default";
+  private configSource: 'user' | 'default' = 'default';
 
   constructor(configPath?: string) {
     // Use provided config path or default to vector.config.ts
-    const path = configPath || "vector.config.ts";
+    const path = configPath || 'vector.config.ts';
 
     // Handle absolute vs relative paths
-    this.configPath = isAbsolute(path)
-      ? path
-      : resolve(process.cwd(), path);
+    this.configPath = isAbsolute(path) ? path : resolve(process.cwd(), path);
   }
 
   async load(): Promise<VectorConfig<TTypes>> {
@@ -34,12 +32,12 @@ export class ConfigLoader<TTypes extends VectorTypes = DefaultVectorTypes> {
         const userConfigPath = toFileUrl(this.configPath);
         const userConfig = await import(userConfigPath);
         this.config = userConfig.default || userConfig;
-        this.configSource = "user";
+        this.configSource = 'user';
       } catch (error: any) {
-        const red = "\x1b[31m";
-        const reset = "\x1b[0m";
+        const msg = error instanceof Error ? error.message : String(error);
+        console.error(`[Vector] Failed to load config from ${this.configPath}: ${msg}`);
         console.error(
-          `${red}Error loading config: ${error.message || error}${reset}`
+          '[Vector] Server is using default configuration. Fix your config file and restart.'
         );
         this.config = {};
       }
@@ -52,7 +50,7 @@ export class ConfigLoader<TTypes extends VectorTypes = DefaultVectorTypes> {
     return await this.buildLegacyConfig();
   }
 
-  getConfigSource(): "user" | "default" {
+  getConfigSource(): 'user' | 'default' {
     return this.configSource;
   }
 
@@ -65,7 +63,7 @@ export class ConfigLoader<TTypes extends VectorTypes = DefaultVectorTypes> {
       config.hostname = this.config.hostname;
       config.reusePort = this.config.reusePort;
       config.development = this.config.development;
-      config.routesDir = this.config.routesDir || "./routes";
+      config.routesDir = this.config.routesDir || './routes';
       config.idleTimeout = this.config.idleTimeout;
     }
 
@@ -74,14 +72,14 @@ export class ConfigLoader<TTypes extends VectorTypes = DefaultVectorTypes> {
 
     // CORS configuration
     if (this.config?.cors) {
-      if (typeof this.config.cors === "boolean") {
+      if (typeof this.config.cors === 'boolean') {
         config.cors = this.config.cors
           ? {
-              origin: "*",
+              origin: '*',
               credentials: true,
-              allowHeaders: "Content-Type, Authorization",
-              allowMethods: "GET, POST, PUT, PATCH, DELETE, OPTIONS",
-              exposeHeaders: "Authorization",
+              allowHeaders: 'Content-Type, Authorization',
+              allowMethods: 'GET, POST, PUT, PATCH, DELETE, OPTIONS',
+              exposeHeaders: 'Authorization',
               maxAge: 86400,
             }
           : undefined;

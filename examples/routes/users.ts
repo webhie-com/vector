@@ -1,18 +1,18 @@
-import { route } from "../../src/index";
+import { route } from '../../src/index';
 
 // Public route - Get all users
 export const getUsers = route(
   {
-    method: "GET",
-    path: "/users",
+    method: 'GET',
+    path: '/users',
     expose: true,
     cache: 60, // Cache for 60 seconds
   },
   async (_req) => {
     return {
       users: [
-        { id: 1, name: "Alice", email: "alice@example.com" },
-        { id: 2, name: "Bob", email: "bob@example.com" },
+        { id: 1, name: 'Alice', email: 'alice@example.com' },
+        { id: 2, name: 'Bob', email: 'bob@example.com' },
       ],
     };
   }
@@ -21,8 +21,8 @@ export const getUsers = route(
 // Protected route - Get user profile
 export const getUserProfile = route(
   {
-    method: "GET",
-    path: "/users/profile",
+    method: 'GET',
+    path: '/users/profile',
     expose: true,
     auth: true, // Requires authentication
   },
@@ -30,8 +30,8 @@ export const getUserProfile = route(
     return {
       user: req.authUser,
       profile: {
-        bio: "Software developer",
-        joined: "2024-01-01",
+        bio: 'Software developer',
+        joined: '2024-01-01',
       },
     };
   }
@@ -40,8 +40,8 @@ export const getUserProfile = route(
 // Public route with params - Get user by ID
 export const getUserById = route(
   {
-    method: "GET",
-    path: "/users/:id",
+    method: 'GET',
+    path: '/users/:id',
     expose: true,
     cache: { ttl: 30 }, // Cache for 30 seconds
   },
@@ -60,8 +60,8 @@ export const getUserById = route(
 // Protected route - Create user
 export const createUser = route(
   {
-    method: "POST",
-    path: "/users",
+    method: 'POST',
+    path: '/users',
     expose: true,
     auth: true,
   },
@@ -83,8 +83,8 @@ export const createUser = route(
 // Protected route - Update user
 export const updateUser = route(
   {
-    method: "PUT",
-    path: "/users/:id",
+    method: 'PUT',
+    path: '/users/:id',
     expose: true,
     auth: true,
   },
@@ -107,8 +107,8 @@ export const updateUser = route(
 // Protected route - Delete user
 export const deleteUser = route(
   {
-    method: "DELETE",
-    path: "/users/:id",
+    method: 'DELETE',
+    path: '/users/:id',
     expose: true,
     auth: true,
   },

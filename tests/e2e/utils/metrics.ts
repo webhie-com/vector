@@ -59,8 +59,12 @@ export class MetricsCollector {
       successfulRequests,
       failedRequests,
       averageResponseTime: this.calculateAverage(this.responseTimes),
-      minResponseTime: Math.min(...this.responseTimes) || 0,
-      maxResponseTime: Math.max(...this.responseTimes) || 0,
+      minResponseTime: this.responseTimes.length
+        ? this.responseTimes.reduce((a, b) => (b < a ? b : a))
+        : 0,
+      maxResponseTime: this.responseTimes.length
+        ? this.responseTimes.reduce((a, b) => (b > a ? b : a))
+        : 0,
       percentiles: {
         p50: this.calculatePercentile(sortedTimes, 50),
         p90: this.calculatePercentile(sortedTimes, 90),
