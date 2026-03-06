@@ -151,7 +151,6 @@ export class Vector<TTypes extends VectorTypes = DefaultVectorTypes> {
             console.error(`Failed to load route ${route.name} from ${route.path}:`, error);
           }
         }
-
       }
     } catch (error) {
       if ((error as any).code !== 'ENOENT' && (error as any).code !== 'ENOTDIR') {

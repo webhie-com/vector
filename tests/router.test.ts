@@ -33,7 +33,10 @@ describe('VectorRouter', () => {
 
     it('should register wildcard routes', () => {
       router.route({ method: 'GET', path: '/files/*', expose: true }, async () => 'files');
-      router.route({ method: 'GET', path: '/files/specific', expose: true }, async () => 'specific');
+      router.route(
+        { method: 'GET', path: '/files/specific', expose: true },
+        async () => 'specific'
+      );
 
       const table = router.getRouteTable();
       expect(table['/files/*']).toBeDefined();
@@ -51,7 +54,9 @@ describe('VectorRouter', () => {
       const cm = new CacheManager();
       const r = new VectorRouter(mm, am, cm);
       r.route({ method: 'GET', path: '/test', expose: true }, async () => ({ result: 'test' }));
-      r.route({ method: 'GET', path: '/internal', expose: false }, async () => ({ internal: true }));
+      r.route({ method: 'GET', path: '/internal', expose: false }, async () => ({
+        internal: true,
+      }));
       r.route({ method: 'POST', path: '/data', expose: true }, async () => 'post');
       r.route({ method: 'GET', path: '/data', expose: true }, async () => 'get');
       r.route({ method: 'GET', path: '/cors', expose: true }, async () => 'cors');
@@ -94,14 +99,34 @@ describe('VectorRouter', () => {
   describe('Bug B2 — bulkAddRoutes', () => {
     it('should register the same routes as individual addRoute calls', () => {
       const paths = [
-        '/a', '/b/:id', '/c', '/d/*', '/e/:x/f',
-        '/g', '/h/:y', '/i', '/j/*', '/k',
-        '/l/:z', '/m', '/n', '/o/:w', '/p',
-        '/q', '/r/:v', '/s', '/t', '/u',
+        '/a',
+        '/b/:id',
+        '/c',
+        '/d/*',
+        '/e/:x/f',
+        '/g',
+        '/h/:y',
+        '/i',
+        '/j/*',
+        '/k',
+        '/l/:z',
+        '/m',
+        '/n',
+        '/o/:w',
+        '/p',
+        '/q',
+        '/r/:v',
+        '/s',
+        '/t',
+        '/u',
       ];
 
-      const makeEntry = (path: string): [string, RegExp, any[], string] =>
-        ['GET', /.*/, [async () => new Response('ok')], path];
+      const makeEntry = (path: string): [string, RegExp, any[], string] => [
+        'GET',
+        /.*/,
+        [async () => new Response('ok')],
+        path,
+      ];
 
       const entries = paths.map(makeEntry);
 

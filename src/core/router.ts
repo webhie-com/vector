@@ -3,6 +3,7 @@ import type { CacheManager } from '../cache/manager';
 import { APIError, createResponse } from '../http';
 import type { MiddlewareManager } from '../middleware/manager';
 import { STATIC_RESPONSES } from '../constants';
+import { buildRouteRegex } from '../utils/path';
 import type {
   BunMethodMap,
   BunRouteTable,
@@ -87,6 +88,37 @@ export class VectorRouter<TTypes extends VectorTypes = DefaultVectorTypes> {
 
   // Legacy shim — no-op (Bun handles route priority natively)
   sortRoutes(): void {}
+
+  // Compatibility handle() for unit tests — mirrors Bun's native routing without a server
+  async handle(request: Request): Promise<Response> {
+    let url: URL;
+    try {
+      url = new URL(request.url);
+    } catch {
+      return APIError.badRequest('Malformed request URL');
+    }
+    (request as any)._parsedUrl = url;
+    const pathname = url.pathname;
+
+    for (const [path, value] of Object.entries(this.routeTable)) {
+      if (value instanceof Response) continue;
+      const methodMap = value as BunMethodMap;
+      if (request.method === 'OPTIONS' || request.method in methodMap) {
+        const regex = buildRouteRegex(path);
+        const match = pathname.match(regex);
+        if (match) {
+          (request as any).params = match.groups ?? {};
+          const handler = methodMap[request.method] ?? methodMap['GET'];
+          if (handler) {
+            const response = await handler(request);
+            if (response) return response;
+          }
+        }
+      }
+    }
+
+    return STATIC_RESPONSES.NOT_FOUND.clone();
+  }
 
   private prepareRequest(
     request: VectorRequest<TTypes>,
@@ -216,36 +248,44 @@ export class VectorRouter<TTypes extends VectorTypes = DefaultVectorTypes> {
           const cacheKey = this.cacheManager.generateKey(req as any, {
             authUser: req.authUser,
           });
-          result = await this.cacheManager.get(cacheKey, async () => {
-            const res = await handler(req);
-            if (res instanceof Response) {
-              return {
-                _isResponse: true,
-                body: await res.text(),
-                status: res.status,
-                headers: Object.fromEntries(res.headers.entries()),
-              };
-            }
-            return res;
-          }, cacheOptions);
+          result = await this.cacheManager.get(
+            cacheKey,
+            async () => {
+              const res = await handler(req);
+              if (res instanceof Response) {
+                return {
+                  _isResponse: true,
+                  body: await res.text(),
+                  status: res.status,
+                  headers: Object.fromEntries(res.headers.entries()),
+                };
+              }
+              return res;
+            },
+            cacheOptions
+          );
         } else if (cacheOptions && typeof cacheOptions === 'object' && cacheOptions.ttl) {
           const cacheKey =
             cacheOptions.key ||
             this.cacheManager.generateKey(req as any, {
               authUser: req.authUser,
             });
-          result = await this.cacheManager.get(cacheKey, async () => {
-            const res = await handler(req);
-            if (res instanceof Response) {
-              return {
-                _isResponse: true,
-                body: await res.text(),
-                status: res.status,
-                headers: Object.fromEntries(res.headers.entries()),
-              };
-            }
-            return res;
-          }, cacheOptions.ttl);
+          result = await this.cacheManager.get(
+            cacheKey,
+            async () => {
+              const res = await handler(req);
+              if (res instanceof Response) {
+                return {
+                  _isResponse: true,
+                  body: await res.text(),
+                  status: res.status,
+                  headers: Object.fromEntries(res.headers.entries()),
+                };
+              }
+              return res;
+            },
+            cacheOptions.ttl
+          );
         } else {
           result = await handler(req);
         }
