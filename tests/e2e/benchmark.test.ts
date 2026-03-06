@@ -26,6 +26,42 @@ interface BenchmarkResult {
   };
 }
 
+// Token bucket rate limiter — shared across all workers in a benchmark run.
+// Workers call consume() before each request; if the bucket is empty they wait
+// until the next token arrives.  This ensures actual throughput tracks targetRPS
+// when the server has capacity, and reveals saturation when it doesn't.
+class TokenBucket {
+  private tokens: number;
+  private lastRefill: number;
+  private readonly ratePerMs: number;
+  private readonly capacity: number;
+
+  constructor(ratePerSecond: number) {
+    this.ratePerMs = ratePerSecond / 1000;
+    this.capacity = ratePerSecond; // burst up to 1s worth of tokens
+    this.tokens = this.capacity;
+    this.lastRefill = Date.now();
+  }
+
+  async consume(): Promise<void> {
+    for (;;) {
+      const now = Date.now();
+      const elapsed = now - this.lastRefill;
+      this.lastRefill = now;
+      this.tokens = Math.min(this.capacity, this.tokens + elapsed * this.ratePerMs);
+
+      if (this.tokens >= 1) {
+        this.tokens -= 1;
+        return;
+      }
+
+      // Wait just long enough for one more token
+      const waitMs = Math.ceil((1 - this.tokens) / this.ratePerMs);
+      await new Promise((resolve) => setTimeout(resolve, Math.max(1, waitMs)));
+    }
+  }
+}
+
 async function waitForServer(url: string, timeoutMs = 10000): Promise<void> {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
@@ -112,8 +148,8 @@ async function runBenchmark() {
     // Run benchmarks at different request rates
     for (const targetRPS of CONFIG.targetRPS) {
       Reporter.printTestHeader(
-        `Benchmark: ${targetRPS} RPS`,
-        `Testing performance at ${targetRPS} requests per second`
+        `Benchmark: ${targetRPS} RPS (target)`,
+        `Paced at ${targetRPS} req/s — actual throughput reveals server capacity`
       );
 
       const metrics = new MetricsCollector();
@@ -166,11 +202,15 @@ async function runBenchmark() {
         cpuMonitor.sample();
       };
 
-      // Use concurrent workers to avoid setInterval's ~1ms timer clamp
-      // Each worker fires requests back-to-back; concurrency drives throughput
-      const concurrency = Math.min(targetRPS, 5000);
+      // Rate-limited workers: a shared token bucket paces the overall request rate
+      // to targetRPS. Concurrency is kept independent — enough workers to keep the
+      // pipeline full without overloading the bucket. When targetRPS exceeds server
+      // capacity the bucket drains and workers queue up, revealing actual saturation.
+      const limiter = new TokenBucket(targetRPS);
+      const concurrency = Math.min(Math.max(targetRPS, 1), 500);
       const workers = Array.from({ length: concurrency }, async () => {
         while (isRunning) {
+          await limiter.consume();
           await sendRequest();
         }
       });
@@ -223,7 +263,10 @@ async function runBenchmark() {
       });
 
       // Report individual benchmark results
-      Reporter.printMetrics(testMetrics, `${targetRPS} RPS Results`);
+      Reporter.printMetrics(
+        testMetrics,
+        `${targetRPS} RPS target | ${testMetrics.throughput.toFixed(0)} RPS actual`
+      );
 
       console.log('\nResource Usage');
       console.log(`  Memory Avg:  ${Reporter.formatBytes(memoryMetrics.average.heapUsed)}`);
@@ -252,7 +295,7 @@ async function runBenchmark() {
     // Performance scaling analysis
     console.log('\nPerformance Scaling');
     console.log('─'.repeat(80));
-    console.log('RPS\tThroughput\tP50\t\tP95\t\tP99\t\tErrors\t\tMemory');
+    console.log('Target RPS\tActual RPS\tP50\t\tP95\t\tP99\t\tErrors\t\tMemory');
     console.log('─'.repeat(80));
 
     results.forEach((result) => {
@@ -358,9 +401,9 @@ async function runBenchmark() {
       },
     };
 
-    await Bun.write('benchmark-results.json', JSON.stringify(benchmarkData, null, 2));
+    await Bun.write('benchmark-results/results.json', JSON.stringify(benchmarkData, null, 2));
 
-    console.log('\nDetailed results saved to benchmark-results.json');
+    console.log('\nDetailed results saved to benchmark-results/results.json');
 
     // Final verdict
     console.log('\n' + '═'.repeat(80));

@@ -67,7 +67,7 @@ services:
     networks:
       - test-network
     volumes:
-      - ./benchmark-results.json:/app/benchmark-results.json
+      - ./benchmark-results:/app/benchmark-results
 
   # Test server (shared by load and soak tests)
   test-server:
@@ -116,7 +116,7 @@ services:
     volumes:
       - ./test-results:/app/test-results
       - ./coverage:/app/coverage
-      - ./benchmark-results.json:/app/benchmark-results.json
+      - ./benchmark-results:/app/benchmark-results
     depends_on:
       test-server:
         condition: service_healthy

@@ -2,7 +2,7 @@
 
 **Blazing fast, secure, and developer-friendly API framework for Bun**
 
-- **70,000+ requests/second** - Optimized for extreme performance
+- **100,000+ requests/second** - Optimized for extreme performance
 - **Single dependency** - Only itty-router, minimizing security risks
 - **Zero build step** - Native TypeScript execution with Bun
 - **Encore-like DX** - Declarative, type-safe APIs you'll love
@@ -254,7 +254,7 @@ export const example = route(
 
 ### Error Handling
 
-Vector provides comprehensive error responses:
+Vector provides comprehensive error responses. Requests with a malformed URL are automatically rejected with a `400 Bad Request` before reaching your handler. Unhandled exceptions in handlers return a `500 Internal Server Error`.
 
 ```typescript
 import { APIError } from "vector-framework";
@@ -445,7 +445,7 @@ Vector automatically discovers and loads route files from your `routesDir` (defa
 - `*.interface.ts`, `*.type.ts` - Type definition files
 - `*.d.ts` - TypeScript declaration files
 
-You can customize the exclusion patterns using the `routeExcludePatterns` configuration option:
+You can customize the exclusion patterns using the `routeExcludePatterns` configuration option. Both single-segment (`*`) and multi-segment (`**`) glob patterns are supported:
 
 ```typescript
 // vector.config.ts
@@ -456,7 +456,8 @@ const config: VectorConfigSchema = {
     "*.test.ts",
     "*.spec.ts",
     "*.mock.ts",
-    "_*.ts", // Exclude files starting with underscore
+    "**/__tests__/**", // Exclude any nested __tests__ directory
+    "_*.ts",           // Exclude files starting with underscore
   ],
 };
 ```
@@ -470,7 +471,7 @@ Vector achieves exceptional performance through:
 - **Optimized Routing**: Efficient regex-based route matching
 - **Smart Caching**: Built-in response caching with configurable TTL
 
-Benchmarks show Vector handling **70,000+ requests/second** on standard hardware.
+Benchmarks show Vector handling **100,000+ requests/second** on standard hardware.
 
 ## Why Vector?
 

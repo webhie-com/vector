@@ -1,0 +1,266 @@
+{
+  "config": {
+    "port": 3004,
+    "baseUrl": "http://localhost:3004",
+    "warmupRequests": 100,
+    "benchmarkDuration": 30000,
+    "targetRPS": [10, 50, 100, 500, 1000, 20000, 100000, 300000]
+  },
+  "timestamp": "2026-03-06T02:18:42.698Z",
+  "results": [
+    {
+      "targetRPS": 10,
+      "metrics": {
+        "totalRequests": 3718293,
+        "successfulRequests": 3718293,
+        "failedRequests": 0,
+        "averageResponseTime": 0.07909866167082584,
+        "minResponseTime": 0,
+        "maxResponseTime": 13,
+        "percentiles": {
+          "p50": 0,
+          "p90": 0,
+          "p95": 1,
+          "p99": 1
+        },
+        "throughput": 123905.92822153354,
+        "errorRate": 0,
+        "startTime": 1772763244181,
+        "endTime": 1772763274190,
+        "duration": 30009
+      },
+      "memory": {
+        "average": 77779491.66666667,
+        "max": 158223539,
+        "growth": 65.76186182847795
+      },
+      "cpu": {
+        "total": 93644027261.12698,
+        "average": 25184.682127289856
+      }
+    },
+    {
+      "targetRPS": 50,
+      "metrics": {
+        "totalRequests": 3824237,
+        "successfulRequests": 3824237,
+        "failedRequests": 0,
+        "averageResponseTime": 0.3906575350847764,
+        "minResponseTime": 0,
+        "maxResponseTime": 22,
+        "percentiles": {
+          "p50": 0,
+          "p90": 1,
+          "p95": 1,
+          "p99": 1
+        },
+        "throughput": 127453.32444592568,
+        "errorRate": 0,
+        "startTime": 1772763279562,
+        "endTime": 1772763309567,
+        "duration": 30005
+      },
+      "memory": {
+        "average": 86793157,
+        "max": 162711848,
+        "growth": 42.83333256935731
+      },
+      "cpu": {
+        "total": 97535271286.01598,
+        "average": 25504.50489496754
+      }
+    },
+    {
+      "targetRPS": 100,
+      "metrics": {
+        "totalRequests": 1896724,
+        "successfulRequests": 1853042,
+        "failedRequests": 43682,
+        "averageResponseTime": 1.3173921584076347,
+        "minResponseTime": 0,
+        "maxResponseTime": 47,
+        "percentiles": {
+          "p50": 1,
+          "p90": 1,
+          "p95": 2,
+          "p99": 15
+        },
+        "throughput": 63194.64250016659,
+        "errorRate": 2.3030235289899847,
+        "startTime": 1772763314934,
+        "endTime": 1772763344948,
+        "duration": 30014
+      },
+      "memory": {
+        "average": 71741669.2,
+        "max": 114414791,
+        "growth": 37.97459788584302
+      },
+      "cpu": {
+        "total": 25309651203.27109,
+        "average": 13343.876707033332
+      }
+    },
+    {
+      "targetRPS": 500,
+      "metrics": {
+        "totalRequests": 133966,
+        "successfulRequests": 56829,
+        "failedRequests": 77137,
+        "averageResponseTime": 76.02650055429446,
+        "minResponseTime": 3,
+        "maxResponseTime": 236,
+        "percentiles": {
+          "p50": 69,
+          "p90": 160,
+          "p95": 174,
+          "p99": 197
+        },
+        "throughput": 4449.071767792501,
+        "errorRate": 57.579535105922396,
+        "startTime": 1772763350117,
+        "endTime": 1772763380228,
+        "duration": 30111
+      },
+      "memory": {
+        "average": 36781599.06666667,
+        "max": 136575756,
+        "growth": 42.85430062249155
+      },
+      "cpu": {
+        "total": 1949054172.7329798,
+        "average": 14548.871898339727
+      }
+    },
+    {
+      "targetRPS": 1000,
+      "metrics": {
+        "totalRequests": 129859,
+        "successfulRequests": 54001,
+        "failedRequests": 75858,
+        "averageResponseTime": 161.61150719431123,
+        "minResponseTime": 16,
+        "maxResponseTime": 419,
+        "percentiles": {
+          "p50": 199,
+          "p90": 329,
+          "p95": 347,
+          "p99": 375
+        },
+        "throughput": 4291.440846001322,
+        "errorRate": 58.41566622259528,
+        "startTime": 1772763385246,
+        "endTime": 1772763415506,
+        "duration": 30260
+      },
+      "memory": {
+        "average": 31911106.8,
+        "max": 54276518,
+        "growth": 36.3840332693402
+      },
+      "cpu": {
+        "total": 1830166019.9199984,
+        "average": 14093.48616514834
+      }
+    },
+    {
+      "targetRPS": 20000,
+      "metrics": {
+        "totalRequests": 135845,
+        "successfulRequests": 56085,
+        "failedRequests": 79760,
+        "averageResponseTime": 765.3144512793082,
+        "minResponseTime": 31,
+        "maxResponseTime": 2125,
+        "percentiles": {
+          "p50": 1188,
+          "p90": 1493,
+          "p95": 1531,
+          "p99": 1811
+        },
+        "throughput": 4326.82507325774,
+        "errorRate": 58.713975486768014,
+        "startTime": 1772763420514,
+        "endTime": 1772763451910,
+        "duration": 31396
+      },
+      "memory": {
+        "average": 41040350.96774194,
+        "max": 81566500,
+        "growth": 30.597427002509548
+      },
+      "cpu": {
+        "total": 2027566162.684985,
+        "average": 14925.58550322047
+      }
+    },
+    {
+      "targetRPS": 100000,
+      "metrics": {
+        "totalRequests": 129559,
+        "successfulRequests": 56682,
+        "failedRequests": 72877,
+        "averageResponseTime": 792.6002258212484,
+        "minResponseTime": 25,
+        "maxResponseTime": 2168,
+        "percentiles": {
+          "p50": 868,
+          "p90": 1542,
+          "p95": 1570,
+          "p99": 1852
+        },
+        "throughput": 4253.274679097863,
+        "errorRate": 56.25004824056994,
+        "startTime": 1772763456919,
+        "endTime": 1772763487380,
+        "duration": 30461
+      },
+      "memory": {
+        "average": 36947808.46666667,
+        "max": 60188114,
+        "growth": 21.476614349184185
+      },
+      "cpu": {
+        "total": 1932088097.73099,
+        "average": 14912.804959369785
+      }
+    },
+    {
+      "targetRPS": 300000,
+      "metrics": {
+        "totalRequests": 131578,
+        "successfulRequests": 59127,
+        "failedRequests": 72451,
+        "averageResponseTime": 827.931740152553,
+        "minResponseTime": 29,
+        "maxResponseTime": 2130,
+        "percentiles": {
+          "p50": 959,
+          "p90": 1529,
+          "p95": 1595,
+          "p99": 1834
+        },
+        "throughput": 4342.364938450876,
+        "errorRate": 55.06315645472647,
+        "startTime": 1772763492391,
+        "endTime": 1772763522692,
+        "duration": 30301
+      },
+      "memory": {
+        "average": 39129804.36666667,
+        "max": 69687848,
+        "growth": 52.845313655470704
+      },
+      "cpu": {
+        "total": 2040502321.5319943,
+        "average": 15507.929300734122
+      }
+    }
+  ],
+  "analysis": {
+    "optimalRPS": 50,
+    "maxThroughput": 127453.32444592568,
+    "avgScalingFactor": 0.7959458577737635,
+    "avgMemoryGrowth": 41.34093514783431
+  }
+}

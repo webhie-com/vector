@@ -10,7 +10,7 @@ export function buildRouteRegex(path: string): RegExp {
   return RegExp(
     `^${path
       .replace(/\/+(\/|$)/g, '$1')
-      .replace(/(\/?\.?):(\w+)\+/g, '($1(?<$2>*))')
+      .replace(/(\/?\.?):(\w+)\+/g, '($1(?<$2>[\\s\\S]+))')
       .replace(/(\/?\.?):(\w+)/g, '($1(?<$2>[^$1/]+?))')
       .replace(/\./g, '\\.')
       .replace(/(\/?)\*/g, '($1.*)?')}/*$`

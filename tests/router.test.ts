@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it } from 'bun:test';
+import type { RouteEntry } from 'itty-router';
 import { AuthManager } from '../src/auth/protected';
 import { CacheManager } from '../src/cache/manager';
 import { VectorRouter } from '../src/core/router';
@@ -229,8 +230,10 @@ describe('VectorRouter', () => {
       const response = await router.handle(req);
 
       expect(response.status).toBe(400);
+      expect(response.headers.get('content-type')).toContain('application/json');
       const body = await response.json();
-      expect(body).toHaveProperty('error');
+      expect(body.error).toBe(true);
+      expect(body.message).toContain('Malformed request URL');
     });
   });
 });

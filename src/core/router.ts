@@ -320,7 +320,7 @@ export class VectorRouter<TTypes extends VectorTypes = DefaultVectorTypes> {
     try {
       url = new URL(request.url);
     } catch {
-      return new Response(JSON.stringify({ error: 'Malformed request URL' }), { status: 400 });
+      return APIError.badRequest('Malformed request URL');
     }
     (request as any)._parsedUrl = url;
     const pathname = url.pathname;
