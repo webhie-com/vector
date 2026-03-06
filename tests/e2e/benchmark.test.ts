@@ -64,15 +64,28 @@ async function runBenchmark() {
     );
 
     // Wait until the server writes "READY"
-    const reader = serverProcess.stdout?.getReader();
+    if (!serverProcess.stdout) {
+      throw new Error('Failed to start test server: stdout is not available on spawned process');
+    }
+    const reader = serverProcess.stdout.getReader();
     const decoder = new TextDecoder();
     let buf = '';
-    while (!buf.includes('READY')) {
-      const { value, done } = await reader.read();
-      if (done) break;
-      buf += decoder.decode(value);
+    try {
+      while (!buf.includes('READY')) {
+        const { value, done } = await reader.read();
+        if (done) {
+          if (!buf.includes('READY')) {
+            throw new Error('Test server exited or closed stdout before emitting READY');
+          }
+          break;
+        }
+        if (value) {
+          buf += decoder.decode(value);
+        }
+      }
+    } finally {
+      reader.releaseLock();
     }
-    reader.releaseLock();
 
     await waitForServer(CONFIG.baseUrl);
 
