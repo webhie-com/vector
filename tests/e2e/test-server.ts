@@ -7,10 +7,10 @@ import testAuth from './test-auth';
 const testServer = {
   async serve(config: VectorConfig) {
     const vector = getVectorInstance();
-    
+
     // Set authentication handler
     vector.setProtectedHandler(testAuth);
-    
+
     // Add basic health endpoint for testing
     vector.addRoute({ method: 'GET', path: '/health' }, async () => {
       return Response.json({
@@ -20,14 +20,14 @@ const testServer = {
         memory: process.memoryUsage(),
       });
     });
-    
+
     // Register all test routes
     Object.values(testRoutes).forEach((routeDef) => {
       if (routeDef && routeDef.options && routeDef.handler) {
         // Filter out null cache values for TypeScript compatibility
         const options = {
           ...routeDef.options,
-          cache: routeDef.options.cache === null ? undefined : routeDef.options.cache
+          cache: routeDef.options.cache === null ? undefined : routeDef.options.cache,
         };
         vector.addRoute(options, routeDef.handler);
       }
@@ -36,7 +36,7 @@ const testServer = {
     // Start the server with optimized settings for benchmarks
     const server = await vector.startServer({
       ...config,
-      reusePort: false, // Disable reusePort for stability on Windows
+      reusePort: config.reusePort ?? false,
       autoDiscover: false, // Skip route discovery for test server
     });
     return server;

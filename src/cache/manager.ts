@@ -1,10 +1,5 @@
-import { DEFAULT_CONFIG } from "../constants";
-import type {
-  CacheHandler,
-  DefaultVectorTypes,
-  GetCacheType,
-  VectorTypes,
-} from "../types";
+import { DEFAULT_CONFIG } from '../constants';
+import type { CacheHandler, DefaultVectorTypes, GetCacheType, VectorTypes } from '../types';
 
 interface CacheEntry<T = any> {
   value: T;
@@ -15,6 +10,7 @@ export class CacheManager<TTypes extends VectorTypes = DefaultVectorTypes> {
   private cacheHandler: CacheHandler | null = null;
   private memoryCache: Map<string, CacheEntry> = new Map();
   private cleanupInterval: Timer | null = null;
+  private inflight: Map<string, Promise<any>> = new Map();
 
   setCacheHandler(handler: CacheHandler) {
     this.cacheHandler = handler;
@@ -48,10 +44,23 @@ export class CacheManager<TTypes extends VectorTypes = DefaultVectorTypes> {
       return cached!.value as T;
     }
 
-    const value = await factory();
-    this.setInMemoryCache(key, value, ttl);
+    // Deduplicate concurrent requests for the same key (cache stampede prevention)
+    if (this.inflight.has(key)) {
+      return (await this.inflight.get(key)!) as T;
+    }
 
-    return value;
+    const promise = (async () => {
+      const value = await factory();
+      this.setInMemoryCache(key, value, ttl);
+      return value;
+    })();
+
+    this.inflight.set(key, promise);
+    try {
+      return await promise;
+    } finally {
+      this.inflight.delete(key);
+    }
   }
 
   private isCacheValid(entry: CacheEntry | undefined, now: number): boolean {
@@ -129,15 +138,15 @@ export class CacheManager<TTypes extends VectorTypes = DefaultVectorTypes> {
     return true;
   }
 
-  generateKey(request: Request, options?: { authUser?: any }): string {
-    const url = new URL(request.url);
+  generateKey(request: Request & { _parsedUrl?: URL }, options?: { authUser?: any }): string {
+    const url = request._parsedUrl ?? new URL(request.url);
     const parts = [
       request.method,
       url.pathname,
       url.search,
-      options?.authUser?.id || "anonymous",
+      options?.authUser?.id != null ? String(options.authUser.id) : 'anonymous',
     ];
 
-    return parts.join(":");
+    return parts.join(':');
   }
 }

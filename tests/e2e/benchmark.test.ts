@@ -1,5 +1,3 @@
-import type { Server } from 'bun';
-import testServer from './test-server';
 import { createClient } from './utils/http-client';
 import type { Metrics } from './utils/metrics';
 import { CPUMonitor, MemoryMonitor, MetricsCollector } from './utils/metrics';
@@ -11,7 +9,7 @@ const CONFIG = {
   baseUrl: 'http://localhost:3004',
   warmupRequests: 100,
   benchmarkDuration: 30000, // 30 seconds per benchmark
-  targetRPS: [10, 50, 100, 200, 500], // Different request rates to test
+  targetRPS: [10, 50, 100, 500, 1000, 20000, 100000, 300000], // Different request rates to test
 };
 
 interface BenchmarkResult {
@@ -28,28 +26,55 @@ interface BenchmarkResult {
   };
 }
 
+async function waitForServer(url: string, timeoutMs = 10000): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    try {
+      await fetch(`${url}/health`);
+      return;
+    } catch {
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    }
+  }
+  throw new Error(`Server at ${url} did not become ready within ${timeoutMs}ms`);
+}
+
 async function runBenchmark() {
   Reporter.printTestHeader(
     'Benchmark Suite',
     'Comprehensive performance benchmarking across various request rates'
   );
 
-  let server: Server;
+  let serverProcess: ReturnType<typeof Bun.spawn> | null = null;
   const client = createClient(CONFIG.baseUrl);
   const results: BenchmarkResult[] = [];
   let baselineMetrics: Metrics | undefined;
 
   try {
-    // Start test server
+    // Start test server in a separate process so it gets its own event loop
+    // and doesn't compete with benchmark workers for the same JS thread
     console.log('Starting test server...');
-    server = await testServer.serve({
-      port: CONFIG.port,
-      hostname: '0.0.0.0',
-      development: false,
-    });
+    serverProcess = Bun.spawn(
+      ['bun', 'run', new URL('./test-server-process.ts', import.meta.url).pathname],
+      {
+        env: { ...process.env, PORT: String(CONFIG.port) },
+        stdout: 'pipe',
+        stderr: 'inherit',
+      }
+    );
 
-    // Wait for server to be ready
-    await new Promise((resolve) => setTimeout(resolve, 1000));
+    // Wait until the server writes "READY"
+    const reader = serverProcess.stdout?.getReader();
+    const decoder = new TextDecoder();
+    let buf = '';
+    while (!buf.includes('READY')) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buf += decoder.decode(value);
+    }
+    reader.releaseLock();
+
+    await waitForServer(CONFIG.baseUrl);
 
     // Warmup phase
     console.log('\nRunning warmup phase...');
@@ -128,9 +153,14 @@ async function runBenchmark() {
         cpuMonitor.sample();
       };
 
-      // Schedule requests at target rate
-      const requestInterval = 1000 / targetRPS;
-      const requestTimer = setInterval(sendRequest, requestInterval);
+      // Use concurrent workers to avoid setInterval's ~1ms timer clamp
+      // Each worker fires requests back-to-back; concurrency drives throughput
+      const concurrency = Math.min(targetRPS, 5000);
+      const workers = Array.from({ length: concurrency }, async () => {
+        while (isRunning) {
+          await sendRequest();
+        }
+      });
 
       // Progress reporting
       const progressTimer = setInterval(() => {
@@ -147,20 +177,12 @@ async function runBenchmark() {
 
         if (elapsed >= CONFIG.benchmarkDuration) {
           isRunning = false;
-          clearInterval(requestTimer);
           clearInterval(progressTimer);
         }
       }, 500);
 
-      // Wait for benchmark completion
-      await new Promise((resolve) => {
-        const checkInterval = setInterval(() => {
-          if (!isRunning) {
-            clearInterval(checkInterval);
-            resolve(undefined);
-          }
-        }, 100);
-      });
+      // Wait for all workers to finish
+      await Promise.all(workers);
 
       console.log('\n'); // New line after progress bar
 
@@ -335,7 +357,7 @@ async function runBenchmark() {
     console.error('❌ Benchmark failed:', error);
     process.exit(1);
   } finally {
-    server?.stop();
+    serverProcess?.kill();
   }
 }
 

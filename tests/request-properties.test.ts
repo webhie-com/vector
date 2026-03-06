@@ -22,42 +22,39 @@ describe('VectorRequest Properties', () => {
     it('should access query parameters in all possible ways', async () => {
       let capturedRequest: VectorRequest | null = null;
 
-      router.route(
-        { method: 'GET', path: '/test', expose: true },
-        async (req: VectorRequest) => {
-          capturedRequest = req;
-          return new Response('ok');
-        }
-      );
+      router.route({ method: 'GET', path: '/test', expose: true }, async (req: VectorRequest) => {
+        capturedRequest = req;
+        return new Response('ok');
+      });
 
       // Test various query string formats
       const testCases = [
         {
           url: 'http://localhost/test?page=1&limit=10',
           expected: { page: '1', limit: '10' },
-          description: 'simple parameters'
+          description: 'simple parameters',
         },
         {
           url: 'http://localhost/test?filter=name&filter=email',
           expectedArray: ['name', 'email'],
           key: 'filter',
-          description: 'array parameters (same key multiple times)'
+          description: 'array parameters (same key multiple times)',
         },
         {
           url: 'http://localhost/test?search=hello%20world',
           expected: { search: 'hello world' },
-          description: 'URL encoded parameters'
+          description: 'URL encoded parameters',
         },
         {
           url: 'http://localhost/test?empty=',
           expected: { empty: '' },
-          description: 'empty parameter value'
+          description: 'empty parameter value',
         },
         {
           url: 'http://localhost/test',
           expected: {},
-          description: 'no query parameters'
-        }
+          description: 'no query parameters',
+        },
       ];
 
       for (const testCase of testCases) {
@@ -80,8 +77,8 @@ describe('VectorRequest Properties', () => {
             const queryValue = capturedRequest!.query[key];
             expect(
               typeof queryValue === 'string' ||
-              Array.isArray(queryValue) ||
-              queryValue === undefined
+                Array.isArray(queryValue) ||
+                queryValue === undefined
             ).toBe(true);
           }
         }
@@ -91,13 +88,10 @@ describe('VectorRequest Properties', () => {
     it('should handle query parameter edge cases', async () => {
       let capturedRequest: VectorRequest | null = null;
 
-      router.route(
-        { method: 'GET', path: '/test', expose: true },
-        async (req: VectorRequest) => {
-          capturedRequest = req;
-          return new Response('ok');
-        }
-      );
+      router.route({ method: 'GET', path: '/test', expose: true }, async (req: VectorRequest) => {
+        capturedRequest = req;
+        return new Response('ok');
+      });
 
       // Test special characters in query
       const request = new Request('http://localhost/test?special=%2B%3D%26&emoji=😀&chinese=你好');
@@ -113,21 +107,18 @@ describe('VectorRequest Properties', () => {
     it('should access headers in all possible ways', async () => {
       let capturedRequest: VectorRequest | null = null;
 
-      router.route(
-        { method: 'GET', path: '/test', expose: true },
-        async (req: VectorRequest) => {
-          capturedRequest = req;
-          return new Response('ok');
-        }
-      );
+      router.route({ method: 'GET', path: '/test', expose: true }, async (req: VectorRequest) => {
+        capturedRequest = req;
+        return new Response('ok');
+      });
 
       const headers = new Headers({
         'Content-Type': 'application/json',
-        'Authorization': 'Bearer token123',
+        Authorization: 'Bearer token123',
         'X-Custom-Header': 'custom-value',
-        'Accept': 'application/json, text/plain',
+        Accept: 'application/json, text/plain',
         'User-Agent': 'Test/1.0',
-        'Cookie': 'session=abc; theme=dark'
+        Cookie: 'session=abc; theme=dark',
       });
 
       const request = new Request('http://localhost/test', { headers });
@@ -175,13 +166,10 @@ describe('VectorRequest Properties', () => {
     it('should handle missing headers gracefully', async () => {
       let capturedRequest: VectorRequest | null = null;
 
-      router.route(
-        { method: 'GET', path: '/test', expose: true },
-        async (req: VectorRequest) => {
-          capturedRequest = req;
-          return new Response('ok');
-        }
-      );
+      router.route({ method: 'GET', path: '/test', expose: true }, async (req: VectorRequest) => {
+        capturedRequest = req;
+        return new Response('ok');
+      });
 
       const request = new Request('http://localhost/test');
       await router.handle(request);
@@ -196,16 +184,13 @@ describe('VectorRequest Properties', () => {
     it('should access cookies in all possible ways', async () => {
       let capturedRequest: VectorRequest | null = null;
 
-      router.route(
-        { method: 'GET', path: '/test', expose: true },
-        async (req: VectorRequest) => {
-          capturedRequest = req;
-          return new Response('ok');
-        }
-      );
+      router.route({ method: 'GET', path: '/test', expose: true }, async (req: VectorRequest) => {
+        capturedRequest = req;
+        return new Response('ok');
+      });
 
       const headers = new Headers({
-        'Cookie': 'sessionId=abc123; theme=dark; language=en; preferences=compact'
+        Cookie: 'sessionId=abc123; theme=dark; language=en; preferences=compact',
       });
 
       const request = new Request('http://localhost/test', { headers });
@@ -243,16 +228,13 @@ describe('VectorRequest Properties', () => {
     it('should handle cookies with special characters', async () => {
       let capturedRequest: VectorRequest | null = null;
 
-      router.route(
-        { method: 'GET', path: '/test', expose: true },
-        async (req: VectorRequest) => {
-          capturedRequest = req;
-          return new Response('ok');
-        }
-      );
+      router.route({ method: 'GET', path: '/test', expose: true }, async (req: VectorRequest) => {
+        capturedRequest = req;
+        return new Response('ok');
+      });
 
       const headers = new Headers({
-        'Cookie': 'encoded=hello%20world; special=a=b; quoted="value"; empty='
+        Cookie: 'encoded=hello%20world; special=a=b; quoted="value"; empty=',
       });
 
       const request = new Request('http://localhost/test', { headers });
@@ -261,20 +243,16 @@ describe('VectorRequest Properties', () => {
       expect(capturedRequest!.cookies?.encoded).toBe('hello%20world');
       expect(capturedRequest!.cookies?.special).toBe('a=b');
       expect(capturedRequest!.cookies?.quoted).toBe('"value"');
-      // The withCookies library doesn't handle empty values well
-      expect(capturedRequest!.cookies?.empty).toBeUndefined();
+      expect(capturedRequest!.cookies?.empty).toBe('');
     });
 
     it('should handle missing cookies gracefully', async () => {
       let capturedRequest: VectorRequest | null = null;
 
-      router.route(
-        { method: 'GET', path: '/test', expose: true },
-        async (req: VectorRequest) => {
-          capturedRequest = req;
-          return new Response('ok');
-        }
-      );
+      router.route({ method: 'GET', path: '/test', expose: true }, async (req: VectorRequest) => {
+        capturedRequest = req;
+        return new Response('ok');
+      });
 
       const request = new Request('http://localhost/test');
       await router.handle(request);
@@ -323,7 +301,7 @@ describe('VectorRequest Properties', () => {
         expect(Object.values(req.params)).toEqual(['123', '456']);
         expect(Object.entries(req.params)).toEqual([
           ['userId', '123'],
-          ['postId', '456']
+          ['postId', '456'],
         ]);
       }
     });
@@ -350,19 +328,16 @@ describe('VectorRequest Properties', () => {
     it('should access JSON content', async () => {
       let capturedRequest: VectorRequest | null = null;
 
-      router.route(
-        { method: 'POST', path: '/test', expose: true },
-        async (req: VectorRequest) => {
-          capturedRequest = req;
-          return new Response('ok');
-        }
-      );
+      router.route({ method: 'POST', path: '/test', expose: true }, async (req: VectorRequest) => {
+        capturedRequest = req;
+        return new Response('ok');
+      });
 
       const body = JSON.stringify({ name: 'John', age: 30, nested: { key: 'value' } });
       const request = new Request('http://localhost/test', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body
+        body,
       });
 
       await router.handle(request);
@@ -370,7 +345,7 @@ describe('VectorRequest Properties', () => {
       expect(capturedRequest!.content).toEqual({
         name: 'John',
         age: 30,
-        nested: { key: 'value' }
+        nested: { key: 'value' },
       });
 
       // Test accessing nested properties
@@ -381,18 +356,15 @@ describe('VectorRequest Properties', () => {
     it('should access form data content', async () => {
       let capturedRequest: VectorRequest | null = null;
 
-      router.route(
-        { method: 'POST', path: '/test', expose: true },
-        async (req: VectorRequest) => {
-          capturedRequest = req;
-          return new Response('ok');
-        }
-      );
+      router.route({ method: 'POST', path: '/test', expose: true }, async (req: VectorRequest) => {
+        capturedRequest = req;
+        return new Response('ok');
+      });
 
       const request = new Request('http://localhost/test', {
         method: 'POST',
         headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        body: 'name=Alice&email=alice@example.com&age=25'
+        body: 'name=Alice&email=alice@example.com&age=25',
       });
 
       await router.handle(request);
@@ -400,25 +372,22 @@ describe('VectorRequest Properties', () => {
       expect(capturedRequest!.content).toEqual({
         name: 'Alice',
         email: 'alice@example.com',
-        age: '25'
+        age: '25',
       });
     });
 
     it('should access plain text content', async () => {
       let capturedRequest: VectorRequest | null = null;
 
-      router.route(
-        { method: 'POST', path: '/test', expose: true },
-        async (req: VectorRequest) => {
-          capturedRequest = req;
-          return new Response('ok');
-        }
-      );
+      router.route({ method: 'POST', path: '/test', expose: true }, async (req: VectorRequest) => {
+        capturedRequest = req;
+        return new Response('ok');
+      });
 
       const request = new Request('http://localhost/test', {
         method: 'POST',
         headers: { 'Content-Type': 'text/plain' },
-        body: 'Hello World'
+        body: 'Hello World',
       });
 
       await router.handle(request);
@@ -442,7 +411,7 @@ describe('VectorRequest Properties', () => {
       const request = new Request('http://localhost/api/test?key=value', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ test: 'data' })
+        body: JSON.stringify({ test: 'data' }),
       });
 
       await router.handle(request);
@@ -477,15 +446,12 @@ describe('VectorRequest Properties', () => {
     it('should access startTime when set', async () => {
       let capturedRequest: VectorRequest | null = null;
 
-      router.route(
-        { method: 'GET', path: '/test', expose: true },
-        async (req: VectorRequest) => {
-          // Set startTime manually for testing
-          req.startTime = Date.now();
-          capturedRequest = req;
-          return new Response('ok');
-        }
-      );
+      router.route({ method: 'GET', path: '/test', expose: true }, async (req: VectorRequest) => {
+        // Set startTime manually for testing
+        req.startTime = Date.now();
+        capturedRequest = req;
+        return new Response('ok');
+      });
 
       const request = new Request('http://localhost/test');
       await router.handle(request);

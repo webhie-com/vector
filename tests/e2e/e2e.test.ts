@@ -95,10 +95,8 @@ describe('E2E Tests', () => {
       expect(response2.status).toBe(200);
       expect(response1.data).toEqual(response2.data);
 
-      // Cached response should be faster (allow some variance)
-      if (time1 > 5) {
-        expect(time2).toBeLessThan(time1);
-      }
+      // Cached response must be faster than at least 5ms baseline
+      expect(time2).toBeLessThan(Math.max(time1, 5));
     });
   });
 

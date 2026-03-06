@@ -29,28 +29,28 @@ export default async function cacheHandler(
     console.log(`Cache hit: ${key}`);
     return cached.data;
   }
-  
+
   // Cache miss - call factory function
   console.log(`Cache miss: ${key}`);
   const data = await factory();
-  
+
   // Store in cache with expiration
   cache.set(key, {
     data,
     expires: Date.now() + ttl * 1000,
   });
-  
+
   // Optional: Limit cache size
   if (cache.size > 1000) {
     // Remove oldest entries
     const entries = Array.from(cache.entries());
     entries.sort((a, b) => a[1].expires - b[1].expires);
-    
+
     // Remove first 100 entries
     for (let i = 0; i < 100; i++) {
       cache.delete(entries[i][0]);
     }
   }
-  
+
   return data;
 }

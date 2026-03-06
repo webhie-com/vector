@@ -1,32 +1,31 @@
-import { existsSync, promises as fs } from "node:fs";
-import { join, relative, resolve, sep } from "node:path";
-import type { GeneratedRoute } from "../types";
+import { existsSync, promises as fs } from 'node:fs';
+import { join, relative, resolve, sep } from 'node:path';
+import type { GeneratedRoute } from '../types';
 
 export class RouteScanner {
   private routesDir: string;
   private excludePatterns: string[];
   private static readonly DEFAULT_EXCLUDE_PATTERNS = [
-    "*.test.ts",
-    "*.test.js",
-    "*.test.tsx",
-    "*.test.jsx",
-    "*.spec.ts",
-    "*.spec.js",
-    "*.spec.tsx",
-    "*.spec.jsx",
-    "*.tests.ts",
-    "*.tests.js",
-    "**/__tests__/**",
-    "*.interface.ts",
-    "*.type.ts",
-    "*.d.ts",
+    '*.test.ts',
+    '*.test.js',
+    '*.test.tsx',
+    '*.test.jsx',
+    '*.spec.ts',
+    '*.spec.js',
+    '*.spec.tsx',
+    '*.spec.jsx',
+    '*.tests.ts',
+    '*.tests.js',
+    '**/__tests__/**',
+    '*.interface.ts',
+    '*.type.ts',
+    '*.d.ts',
   ];
 
-  constructor(routesDir = "./routes", excludePatterns?: string[]) {
+  constructor(routesDir = './routes', excludePatterns?: string[]) {
     // Always resolve from the current working directory (user's project)
     this.routesDir = resolve(process.cwd(), routesDir);
-    this.excludePatterns =
-      excludePatterns || RouteScanner.DEFAULT_EXCLUDE_PATTERNS;
+    this.excludePatterns = excludePatterns || RouteScanner.DEFAULT_EXCLUDE_PATTERNS;
   }
 
   async scan(): Promise<GeneratedRoute[]> {
@@ -40,7 +39,7 @@ export class RouteScanner {
     try {
       await this.scanDirectory(this.routesDir, routes);
     } catch (error) {
-      if ((error as any).code === "ENOENT") {
+      if ((error as any).code === 'ENOENT') {
         console.warn(`  ✗ Routes directory not accessible: ${this.routesDir}`);
         return [];
       }
@@ -56,15 +55,16 @@ export class RouteScanner {
     for (const pattern of this.excludePatterns) {
       // Convert glob pattern to regex
       const regexPattern = pattern
-        .replace(/\./g, "\\.") // Escape dots
-        .replace(/\*/g, "[^/]*") // * matches anything except /
-        .replace(/\*\*/g, ".*") // ** matches anything including /
-        .replace(/\?/g, "."); // ? matches single character
+        .replace(/\./g, '\\.') // Escape dots
+        .replace(/\*\*/g, '__GLOBSTAR__') // protect ** before * replacement
+        .replace(/\*/g, '[^/]*') // * matches anything except /
+        .replace(/__GLOBSTAR__/g, '.*') // ** matches anything including /
+        .replace(/\?/g, '.'); // ? matches single character
 
       const regex = new RegExp(`^${regexPattern}$`);
 
       // Check both the full relative path and just the filename
-      const filename = relativePath.split(sep).pop() || "";
+      const filename = relativePath.split(sep).pop() || '';
       if (regex.test(relativePath) || regex.test(filename)) {
         return true;
       }
@@ -73,11 +73,7 @@ export class RouteScanner {
     return false;
   }
 
-  private async scanDirectory(
-    dir: string,
-    routes: GeneratedRoute[],
-    basePath = ""
-  ): Promise<void> {
+  private async scanDirectory(dir: string, routes: GeneratedRoute[], basePath = ''): Promise<void> {
     const entries = await fs.readdir(dir);
 
     for (const entry of entries) {
@@ -87,32 +83,30 @@ export class RouteScanner {
       if (stats.isDirectory()) {
         const newBasePath = basePath ? `${basePath}/${entry}` : entry;
         await this.scanDirectory(fullPath, routes, newBasePath);
-      } else if (entry.endsWith(".ts") || entry.endsWith(".js")) {
+      } else if (entry.endsWith('.ts') || entry.endsWith('.js')) {
         // Skip excluded files (test files, etc.)
         if (this.isExcluded(fullPath)) {
           continue;
         }
         const routePath = relative(this.routesDir, fullPath)
-          .replace(/\.(ts|js)$/, "")
+          .replace(/\.(ts|js)$/, '')
           .split(sep)
-          .join("/");
+          .join('/');
 
         try {
           // Convert Windows paths to URLs for import
           const importPath =
-            process.platform === "win32"
-              ? `file:///${fullPath.replace(/\\/g, "/")}`
-              : fullPath;
+            process.platform === 'win32' ? `file:///${fullPath.replace(/\\/g, '/')}` : fullPath;
 
           const module = await import(importPath);
 
-          if (module.default && typeof module.default === "function") {
+          if (module.default && typeof module.default === 'function') {
             routes.push({
-              name: "default",
+              name: 'default',
               path: fullPath,
-              method: "GET",
+              method: 'GET',
               options: {
-                method: "GET",
+                method: 'GET',
                 path: `/${routePath}`,
                 expose: true,
               },
@@ -120,15 +114,15 @@ export class RouteScanner {
           }
 
           for (const [name, value] of Object.entries(module)) {
-            if (name === "default") continue;
+            if (name === 'default') continue;
 
             // Check for new RouteDefinition format
             if (
               value &&
-              typeof value === "object" &&
-              "entry" in value &&
-              "options" in value &&
-              "handler" in value
+              typeof value === 'object' &&
+              'entry' in value &&
+              'options' in value &&
+              'handler' in value
             ) {
               const routeDef = value as any;
               routes.push({
@@ -161,7 +155,7 @@ export class RouteScanner {
   }
 
   enableWatch(callback: () => void) {
-    if (typeof Bun !== "undefined" && Bun.env.NODE_ENV === "development") {
+    if (typeof Bun !== 'undefined' && Bun.env.NODE_ENV === 'development') {
       console.log(`Watching for route changes in ${this.routesDir}`);
 
       setInterval(async () => {

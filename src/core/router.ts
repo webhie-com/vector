@@ -1,5 +1,4 @@
 import type { RouteEntry } from 'itty-router';
-import { withCookies } from 'itty-router';
 import type { AuthManager } from '../auth/protected';
 import type { CacheManager } from '../cache/manager';
 import { APIError, createResponse } from '../http';
@@ -11,12 +10,14 @@ import type {
   VectorRequest,
   VectorTypes,
 } from '../types';
+import { buildRouteRegex } from '../utils/path';
 
 export class VectorRouter<TTypes extends VectorTypes = DefaultVectorTypes> {
   private middlewareManager: MiddlewareManager<TTypes>;
   private authManager: AuthManager<TTypes>;
   private cacheManager: CacheManager<TTypes>;
   private routes: RouteEntry[] = [];
+  private specificityCache: Map<string, number> = new Map();
 
   constructor(
     middlewareManager: MiddlewareManager<TTypes>,
@@ -29,6 +30,9 @@ export class VectorRouter<TTypes extends VectorTypes = DefaultVectorTypes> {
   }
 
   private getRouteSpecificity(path: string): number {
+    const cached = this.specificityCache.get(path);
+    if (cached !== undefined) return cached;
+
     const STATIC_SEGMENT_WEIGHT = 1000;
     const PARAM_SEGMENT_WEIGHT = 10;
     const WILDCARD_WEIGHT = 1;
@@ -53,6 +57,7 @@ export class VectorRouter<TTypes extends VectorTypes = DefaultVectorTypes> {
       score += EXACT_MATCH_BONUS;
     }
 
+    this.specificityCache.set(path, score);
     return score;
   }
 
@@ -104,14 +109,7 @@ export class VectorRouter<TTypes extends VectorTypes = DefaultVectorTypes> {
   }
 
   private createRouteRegex(path: string): RegExp {
-    return RegExp(
-      `^${path
-        .replace(/\/+(\/|$)/g, '$1')
-        .replace(/(\/?\.?):(\w+)\+/g, '($1(?<$2>*))')
-        .replace(/(\/?\.?):(\w+)/g, '($1(?<$2>[^$1/]+?))')
-        .replace(/\./g, '\\.')
-        .replace(/(\/?)\*/g, '($1.*)?')}/*$`
-    );
+    return buildRouteRegex(path);
   }
 
   private prepareRequest(
@@ -140,7 +138,7 @@ export class VectorRouter<TTypes extends VectorTypes = DefaultVectorTypes> {
 
     // Parse query parameters from URL if not already parsed
     if (!request.query && request.url) {
-      const url = new URL(request.url);
+      const url = (request as any)._parsedUrl ?? new URL(request.url);
       const query: Record<string, string | string[]> = {};
       for (const [key, value] of url.searchParams) {
         if (key in query) {
@@ -156,9 +154,31 @@ export class VectorRouter<TTypes extends VectorTypes = DefaultVectorTypes> {
       request.query = query;
     }
 
-    // Parse cookies if not already parsed
-    if (!request.cookies) {
-      withCookies(request as any);
+    // Lazy cookie parsing — only parse the Cookie header when first accessed
+    if (!Object.getOwnPropertyDescriptor(request, 'cookies')) {
+      Object.defineProperty(request, 'cookies', {
+        get() {
+          const cookieHeader = this.headers.get('cookie') ?? '';
+          const cookies: Record<string, string> = {};
+          if (cookieHeader) {
+            for (const pair of cookieHeader.split(';')) {
+              const idx = pair.indexOf('=');
+              if (idx > 0) {
+                cookies[pair.slice(0, idx).trim()] = pair.slice(idx + 1).trim();
+              }
+            }
+          }
+          Object.defineProperty(this, 'cookies', {
+            value: cookies,
+            writable: true,
+            configurable: true,
+            enumerable: true,
+          });
+          return cookies;
+        },
+        configurable: true,
+        enumerable: true,
+      });
     }
   }
 
@@ -169,7 +189,7 @@ export class VectorRouter<TTypes extends VectorTypes = DefaultVectorTypes> {
 
       // Prepare the request with common logic
       this.prepareRequest(vectorRequest, {
-        metadata: options.metadata
+        metadata: options.metadata,
       });
 
       request = vectorRequest;
@@ -225,7 +245,7 @@ export class VectorRouter<TTypes extends VectorTypes = DefaultVectorTypes> {
               _isResponse: true,
               body: await res.text(),
               status: res.status,
-              headers: Object.fromEntries(res.headers.entries())
+              headers: Object.fromEntries(res.headers.entries()),
             };
           }
           return res;
@@ -251,7 +271,7 @@ export class VectorRouter<TTypes extends VectorTypes = DefaultVectorTypes> {
         if (result && typeof result === 'object' && result._isResponse === true) {
           result = new Response(result.body, {
             status: result.status,
-            headers: result.headers
+            headers: result.headers,
           });
         }
 
@@ -284,12 +304,25 @@ export class VectorRouter<TTypes extends VectorTypes = DefaultVectorTypes> {
     this.sortRoutes(); // Sort routes after adding a new one
   }
 
+  bulkAddRoutes(entries: RouteEntry[]): void {
+    for (const entry of entries) {
+      this.routes.push(entry);
+    }
+    this.sortRoutes(); // Sort once after all routes are added — O(n log n) instead of O(n²)
+  }
+
   getRoutes(): RouteEntry[] {
     return this.routes;
   }
 
   async handle(request: Request): Promise<Response> {
-    const url = new URL(request.url);
+    let url: URL;
+    try {
+      url = new URL(request.url);
+    } catch {
+      return new Response(JSON.stringify({ error: 'Malformed request URL' }), { status: 400 });
+    }
+    (request as any)._parsedUrl = url;
     const pathname = url.pathname;
 
     for (const [method, regex, handlers, path] of this.routes) {
@@ -301,7 +334,7 @@ export class VectorRouter<TTypes extends VectorTypes = DefaultVectorTypes> {
           // Prepare the request with common logic
           this.prepareRequest(req, {
             params: match.groups || {},
-            route: path || pathname
+            route: path || pathname,
           });
 
           for (const handler of handlers) {
@@ -317,5 +350,6 @@ export class VectorRouter<TTypes extends VectorTypes = DefaultVectorTypes> {
 
   clearRoutes(): void {
     this.routes = [];
+    this.specificityCache.clear();
   }
 }

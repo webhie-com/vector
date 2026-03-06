@@ -47,7 +47,7 @@ export const cachedData = route(
       randomNumber: Math.random(),
       generatedAt: new Date().toISOString(),
     };
-    
+
     return data;
   }
 );
