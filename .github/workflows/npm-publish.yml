@@ -1,29 +1,19 @@
 name: npm publish
 
 on:
-  workflow_dispatch:
+  push:
+    tags:
+      - 'v*'
 
 permissions:
+  id-token: write  # Required for OIDC
   contents: read
 
 jobs:
   publish:
     runs-on: ubuntu-latest
     steps:
-      - name: Get latest release tag
-        id: latest_release
-        uses: actions/github-script@v7
-        with:
-          script: |
-            const release = await github.rest.repos.getLatestRelease({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-            });
-            core.setOutput('tag_name', release.data.tag_name);
-
       - uses: actions/checkout@v4
-        with:
-          ref: ${{ steps.latest_release.outputs.tag_name }}
 
       - uses: oven-sh/setup-bun@v2
         with:
@@ -45,5 +35,3 @@ jobs:
 
       - name: Publish to npm
         run: npm publish --access public
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
