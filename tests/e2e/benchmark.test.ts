@@ -10,12 +10,6 @@ const CONFIG = {
   baseUrl: 'http://localhost:3004',
   warmupRequests: 100,
   benchmarkDuration: 30000, // 30 seconds per benchmark
-<<<<<<< Updated upstream
-  targetRPS: [10, 50, 100, 500, 1000, 20000, 100000, 300000], // Different request rates to test
-=======
-<<<<<<< Updated upstream
-  targetRPS: [10, 50, 100, 200, 500], // Different request rates to test
-=======
   // Rate-limited runs: token bucket keeps actual ≈ target when server has capacity.
   // Stops at 1000 — anything higher saturates the JS client before the server.
   targetRPS: [10, 50, 100, 500, 1000],
@@ -24,9 +18,7 @@ const CONFIG = {
   // NOTE: The Bun JS client is single-threaded — beyond ~200-500 workers the event
   // loop saturates and throughput plateaus or degrades regardless of server capacity.
   // For true server limits use an external tool (wrk/k6) from a separate machine.
-  concurrencySweep: [10, 25, 50, 100, 200, 500, 1000, 2000, 5000],
->>>>>>> Stashed changes
->>>>>>> Stashed changes
+  concurrencySweep: [10, 25, 50, 100],
 };
 
 interface BenchmarkResult {
@@ -43,11 +35,6 @@ interface BenchmarkResult {
   };
 }
 
-<<<<<<< Updated upstream
-=======
-<<<<<<< Updated upstream
-=======
->>>>>>> Stashed changes
 // Token bucket rate limiter — shared across all workers in a benchmark run.
 // Workers call consume() before each request; if the bucket is empty they wait
 // until the next token arrives.  This ensures actual throughput tracks targetRPS
@@ -60,14 +47,10 @@ class TokenBucket {
 
   constructor(ratePerSecond: number) {
     this.ratePerMs = ratePerSecond / 1000;
-<<<<<<< Updated upstream
-    this.capacity = ratePerSecond; // burst up to 1s worth of tokens
-=======
     // Cap burst to 100 tokens so the bucket doesn't flood workers at startup.
     // Without this, a 20k-RPS bucket starts full and all 500 workers stampede
     // simultaneously before the rate limiter can pace them.
     this.capacity = Math.min(ratePerSecond, 100);
->>>>>>> Stashed changes
     this.tokens = this.capacity;
     this.lastRefill = Date.now();
   }
@@ -104,10 +87,6 @@ async function waitForServer(url: string, timeoutMs = 10000): Promise<void> {
   throw new Error(`Server at ${url} did not become ready within ${timeoutMs}ms`);
 }
 
-<<<<<<< Updated upstream
-=======
->>>>>>> Stashed changes
->>>>>>> Stashed changes
 async function runBenchmark() {
   Reporter.printTestHeader(
     'Benchmark Suite',
@@ -235,36 +214,18 @@ async function runBenchmark() {
         cpuMonitor.sample();
       };
 
-<<<<<<< Updated upstream
-      // Rate-limited workers: a shared token bucket paces the overall request rate
-      // to targetRPS. Concurrency is kept independent — enough workers to keep the
-      // pipeline full without overloading the bucket. When targetRPS exceeds server
-      // capacity the bucket drains and workers queue up, revealing actual saturation.
-      const limiter = new TokenBucket(targetRPS);
-      const concurrency = Math.min(Math.max(targetRPS, 1), 500);
-=======
-<<<<<<< Updated upstream
-      // Schedule requests at target rate
-      const requestInterval = 1000 / targetRPS;
-      const requestTimer = setInterval(sendRequest, requestInterval);
-=======
       // Rate-limited workers: a shared token bucket paces the overall request rate
       // to targetRPS. Concurrency is sized to keep the pipeline full — roughly
       // targetRPS × expected latency (1ms) — so we don't spawn 500 idle workers
       // when all we need is a handful.
       const limiter = new TokenBucket(targetRPS);
       const concurrency = Math.max(Math.ceil(targetRPS * 0.01), 2); // ~1% of RPS, min 2
->>>>>>> Stashed changes
       const workers = Array.from({ length: concurrency }, async () => {
         while (isRunning) {
           await limiter.consume();
           await sendRequest();
         }
       });
-<<<<<<< Updated upstream
-=======
->>>>>>> Stashed changes
->>>>>>> Stashed changes
 
       // Progress reporting
       const progressTimer = setInterval(() => {
@@ -349,7 +310,12 @@ async function runBenchmark() {
     const numCores = navigator.hardwareConcurrency || 4;
     const sweepDuration = 10000; // 10s per tier — enough to stabilise
     const sweepEndpoints = ['/health', '/api/products', '/api/products/1'];
-    const sweepResults: Array<{ concurrency: number; throughput: number; p95: number; errorRate: number }> = [];
+    const sweepResults: Array<{
+      concurrency: number;
+      throughput: number;
+      p95: number;
+      errorRate: number;
+    }> = [];
 
     console.log(`  Using ${numCores} CPU cores\n`);
 
@@ -384,14 +350,19 @@ async function runBenchmark() {
       // Aggregate across all workers
       const allTimes = workerResults.flatMap((r) => r.responseTimes).sort((a, b) => a - b);
       const total = workerResults.reduce((s, r) => s + r.total, 0);
-      const success = workerResults.reduce((s, r) => s + r.success, 0);
+      const _ = workerResults.reduce((s, r) => s + r.success, 0);
       const failed = workerResults.reduce((s, r) => s + r.failed, 0);
       const throughput = total / (sweepDuration / 1000);
       const errorRate = total > 0 ? (failed / total) * 100 : 0;
       const p95 = allTimes.length ? allTimes[Math.floor(allTimes.length * 0.95)] : 0;
       const p99 = allTimes.length ? allTimes[Math.floor(allTimes.length * 0.99)] : 0;
 
-      sweepResults.push({ concurrency: totalConcurrency, throughput, p95, errorRate });
+      sweepResults.push({
+        concurrency: totalConcurrency,
+        throughput,
+        p95,
+        errorRate,
+      });
 
       console.log(
         `  Throughput: ${throughput.toFixed(0)} req/s | P95: ${p95}ms | P99: ${p99}ms | Errors: ${errorRate.toFixed(1)}%`
@@ -402,7 +373,10 @@ async function runBenchmark() {
       }
     }
 
-    const peakSweep = sweepResults.reduce((best, r) => (r.throughput > best.throughput ? r : best), sweepResults[0]);
+    const peakSweep = sweepResults.reduce(
+      (best, r) => (r.throughput > best.throughput ? r : best),
+      sweepResults[0]
+    );
     console.log(
       `\nPeak: ${peakSweep.throughput.toFixed(0)} req/s at ${peakSweep.concurrency} connections (P95 ${peakSweep.p95}ms, ${peakSweep.errorRate.toFixed(1)}% errors)`
     );
