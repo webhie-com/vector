@@ -44,7 +44,6 @@ jobs:
       - name: Build package
         run: bun run build:lib
 
+      # Uses npm trusted publishing via GitHub OIDC; no npm token is required.
       - name: Publish to npm
         run: npm publish --access public
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
