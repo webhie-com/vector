@@ -117,7 +117,7 @@ export class VectorRouter<TTypes extends VectorTypes = DefaultVectorTypes> {
       }
     }
 
-    return STATIC_RESPONSES.NOT_FOUND.clone();
+    return STATIC_RESPONSES.NOT_FOUND.clone() as unknown as Response;
   }
 
   private prepareRequest(
@@ -195,7 +195,7 @@ export class VectorRouter<TTypes extends VectorTypes = DefaultVectorTypes> {
     const corsEntries = () => this.corsHeadersEntries;
 
     return async (request: Request) => {
-      const vectorRequest = request as VectorRequest<TTypes>;
+      const vectorRequest = request as unknown as VectorRequest<TTypes>;
 
       this.prepareRequest(vectorRequest, {
         route: routePath,

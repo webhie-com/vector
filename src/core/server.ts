@@ -69,7 +69,7 @@ export class VectorServer<TTypes extends VectorTypes = DefaultVectorTypes> {
         }
 
         // No route matched — return 404
-        return STATIC_RESPONSES.NOT_FOUND.clone();
+        return STATIC_RESPONSES.NOT_FOUND.clone() as unknown as Response;
       } catch (error) {
         console.error('Server error:', error);
         return new Response('Internal Server Error', { status: 500 });

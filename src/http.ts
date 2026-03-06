@@ -256,7 +256,7 @@ export function api<TTypes extends VectorTypes = DefaultVectorTypes>(
   } = options;
 
   return async (request: Request) => {
-    const req = request as VectorRequest<TTypes>;
+    const req = request as unknown as VectorRequest<TTypes>;
 
     if (!expose) {
       return APIError.forbidden('Forbidden');

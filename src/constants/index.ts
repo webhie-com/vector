@@ -92,13 +92,13 @@ export const HTTP_METHODS = {
   HEAD: 'HEAD',
 } as const;
 
-export const STATIC_RESPONSES = {
+export const STATIC_RESPONSES: { NOT_FOUND: Response; METHOD_NOT_ALLOWED: Response } = {
   NOT_FOUND: new Response(JSON.stringify({ error: true, message: 'Not Found', statusCode: 404 }), {
     status: 404,
     headers: { 'content-type': 'application/json' },
-  }),
+  }) as Response,
   METHOD_NOT_ALLOWED: new Response(
     JSON.stringify({ error: true, message: 'Method Not Allowed', statusCode: 405 }),
     { status: 405, headers: { 'content-type': 'application/json' } }
-  ),
+  ) as Response,
 };
