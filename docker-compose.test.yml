@@ -69,18 +69,6 @@ services:
     volumes:
       - ./benchmark-results:/app/benchmark-results
 
-  # Build + start matrix test (baked config + overrides for server.js and start command)
-  test-build-start:
-    build:
-      context: .
-      dockerfile: Dockerfile
-      target: e2e-test
-    environment:
-      NODE_ENV: test
-    command: ["sh", "tests/docker/build-start-smoke.sh"]
-    networks:
-      - test-network
-
   # Test server (shared by load and soak tests)
   test-server:
     build:

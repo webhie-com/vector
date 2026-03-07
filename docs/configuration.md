@@ -74,17 +74,12 @@ interface VectorConfigSchema {
 }
 ```
 
-## Build Serialization Note
+## Runtime Note
 
-`vector build` stores only serializable config values in built `server.js`.
+`dev` and `start` both load your config file (`vector.config.ts` by default, or `--config <path>`).
 
-Function-based fields are not baked:
-
-- `auth`
-- `cache`
-- `before`
-- `after`
-- function-valued `cors.origin`
+- `start` uses production mode (`NODE_ENV=production`).
+- Function-based handlers and middleware (`auth`, `cache`, `before`, `after`, function `cors.origin`) are available in both modes.
 
 ## Route Defaults
 

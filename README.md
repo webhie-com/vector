@@ -64,19 +64,17 @@ bun vector dev
 
 Your API will be available at `http://localhost:3000`.
 
-## Production Build and Start
+## Production Start
 
 ```bash
-bun vector build --config ./vector.config.ts --routes ./routes --path ./dist
-bun vector start --path ./dist --port 8080 --host 0.0.0.0
+bun vector start --config ./vector.config.ts --routes ./routes --port 8080 --host 0.0.0.0
 ```
 
 Notes:
 
-- `--config` and `--routes` are build-time inputs.
-- `start` runs built artifacts (`server.js` + `routes/`) from `--path` (default `./dist`).
-- `start` allows only runtime network overrides (`--port`, `--host`).
-- Build/start currently bakes only serializable config values. Function-based hooks (`auth`, `cache`, `before`, `after`, function `cors.origin`) are not baked into `server.js`.
+- `start` uses the same config and route options as `dev`.
+- `start` sets `NODE_ENV=production`.
+- File watching is only enabled for `dev`.
 
 ## Optional: Validation + OpenAPI
 
