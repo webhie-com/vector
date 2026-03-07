@@ -131,6 +131,10 @@ jobs:
         run: |
           docker compose -f docker-compose.test.yml run test-unit
 
+      - name: Run Docker build/start smoke tests
+        run: |
+          docker compose -f docker-compose.test.yml run --rm --build test-build-start
+
   build:
     name: Build Distribution
     runs-on: ubuntu-latest

@@ -42,7 +42,7 @@ interface VectorConfigSchema {
     | {
         enabled?: boolean;
         path?: string;
-        target?: 'openapi-3.0' | 'draft-2020-12' | 'draft-07' | string;
+        target?: "openapi-3.0" | "draft-2020-12" | "draft-07" | string;
         docs?:
           | boolean
           | {
@@ -58,13 +58,33 @@ interface VectorConfigSchema {
 
   // Handlers
   auth?: (request: Request) => Promise<unknown> | unknown;
-  cache?: (key: string, factory: () => Promise<unknown>, ttl: number) => Promise<unknown>;
+  cache?: (
+    key: string,
+    factory: () => Promise<unknown>,
+    ttl: number,
+  ) => Promise<unknown>;
 
   // Middleware
-  before?: Array<(request: Request) => Promise<Request | Response> | Request | Response>;
-  after?: Array<(response: Response, request: Request) => Promise<Response> | Response>;
+  before?: Array<
+    (request: Request) => Promise<Request | Response> | Request | Response
+  >;
+  after?: Array<
+    (response: Response, request: Request) => Promise<Response> | Response
+  >;
 }
 ```
+
+## Build Serialization Note
+
+`vector build` stores only serializable config values in built `server.js`.
+
+Function-based fields are not baked:
+
+- `auth`
+- `cache`
+- `before`
+- `after`
+- function-valued `cors.origin`
 
 ## Route Defaults
 
@@ -79,14 +99,14 @@ Example precedence:
 ## Example Configuration
 
 ```ts
-import type { VectorConfigSchema } from 'vector-framework';
+import type { VectorConfigSchema } from "vector-framework";
 
 const config: VectorConfigSchema = {
   port: Number(process.env.PORT ?? 3000),
-  hostname: '0.0.0.0',
-  development: process.env.NODE_ENV !== 'production',
-  routesDir: './routes',
-  routeExcludePatterns: ['*.test.ts', '*.spec.ts', '**/__tests__/**'],
+  hostname: "0.0.0.0",
+  development: process.env.NODE_ENV !== "production",
+  routesDir: "./routes",
+  routeExcludePatterns: ["*.test.ts", "*.spec.ts", "**/__tests__/**"],
   idleTimeout: 60,
 
   defaults: {
@@ -98,26 +118,26 @@ const config: VectorConfigSchema = {
   },
 
   cors: {
-    origin: ['https://app.example.com'],
+    origin: ["https://app.example.com"],
     credentials: true,
-    allowHeaders: ['Content-Type', 'Authorization'],
-    allowMethods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+    allowHeaders: ["Content-Type", "Authorization"],
+    allowMethods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
   },
 
   openapi: {
-    enabled: process.env.NODE_ENV !== 'production',
-    path: '/openapi.json',
+    enabled: process.env.NODE_ENV !== "production",
+    path: "/openapi.json",
     docs: false,
     info: {
-      title: 'My API',
-      version: '1.0.0',
+      title: "My API",
+      version: "1.0.0",
     },
   },
 
   auth: async (request) => {
-    const token = request.headers.get('Authorization')?.replace('Bearer ', '');
-    if (!token) throw new Error('Unauthorized');
-    return { id: 'user-1', email: 'user@example.com' };
+    const token = request.headers.get("Authorization")?.replace("Bearer ", "");
+    if (!token) throw new Error("Unauthorized");
+    return { id: "user-1", email: "user@example.com" };
   },
 
   cache: async (key, factory, ttl) => {
@@ -138,7 +158,7 @@ const config: VectorConfigSchema = {
   after: [
     async (response, request) => {
       const start = (request as any).startTime ?? Date.now();
-      response.headers.set('x-response-time', `${Date.now() - start}ms`);
+      response.headers.set("x-response-time", `${Date.now() - start}ms`);
       return response;
     },
   ],

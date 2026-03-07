@@ -64,11 +64,38 @@ bun vector dev
 
 Your API will be available at `http://localhost:3000`.
 
+## Production Build and Start
+
+```bash
+bun vector build --config ./vector.config.ts --routes ./routes --path ./dist
+bun vector start --path ./dist --port 8080 --host 0.0.0.0
+```
+
+Notes:
+
+- `--config` and `--routes` are build-time inputs.
+- `start` runs built artifacts (`server.js` + `routes/`) from `--path` (default `./dist`).
+- `start` allows only runtime network overrides (`--port`, `--host`).
+- Build/start currently bakes only serializable config values. Function-based hooks (`auth`, `cache`, `before`, `after`, function `cors.origin`) are not baked into `server.js`.
+
 ## Optional: Validation + OpenAPI
 
 ```bash
 bun add -d zod
 ```
+
+Vector is not tied to Zod. It supports any validation library that implements the
+`StandardSchemaV1` interface (`~standard` v1).
+
+Common compatible choices include:
+
+- Zod (v4+)
+- Valibot
+- ArkType
+
+For OpenAPI schema conversion, your library also needs `StandardJSONSchemaV1`
+(`~standard.jsonSchema.input/output`). If those converters are missing, runtime
+validation still works, but schema conversion is skipped.
 
 ```ts
 import { route } from "vector-framework";
@@ -121,6 +148,8 @@ Start here for deeper guides:
 - [examples/routes/health.ts](examples/routes/health.ts)
 - [examples/routes/events.ts](examples/routes/events.ts)
 - [examples/routes/commerce.ts](examples/routes/commerce.ts)
+- [tests/e2e/test-routes.ts](tests/e2e/test-routes.ts) (broader endpoint patterns)
+- [tests/e2e/test-zod-routes.ts](tests/e2e/test-zod-routes.ts) (Zod + I/O validation flows)
 
 ## Contributing
 

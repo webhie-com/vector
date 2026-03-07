@@ -8,7 +8,19 @@ Vector uses standards-based schema interfaces.
 - OpenAPI conversion is attempted when schemas also expose `StandardJSONSchemaV1`
 - No framework-specific adapters are required
 
-Libraries like Zod, Valibot, and ArkType are usable when they expose the standard interfaces.
+Vector checks for the standard interface at runtime:
+
+- `schema['~standard'].version === 1`
+- `schema['~standard'].validate(...)`
+
+For OpenAPI conversion, it also needs:
+
+- `schema['~standard'].jsonSchema.input(...)`
+- `schema['~standard'].jsonSchema.output(...)`
+
+If JSON Schema converters are not present, validation still runs, but OpenAPI schema conversion is skipped.
+
+Libraries like Zod, Valibot, and ArkType are usable when the version you use exposes these standard interfaces.
 
 ## Input Validation Behavior
 
@@ -71,13 +83,10 @@ const Input = z.object({
   body: z.object({ name: z.string().min(1) }),
 });
 
+const UpdateUserSchema = { input: Input };
+
 export const updateUser = route(
-  {
-    method: "PUT",
-    path: "/users/:id",
-    expose: true,
-    schema: { input: Input },
-  },
+  { method: "PUT", path: "/users/:id", schema: UpdateUserSchema },
   async (req) => {
     return { id: req.params.id, name: req.content.name };
   },

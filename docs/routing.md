@@ -5,17 +5,13 @@ Use `route()` to define endpoints in route files.
 ## Route Definition
 
 ```ts
-import { route } from 'vector-framework';
+import { route } from "vector-framework";
 
 export const getUser = route(
-  {
-    method: 'GET',
-    path: '/users/:id',
-    expose: true,
-  },
+  { method: "GET", path: "/users/:id" },
   async (req) => {
     return { id: req.params.id };
-  }
+  },
 );
 ```
 
@@ -35,7 +31,9 @@ interface RouteOptions {
   metadata?: unknown;
   schema?: {
     input?: StandardSchemaV1;
-    output?: Record<number | `${number}` | 'default', StandardSchemaV1> | StandardSchemaV1;
+    output?:
+      | Record<number | `${number}` | "default", StandardSchemaV1>
+      | StandardSchemaV1;
   };
 }
 ```
