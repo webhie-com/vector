@@ -19,6 +19,8 @@ export class MiddlewareManager<TTypes extends VectorTypes = DefaultVectorTypes> 
   }
 
   async executeBefore(request: VectorRequest<TTypes>): Promise<VectorRequest<TTypes> | Response> {
+    if (this.beforeHandlers.length === 0) return request;
+
     let currentRequest = request;
 
     for (const handler of this.beforeHandlers) {
@@ -35,6 +37,8 @@ export class MiddlewareManager<TTypes extends VectorTypes = DefaultVectorTypes> 
   }
 
   async executeFinally(response: Response, request: VectorRequest<TTypes>): Promise<Response> {
+    if (this.finallyHandlers.length === 0) return response;
+
     let currentResponse = response;
 
     for (const handler of this.finallyHandlers) {

@@ -91,3 +91,10 @@ export const HTTP_METHODS = {
   OPTIONS: 'OPTIONS',
   HEAD: 'HEAD',
 } as const;
+
+export const STATIC_RESPONSES: { NOT_FOUND: Response } = {
+  NOT_FOUND: new Response(JSON.stringify({ error: true, message: 'Not Found', statusCode: 404 }), {
+    status: 404,
+    headers: { 'content-type': 'application/json' },
+  }) as Response,
+};

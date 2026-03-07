@@ -132,13 +132,7 @@ export class CacheManager<TTypes extends VectorTypes = DefaultVectorTypes> {
 
   generateKey(request: Request & { _parsedUrl?: URL }, options?: { authUser?: any }): string {
     const url = request._parsedUrl ?? new URL(request.url);
-    const parts = [
-      request.method,
-      url.pathname,
-      url.search,
-      options?.authUser?.id != null ? String(options.authUser.id) : 'anonymous',
-    ];
-
-    return parts.join(':');
+    const userId = options?.authUser?.id != null ? String(options.authUser.id) : 'anonymous';
+    return `${request.method}:${url.pathname}:${url.search}:${userId}`;
   }
 }
