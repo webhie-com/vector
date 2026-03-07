@@ -76,4 +76,31 @@ describe('OpenAPI server endpoints', () => {
     expect(html).toContain('id="sidebar-nav"');
     expect(html).toContain('/openapi.json');
   });
+
+  it('keeps user /docs route in OpenAPI spec when docs UI is disabled', async () => {
+    const router = makeRouter();
+    router.route({ method: 'GET', path: '/docs', expose: true }, async () => ({ ok: true }));
+
+    const server = new VectorServer(router, {
+      development: true,
+      openapi: {
+        enabled: true,
+        path: '/openapi.json',
+        docs: {
+          enabled: false,
+          path: '/docs',
+        },
+      },
+    });
+
+    const openapiResponse = (server as any).tryHandleOpenAPIRequest(
+      new Request('http://localhost/openapi.json')
+    ) as Response;
+
+    const spec = await openapiResponse.json();
+    expect(spec.paths['/docs']).toBeDefined();
+
+    const docsResponse = (server as any).tryHandleOpenAPIRequest(new Request('http://localhost/docs'));
+    expect(docsResponse).toBeNull();
+  });
 });

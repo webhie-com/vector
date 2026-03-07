@@ -76,11 +76,6 @@ export class Vector<TTypes extends VectorTypes = DefaultVectorTypes> {
   async startServer(config?: VectorConfig<TTypes>): Promise<Server> {
     this.config = { ...this.config, ...config };
     const routeDefaults = { ...this.config.defaults?.route };
-    // Legacy compatibility: keep authByDefault as a fallback alias.
-    // Explicit defaults.route.auth always wins if provided.
-    if (this.config.authByDefault === true && routeDefaults.auth === undefined) {
-      routeDefaults.auth = true;
-    }
     this.router.setRouteBooleanDefaults(routeDefaults);
 
     // Clear previous middleware to avoid accumulation across multiple starts

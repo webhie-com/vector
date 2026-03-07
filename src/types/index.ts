@@ -140,7 +140,6 @@ export interface VectorConfig<TTypes extends VectorTypes = DefaultVectorTypes> {
   routeExcludePatterns?: string[];
   autoDiscover?: boolean;
   idleTimeout?: number;
-  authByDefault?: boolean;
   defaults?: VectorDefaults;
   openapi?: OpenAPIOptions | boolean;
 }
@@ -155,7 +154,6 @@ export interface VectorConfigSchema<TTypes extends VectorTypes = DefaultVectorTy
   routesDir?: string;
   routeExcludePatterns?: string[];
   idleTimeout?: number;
-  authByDefault?: boolean;
   defaults?: VectorDefaults;
 
   // Middleware functions

@@ -569,10 +569,11 @@ export function renderOpenAPIDocsHtml(spec: Record<string, unknown>, openapiPath
       if (!params.length) return "";
       let rows = "";
       for (const p of params) {
-        const type = (p.schema && p.schema.type) || "unknown";
-        rows += '<div class="py-2 flex justify-between border-b border-light-border/50 dark:border-dark-border/50"><div><code class="text-sm font-mono">' + p.name + '</code><span class="text-xs text-brand ml-2">' + (p.required ? "required" : "optional") + '</span></div><span class="text-xs font-mono opacity-60">' + type + '</span></div>';
+        const type = escapeHtml((p.schema && p.schema.type) || "unknown");
+        const name = escapeHtml(p.name || "");
+        rows += '<div class="py-2 flex justify-between border-b border-light-border/50 dark:border-dark-border/50"><div><code class="text-sm font-mono">' + name + '</code><span class="text-xs text-brand ml-2">' + (p.required ? "required" : "optional") + '</span></div><span class="text-xs font-mono opacity-60">' + type + '</span></div>';
       }
-      return '<div><h3 class="text-sm font-semibold mb-3 flex items-center border-b border-light-border dark:border-dark-border pb-2">' + title + "</h3>" + rows + "</div>";
+      return '<div><h3 class="text-sm font-semibold mb-3 flex items-center border-b border-light-border dark:border-dark-border pb-2">' + escapeHtml(title) + "</h3>" + rows + "</div>";
     }
 
     function getSchemaTypeLabel(schema) {

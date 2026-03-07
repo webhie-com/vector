@@ -102,7 +102,9 @@ export class VectorServer<TTypes extends VectorTypes = DefaultVectorTypes> {
   }
 
   private isDocsReservedPath(path: string): boolean {
-    return path === this.openapiConfig.path || path === this.openapiConfig.docs.path;
+    return (
+      path === this.openapiConfig.path || (this.openapiConfig.docs.enabled && path === this.openapiConfig.docs.path)
+    );
   }
 
   private getOpenAPIDocument(): Record<string, unknown> {

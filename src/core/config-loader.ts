@@ -63,7 +63,6 @@ export class ConfigLoader<TTypes extends VectorTypes = DefaultVectorTypes> {
       config.development = this.config.development;
       config.routesDir = this.config.routesDir || './routes';
       config.idleTimeout = this.config.idleTimeout;
-      config.authByDefault = this.config.authByDefault;
       config.defaults = this.config.defaults;
       config.openapi = this.config.openapi;
     }

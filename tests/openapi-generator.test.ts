@@ -249,4 +249,103 @@ describe('OpenAPI generator', () => {
     const paths = result.document.paths as Record<string, any>;
     expect(paths['/admin/users'].get.tags).toEqual(['administration']);
   });
+
+  it('omits content for no-body response statuses', () => {
+    const outputSchema = schemaWithJson(
+      { type: 'object' },
+      {
+        type: 'object',
+        properties: {
+          ok: { type: 'boolean' },
+        },
+      }
+    );
+
+    const routes: RegisteredRouteDefinition[] = [
+      {
+        method: 'DELETE',
+        path: '/users/:id',
+        options: {
+          method: 'DELETE',
+          path: '/users/:id',
+          expose: true,
+          schema: {
+            output: {
+              200: outputSchema as any,
+              204: outputSchema as any,
+              205: outputSchema as any,
+              304: outputSchema as any,
+            },
+          },
+        },
+      },
+    ];
+
+    const result = generateOpenAPIDocument(routes, {
+      target: 'openapi-3.0',
+    });
+
+    const responses = (result.document.paths as Record<string, any>)['/users/{id}'].delete.responses;
+    expect(responses['200'].content['application/json'].schema).toEqual(expect.objectContaining({ type: 'object' }));
+    expect(responses['204'].description).toBe('No Content');
+    expect(responses['204'].content).toBeUndefined();
+    expect(responses['205'].description).toBe('Reset Content');
+    expect(responses['205'].content).toBeUndefined();
+    expect(responses['304'].description).toBe('Not Modified');
+    expect(responses['304'].content).toBeUndefined();
+  });
+
+  it('normalizes greedy and wildcard paths to OpenAPI templates', () => {
+    const routes: RegisteredRouteDefinition[] = [
+      {
+        method: 'GET',
+        path: '/files/:path+',
+        options: {
+          method: 'GET',
+          path: '/files/:path+',
+          expose: true,
+        },
+      },
+      {
+        method: 'GET',
+        path: '/api/*/users',
+        options: {
+          method: 'GET',
+          path: '/api/*/users',
+          expose: true,
+        },
+      },
+      {
+        method: 'GET',
+        path: '/assets/*/*',
+        options: {
+          method: 'GET',
+          path: '/assets/*/*',
+          expose: true,
+        },
+      },
+    ];
+
+    const result = generateOpenAPIDocument(routes, {
+      target: 'openapi-3.0',
+    });
+
+    const paths = result.document.paths as Record<string, any>;
+    expect(paths['/files/{path}']).toBeDefined();
+    expect(paths['/api/{wildcard}/users']).toBeDefined();
+    expect(paths['/assets/{wildcard}/{wildcard2}']).toBeDefined();
+
+    expect(paths['/files/{path}'].get.parameters).toEqual(
+      expect.arrayContaining([expect.objectContaining({ name: 'path', in: 'path', required: true })])
+    );
+    expect(paths['/api/{wildcard}/users'].get.parameters).toEqual(
+      expect.arrayContaining([expect.objectContaining({ name: 'wildcard', in: 'path', required: true })])
+    );
+    expect(paths['/assets/{wildcard}/{wildcard2}'].get.parameters).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ name: 'wildcard', in: 'path', required: true }),
+        expect.objectContaining({ name: 'wildcard2', in: 'path', required: true }),
+      ])
+    );
+  });
 });

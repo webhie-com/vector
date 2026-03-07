@@ -26,8 +26,41 @@ function isJSONSchemaCapable(schema: unknown): schema is StandardJSONSchemaCapab
   );
 }
 
+function normalizeRoutePathForOpenAPI(path: string): { openapiPath: string; pathParamNames: string[] } {
+  let wildcardCount = 0;
+  const pathParamNames: string[] = [];
+
+  const segments = path.split('/').map((segment) => {
+    const greedyParamMatch = /^:([A-Za-z0-9_]+)\+$/.exec(segment);
+    if (greedyParamMatch?.[1]) {
+      pathParamNames.push(greedyParamMatch[1]);
+      return `{${greedyParamMatch[1]}}`;
+    }
+
+    const paramMatch = /^:([A-Za-z0-9_]+)$/.exec(segment);
+    if (paramMatch?.[1]) {
+      pathParamNames.push(paramMatch[1]);
+      return `{${paramMatch[1]}}`;
+    }
+
+    if (segment === '*') {
+      wildcardCount += 1;
+      const wildcardParamName = wildcardCount === 1 ? 'wildcard' : `wildcard${wildcardCount}`;
+      pathParamNames.push(wildcardParamName);
+      return `{${wildcardParamName}}`;
+    }
+
+    return segment;
+  });
+
+  return {
+    openapiPath: segments.join('/'),
+    pathParamNames,
+  };
+}
+
 function toOpenAPIPath(path: string): string {
-  return path.replace(/:([A-Za-z0-9_]+)/g, '{$1}');
+  return normalizeRoutePathForOpenAPI(path).openapiPath;
 }
 
 function createOperationId(method: string, path: string): string {
@@ -49,12 +82,46 @@ function inferTagFromPath(path: string): string {
 }
 
 function extractPathParamNames(path: string): string[] {
-  const names: string[] = [];
-  const matches = path.matchAll(/:([A-Za-z0-9_]+)/g);
-  for (const match of matches) {
-    if (match[1]) names.push(match[1]);
+  return normalizeRoutePathForOpenAPI(path).pathParamNames;
+}
+
+function addMissingPathParameters(operation: Record<string, any>, routePath: string): void {
+  const existingPathNames = new Set(
+    (operation.parameters || []).filter((p: any) => p.in === 'path').map((p: any) => String(p.name))
+  );
+
+  for (const pathName of extractPathParamNames(routePath)) {
+    if (existingPathNames.has(pathName)) continue;
+
+    (operation.parameters ||= []).push({
+      name: pathName,
+      in: 'path',
+      required: true,
+      schema: { type: 'string' },
+    });
   }
-  return names;
+}
+
+function isNoBodyResponseStatus(status: string): boolean {
+  const numericStatus = Number(status);
+  if (!Number.isInteger(numericStatus)) return false;
+  return (
+    (numericStatus >= 100 && numericStatus < 200) ||
+    numericStatus === 204 ||
+    numericStatus === 205 ||
+    numericStatus === 304
+  );
+}
+
+function getResponseDescription(status: string): string {
+  if (status === '204') return 'No Content';
+  if (status === '205') return 'Reset Content';
+  if (status === '304') return 'Not Modified';
+  const numericStatus = Number(status);
+  if (Number.isInteger(numericStatus) && numericStatus >= 100 && numericStatus < 200) {
+    return 'Informational';
+  }
+  return 'OK';
 }
 
 function convertInputSchema(
@@ -106,11 +173,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return !!value && typeof value === 'object' && !Array.isArray(value);
 }
 
-function addStructuredInputToOperation(
-  operation: Record<string, any>,
-  routePath: string,
-  inputJSONSchema: JsonSchema
-): void {
+function addStructuredInputToOperation(operation: Record<string, any>, inputJSONSchema: JsonSchema): void {
   if (!isRecord(inputJSONSchema)) return;
   if (inputJSONSchema.type !== 'object' || !isRecord(inputJSONSchema.properties)) {
     operation.requestBody = {
@@ -178,20 +241,6 @@ function addStructuredInputToOperation(
       },
     };
   }
-
-  const existingPathNames = new Set(
-    (operation.parameters || []).filter((p: any) => p.in === 'path').map((p: any) => String(p.name))
-  );
-  for (const pathName of extractPathParamNames(routePath)) {
-    if (!existingPathNames.has(pathName)) {
-      (operation.parameters ||= []).push({
-        name: pathName,
-        in: 'path',
-        required: true,
-        schema: { type: 'string' },
-      });
-    }
-  }
 }
 
 function addOutputSchemasToOperation(
@@ -232,10 +281,11 @@ function addOutputSchemasToOperation(
     for (const [statusCode, schema] of Object.entries(output as Record<string, unknown>)) {
       const status = String(statusCode);
       const outputSchema = convertOutputSchema(routePath, status, schema, target, warnings);
+      const description = getResponseDescription(status);
 
-      if (outputSchema) {
+      if (outputSchema && !isNoBodyResponseStatus(status)) {
         responses[status] = {
-          description: status === '204' ? 'No Content' : 'OK',
+          description,
           content: {
             'application/json': {
               schema: outputSchema,
@@ -244,7 +294,7 @@ function addOutputSchemasToOperation(
         };
       } else {
         responses[status] = {
-          description: status === '204' ? 'No Content' : 'OK',
+          description,
         };
       }
     }
@@ -280,8 +330,9 @@ export function generateOpenAPIDocument(
     const inputJSONSchema = convertInputSchema(route.path, route.options.schema?.input, options.target, warnings);
 
     if (inputJSONSchema) {
-      addStructuredInputToOperation(operation, route.path, inputJSONSchema);
+      addStructuredInputToOperation(operation, inputJSONSchema);
     }
+    addMissingPathParameters(operation, route.path);
 
     addOutputSchemasToOperation(operation, route.path, route.options.schema || {}, options.target, warnings);
 
