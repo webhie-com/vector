@@ -45,6 +45,7 @@ export type AuthUser = DefaultAuthUser;
 export type BunRouteHandler = (req: Request) => Response | Promise<Response>;
 export type BunMethodMap = Record<string, BunRouteHandler>;
 export type BunRouteTable = Record<string, BunMethodMap | Response>;
+export type LegacyRouteEntry = [string, RegExp, [BunRouteHandler, ...BunRouteHandler[]], string?];
 
 export interface VectorRequest<TTypes extends VectorTypes = DefaultVectorTypes>
   extends Omit<Request, 'json' | 'text' | 'formData' | 'arrayBuffer' | 'blob'> {

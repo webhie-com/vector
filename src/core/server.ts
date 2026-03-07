@@ -8,7 +8,10 @@ export class VectorServer<TTypes extends VectorTypes = DefaultVectorTypes> {
   private server: Server | null = null;
   private router: VectorRouter<TTypes>;
   private config: VectorConfig<TTypes>;
-  private corsHandler: any;
+  private corsHandler: {
+    preflight: (request: Request) => Response;
+    corsify: (response: Response, request: Request) => Response;
+  } | null = null;
   private corsHeadersEntries: [string, string][] | null = null;
 
   constructor(router: VectorRouter<TTypes>, config: VectorConfig<TTypes>) {
@@ -20,8 +23,11 @@ export class VectorServer<TTypes extends VectorTypes = DefaultVectorTypes> {
       const { preflight, corsify } = cors(opts);
       this.corsHandler = { preflight, corsify };
 
-      // Pre-build static CORS headers when origin is a fixed string.
-      if (typeof opts.origin === 'string') {
+      // Pre-build static CORS headers when origin does not require per-request reflection.
+      const canUseStaticCorsHeaders =
+        typeof opts.origin === 'string' && (opts.origin !== '*' || !opts.credentials);
+
+      if (canUseStaticCorsHeaders) {
         const corsHeaders: Record<string, string> = {
           'access-control-allow-origin': opts.origin,
           'access-control-allow-methods': opts.allowMethods,
@@ -35,8 +41,9 @@ export class VectorServer<TTypes extends VectorTypes = DefaultVectorTypes> {
         this.corsHeadersEntries = Object.entries(corsHeaders);
       }
 
-      // Pass CORS headers to router so wrapHandler can apply them per-response
+      // Pass CORS behavior to router so matched routes also receive CORS headers.
       this.router.setCorsHeaders(this.corsHeadersEntries);
+      this.router.setCorsHandler(this.corsHeadersEntries ? null : this.corsHandler.corsify);
     }
   }
 
@@ -57,6 +64,21 @@ export class VectorServer<TTypes extends VectorTypes = DefaultVectorTypes> {
     };
   }
 
+  private applyCors(response: Response, request: Request): Response {
+    if (this.corsHeadersEntries) {
+      for (const [k, v] of this.corsHeadersEntries) {
+        response.headers.set(k, v);
+      }
+      return response;
+    }
+
+    if (this.corsHandler) {
+      return this.corsHandler.corsify(response, request);
+    }
+
+    return response;
+  }
+
   async start(): Promise<Server> {
     const port = this.config.port ?? 3000;
     const hostname = this.config.hostname || 'localhost';
@@ -69,10 +91,10 @@ export class VectorServer<TTypes extends VectorTypes = DefaultVectorTypes> {
         }
 
         // No route matched — return 404
-        return STATIC_RESPONSES.NOT_FOUND.clone() as unknown as Response;
+        return this.applyCors(STATIC_RESPONSES.NOT_FOUND.clone() as unknown as Response, request);
       } catch (error) {
         console.error('Server error:', error);
-        return new Response('Internal Server Error', { status: 500 });
+        return this.applyCors(new Response('Internal Server Error', { status: 500 }), request);
       }
     };
 

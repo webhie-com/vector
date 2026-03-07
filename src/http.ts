@@ -23,8 +23,6 @@ export function route<TTypes extends VectorTypes = DefaultVectorTypes>(
   options: ExtendedApiOptions,
   fn: (req: VectorRequest<TTypes>) => Promise<unknown>
 ): RouteDefinition<TTypes> {
-  const handler = api(options, fn);
-
   return {
     entry: {
       method: options.method.toUpperCase(),
@@ -32,8 +30,7 @@ export function route<TTypes extends VectorTypes = DefaultVectorTypes>(
     },
     options,
     handler: fn,
-    _handler: handler,
-  } as any;
+  };
 }
 
 function stringifyData(data: unknown): string {
@@ -41,7 +38,7 @@ function stringifyData(data: unknown): string {
   try {
     return JSON.stringify(val);
   } catch (e) {
-    if (e instanceof TypeError) {
+    if (e instanceof TypeError && /\bbigint\b/i.test(e.message)) {
       return JSON.stringify(val, (_key, value) =>
         typeof value === 'bigint' ? value.toString() : value
       );

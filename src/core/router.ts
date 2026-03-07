@@ -8,18 +8,27 @@ import type {
   BunMethodMap,
   BunRouteTable,
   DefaultVectorTypes,
+  LegacyRouteEntry,
   RouteHandler,
   RouteOptions,
   VectorRequest,
   VectorTypes,
 } from '../types';
 
+interface RouteMatcher {
+  path: string;
+  regex: RegExp;
+  specificity: number;
+}
+
 export class VectorRouter<TTypes extends VectorTypes = DefaultVectorTypes> {
   private middlewareManager: MiddlewareManager<TTypes>;
   private authManager: AuthManager<TTypes>;
   private cacheManager: CacheManager<TTypes>;
-  private routeTable: BunRouteTable = {};
+  private routeTable: BunRouteTable = Object.create(null) as BunRouteTable;
+  private routeMatchers: RouteMatcher[] = [];
   private corsHeadersEntries: [string, string][] | null = null;
+  private corsHandler: ((response: Response, request: Request) => Response) | null = null;
 
   constructor(
     middlewareManager: MiddlewareManager<TTypes>,
@@ -35,35 +44,40 @@ export class VectorRouter<TTypes extends VectorTypes = DefaultVectorTypes> {
     this.corsHeadersEntries = entries;
   }
 
+  setCorsHandler(handler: ((response: Response, request: Request) => Response) | null): void {
+    this.corsHandler = handler;
+  }
+
   route(options: RouteOptions<TTypes>, handler: RouteHandler<TTypes>): void {
     const method = options.method.toUpperCase();
     const path = options.path;
     const wrappedHandler = this.wrapHandler(options, handler);
-
-    if (!this.routeTable[path]) {
-      this.routeTable[path] = {};
-    }
-    (this.routeTable[path] as BunMethodMap)[method] = wrappedHandler;
+    const methodMap = this.getOrCreateMethodMap(path);
+    methodMap[method] = wrappedHandler;
   }
 
-  addRoute(entry: [string, RegExp, any[], string?]): void {
+  addRoute(entry: LegacyRouteEntry): void {
     const [method, , handlers, path] = entry;
     if (!path) return;
-
-    if (!this.routeTable[path]) {
-      this.routeTable[path] = {};
-    }
-    (this.routeTable[path] as BunMethodMap)[method.toUpperCase()] = handlers[0];
+    const methodMap = this.getOrCreateMethodMap(path);
+    methodMap[method.toUpperCase()] = handlers[0];
   }
 
-  bulkAddRoutes(entries: [string, RegExp, any[], string?][]): void {
+  bulkAddRoutes(entries: LegacyRouteEntry[]): void {
     for (const entry of entries) {
       this.addRoute(entry);
     }
   }
 
   addStaticRoute(path: string, response: Response): void {
+    const existing = this.routeTable[path];
+    if (existing && !(existing instanceof Response)) {
+      throw new Error(
+        `Cannot register static route for path "${path}" because method routes already exist.`
+      );
+    }
     this.routeTable[path] = response;
+    this.removeRouteMatcher(path);
   }
 
   getRouteTable(): BunRouteTable {
@@ -71,8 +85,8 @@ export class VectorRouter<TTypes extends VectorTypes = DefaultVectorTypes> {
   }
 
   // Legacy compatibility: returns route entries in a flat list for tests
-  getRoutes(): [string, RegExp, any[], string][] {
-    const result: [string, RegExp, any[], string][] = [];
+  getRoutes(): LegacyRouteEntry[] {
+    const result: LegacyRouteEntry[] = [];
     for (const [path, value] of Object.entries(this.routeTable)) {
       if (value instanceof Response) continue;
       for (const [method, handler] of Object.entries(value as BunMethodMap)) {
@@ -83,7 +97,8 @@ export class VectorRouter<TTypes extends VectorTypes = DefaultVectorTypes> {
   }
 
   clearRoutes(): void {
-    this.routeTable = {};
+    this.routeTable = Object.create(null) as BunRouteTable;
+    this.routeMatchers = [];
   }
 
   // Legacy shim — no-op (Bun handles route priority natively)
@@ -100,12 +115,14 @@ export class VectorRouter<TTypes extends VectorTypes = DefaultVectorTypes> {
     (request as any)._parsedUrl = url;
     const pathname = url.pathname;
 
-    for (const [path, value] of Object.entries(this.routeTable)) {
+    for (const matcher of this.routeMatchers) {
+      const path = matcher.path;
+      const value = this.routeTable[path];
+      if (!value) continue;
       if (value instanceof Response) continue;
       const methodMap = value as BunMethodMap;
       if (request.method === 'OPTIONS' || request.method in methodMap) {
-        const regex = buildRouteRegex(path);
-        const match = pathname.match(regex);
+        const match = pathname.match(matcher.regex);
         if (match) {
           (request as any).params = match.groups ?? {};
           const handler = methodMap[request.method] ?? methodMap['GET'];
@@ -193,6 +210,7 @@ export class VectorRouter<TTypes extends VectorTypes = DefaultVectorTypes> {
   private wrapHandler(options: RouteOptions<TTypes>, handler: RouteHandler<TTypes>) {
     const routePath = options.path;
     const corsEntries = () => this.corsHeadersEntries;
+    const corsHandler = () => this.corsHandler;
 
     return async (request: Request) => {
       const vectorRequest = request as unknown as VectorRequest<TTypes>;
@@ -312,6 +330,11 @@ export class VectorRouter<TTypes extends VectorTypes = DefaultVectorTypes> {
           for (const [k, v] of entries) {
             response.headers.set(k, v);
           }
+        } else {
+          const dynamicCors = corsHandler();
+          if (dynamicCors) {
+            response = dynamicCors(response, request);
+          }
         }
 
         return response;
@@ -327,6 +350,73 @@ export class VectorRouter<TTypes extends VectorTypes = DefaultVectorTypes> {
         );
       }
     };
+  }
+
+  private getOrCreateMethodMap(path: string): BunMethodMap {
+    const existing = this.routeTable[path];
+    if (existing instanceof Response) {
+      throw new Error(
+        `Cannot register method route for path "${path}" because a static route already exists.`
+      );
+    }
+    if (existing) {
+      return existing as BunMethodMap;
+    }
+
+    const methodMap = Object.create(null) as BunMethodMap;
+    this.routeTable[path] = methodMap;
+    this.addRouteMatcher(path);
+    return methodMap;
+  }
+
+  private addRouteMatcher(path: string): void {
+    if (this.routeMatchers.some((matcher) => matcher.path === path)) {
+      return;
+    }
+
+    this.routeMatchers.push({
+      path,
+      regex: buildRouteRegex(path),
+      specificity: this.routeSpecificityScore(path),
+    });
+
+    this.routeMatchers.sort((a, b) => {
+      if (a.specificity !== b.specificity) {
+        return b.specificity - a.specificity;
+      }
+      return a.path.localeCompare(b.path);
+    });
+  }
+
+  private removeRouteMatcher(path: string): void {
+    this.routeMatchers = this.routeMatchers.filter((matcher) => matcher.path !== path);
+  }
+
+  private routeSpecificityScore(path: string): number {
+    const segments = path.split('/').filter(Boolean);
+    let staticSegments = 0;
+    let paramSegments = 0;
+    let wildcardSegments = 0;
+    let literalLength = 0;
+
+    for (const segment of segments) {
+      if (segment.includes('*')) {
+        wildcardSegments++;
+      } else if (segment.startsWith(':')) {
+        paramSegments++;
+      } else {
+        staticSegments++;
+        literalLength += segment.length;
+      }
+    }
+
+    return (
+      staticSegments * 10_000 +
+      literalLength * 100 +
+      segments.length * 10 -
+      paramSegments * 5_000 -
+      wildcardSegments * 20_000
+    );
   }
 }
 

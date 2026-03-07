@@ -8,9 +8,20 @@ export interface CorsConfig {
 }
 
 function getAllowedOrigin(origin: string | undefined, config: CorsConfig): string | null {
-  if (!origin) return typeof config.origin === 'string' ? config.origin : null;
+  if (!origin) {
+    if (typeof config.origin === 'string') {
+      // Credentials cannot be combined with wildcard; only reflect concrete request origins.
+      if (config.origin === '*' && config.credentials) return null;
+      return config.origin;
+    }
+    return null;
+  }
+
   if (typeof config.origin === 'string') {
-    return config.origin === '*' || config.origin === origin ? config.origin : null;
+    if (config.origin === '*') {
+      return config.credentials ? origin : '*';
+    }
+    return config.origin === origin ? origin : null;
   }
   if (Array.isArray(config.origin)) {
     return config.origin.includes(origin) ? origin : null;
@@ -21,7 +32,19 @@ function getAllowedOrigin(origin: string | undefined, config: CorsConfig): strin
   return null;
 }
 
-function buildCorsHeaders(origin: string | null, config: CorsConfig): Record<string, string> {
+function shouldVaryByOrigin(config: CorsConfig): boolean {
+  return (
+    (typeof config.origin === 'string' && config.origin === '*' && config.credentials) ||
+    Array.isArray(config.origin) ||
+    typeof config.origin === 'function'
+  );
+}
+
+function buildCorsHeaders(
+  origin: string | null,
+  config: CorsConfig,
+  varyByOrigin: boolean
+): Record<string, string> {
   const headers: Record<string, string> = {};
   if (origin) {
     headers['access-control-allow-origin'] = origin;
@@ -32,8 +55,24 @@ function buildCorsHeaders(origin: string | null, config: CorsConfig): Record<str
     if (config.credentials) {
       headers['access-control-allow-credentials'] = 'true';
     }
+    if (varyByOrigin) {
+      headers.vary = 'Origin';
+    }
   }
   return headers;
+}
+
+function mergeVary(existing: string | null, nextValue: string): string {
+  if (!existing) return nextValue;
+  const parts = existing
+    .split(',')
+    .map((v) => v.trim())
+    .filter(Boolean);
+  const lower = parts.map((v) => v.toLowerCase());
+  if (!lower.includes(nextValue.toLowerCase())) {
+    parts.push(nextValue);
+  }
+  return parts.join(', ');
 }
 
 export function cors(config: CorsConfig) {
@@ -41,17 +80,23 @@ export function cors(config: CorsConfig) {
     preflight(request: Request): Response {
       const origin = request.headers.get('origin') ?? undefined;
       const allowed = getAllowedOrigin(origin, config);
+      const varyByOrigin = Boolean(origin && allowed && shouldVaryByOrigin(config));
       return new Response(null, {
         status: 204,
-        headers: buildCorsHeaders(allowed, config),
+        headers: buildCorsHeaders(allowed, config, varyByOrigin),
       });
     },
     corsify(response: Response, request: Request): Response {
       const origin = request.headers.get('origin') ?? undefined;
       const allowed = getAllowedOrigin(origin, config);
       if (!allowed) return response;
-      const headers = buildCorsHeaders(allowed, config);
+      const varyByOrigin = Boolean(origin && shouldVaryByOrigin(config));
+      const headers = buildCorsHeaders(allowed, config, varyByOrigin);
       for (const [k, v] of Object.entries(headers)) {
+        if (k === 'vary') {
+          response.headers.set('vary', mergeVary(response.headers.get('vary'), v));
+          continue;
+        }
         response.headers.set(k, v);
       }
       return response;

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'bun:test';
-import { APIError, createResponse } from '../src/http';
+import { APIError, createResponse, route } from '../src/http';
 
 describe('APIError', () => {
   describe('Error Response Creation', () => {
@@ -121,5 +121,29 @@ describe('createResponse', () => {
     const body = await response.json();
 
     expect(body.id).toBe('123456789012345678901234567890');
+  });
+
+  it('should rethrow circular reference serialization errors', () => {
+    const circular: Record<string, unknown> = {};
+    circular.self = circular;
+
+    expect(() => createResponse(200, circular)).toThrow(TypeError);
+  });
+});
+
+describe('route helper', () => {
+  it('returns a typed route definition without internal _handler field', () => {
+    const definition = route(
+      {
+        method: 'GET',
+        path: '/health',
+      },
+      async () => ({ ok: true })
+    );
+
+    expect(definition.entry).toEqual({ method: 'GET', path: '/health' });
+    expect(definition.options.path).toBe('/health');
+    expect(typeof definition.handler).toBe('function');
+    expect('_handler' in (definition as Record<string, unknown>)).toBe(false);
   });
 });
