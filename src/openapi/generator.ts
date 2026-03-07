@@ -340,8 +340,10 @@ export function generateOpenAPIDocument(
     paths[openapiPath][method] = operation;
   }
 
+  const openapiVersion = options.target === 'openapi-3.0' ? '3.0.3' : '3.1.0';
+
   const document = {
-    openapi: '3.0.3',
+    openapi: openapiVersion,
     info: {
       title: options.info?.title || 'Vector API',
       version: options.info?.version || '1.0.0',

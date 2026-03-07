@@ -295,6 +295,25 @@ describe('OpenAPI generator', () => {
     expect(responses['304'].content).toBeUndefined();
   });
 
+  it('emits openapi 3.0.3 for openapi-3.0 target and 3.1.0 for JSON Schema draft targets', () => {
+    const routes: RegisteredRouteDefinition[] = [
+      {
+        method: 'GET',
+        path: '/ping',
+        options: { method: 'GET', path: '/ping', expose: true },
+      },
+    ];
+
+    const result30 = generateOpenAPIDocument(routes, { target: 'openapi-3.0' });
+    expect(result30.document.openapi).toBe('3.0.3');
+
+    const result2020 = generateOpenAPIDocument(routes, { target: 'draft-2020-12' });
+    expect(result2020.document.openapi).toBe('3.1.0');
+
+    const result07 = generateOpenAPIDocument(routes, { target: 'draft-07' });
+    expect(result07.document.openapi).toBe('3.1.0');
+  });
+
   it('normalizes greedy and wildcard paths to OpenAPI templates', () => {
     const routes: RegisteredRouteDefinition[] = [
       {
