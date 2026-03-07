@@ -209,7 +209,7 @@ export interface ApiOptions<TSchemaDef extends RouteSchemaDefinition | undefined
   auth?: boolean;
   expose?: boolean;
   rawRequest?: boolean;
-  validateRawRequest?: boolean;
+  validate?: boolean;
   rawResponse?: boolean;
   cache?: CacheOptions | number | null;
   responseContentType?: string;

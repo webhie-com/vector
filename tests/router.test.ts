@@ -244,8 +244,8 @@ describe('VectorRouter', () => {
       expect(await overrideResponse.text()).toBe('"json-override"');
     });
 
-    it('should apply validateRawRequest default when rawRequest default is enabled', async () => {
-      router.setRouteBooleanDefaults({ rawRequest: true, validateRawRequest: false });
+    it('should apply validate default and allow explicit override', async () => {
+      router.setRouteBooleanDefaults({ rawRequest: true, validate: false });
       let skippedCalled = false;
       let validatedCalled = false;
 
@@ -276,7 +276,7 @@ describe('VectorRouter', () => {
           method: 'POST',
           path: '/validate-raw-default-override',
           expose: true,
-          validateRawRequest: true,
+          validate: true,
           schema: { input: failingSchema },
         },
         async () => {
@@ -657,7 +657,7 @@ describe('Vector Config Defaults Wiring', () => {
             auth: true,
             expose: false,
             rawRequest: true,
-            validateRawRequest: false,
+            validate: false,
             rawResponse: true,
           },
         },
@@ -667,7 +667,7 @@ describe('Vector Config Defaults Wiring', () => {
         auth: true,
         expose: false,
         rawRequest: true,
-        validateRawRequest: false,
+        validate: false,
         rawResponse: true,
       });
       expect(capturedDevelopmentMode).toBe(false);

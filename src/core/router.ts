@@ -79,7 +79,7 @@ export class VectorRouter<TTypes extends VectorTypes = DefaultVectorTypes> {
     const resolved = { ...options };
     const defaults = this.routeBooleanDefaults;
 
-    const keys: (keyof RouteBooleanDefaults)[] = ['auth', 'expose', 'rawRequest', 'validateRawRequest', 'rawResponse'];
+    const keys: (keyof RouteBooleanDefaults)[] = ['auth', 'expose', 'rawRequest', 'validate', 'rawResponse'];
 
     for (const key of keys) {
       if (resolved[key] === undefined && defaults[key] !== undefined) {
@@ -502,12 +502,7 @@ export class VectorRouter<TTypes extends VectorTypes = DefaultVectorTypes> {
   ): Promise<Record<string, unknown>> {
     let body = request.content;
 
-    if (
-      options.rawRequest &&
-      options.validateRawRequest !== false &&
-      request.method !== 'GET' &&
-      request.method !== 'HEAD'
-    ) {
+    if (options.rawRequest && request.method !== 'GET' && request.method !== 'HEAD') {
       try {
         body = await (request as unknown as Request).clone().text();
       } catch {
@@ -588,7 +583,7 @@ export class VectorRouter<TTypes extends VectorTypes = DefaultVectorTypes> {
       return null;
     }
 
-    if (options.rawRequest && options.validateRawRequest === false) {
+    if (options.validate === false) {
       return null;
     }
 

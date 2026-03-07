@@ -25,7 +25,7 @@ interface RouteOptions {
   auth?: boolean;
   cache?: number | { ttl: number; key?: string };
   rawRequest?: boolean;
-  validateRawRequest?: boolean;
+  validate?: boolean;
   rawResponse?: boolean;
   responseContentType?: string;
   metadata?: unknown;
@@ -56,7 +56,7 @@ Each handler receives `VectorRequest` with these common fields:
 
 - `rawRequest: true` skips body parsing.
 - `rawResponse: true` returns raw handler output (no JSON wrapping).
-- If `rawRequest: true` and `schema.input` exists, validation still runs unless `validateRawRequest: false`.
+- `validate: false` disables `schema.input` validation for the route (raw and non-raw requests).
 
 ## Caching
 

@@ -5,7 +5,7 @@
 - Existing routes without `schema` continue to work.
 - `schema` is optional, and both `schema.input` and `schema.output` are optional.
 - `schema.input` failures return `422` with normalized issue payload.
-- For `rawRequest: true`, validation runs when `schema.input` exists unless `validateRawRequest: false`.
+- Validation runs when `schema.input` exists unless `validate: false`.
 
 ## Route Defaults
 
@@ -14,7 +14,7 @@ Use `defaults.route` in `vector.config.ts` to set global route booleans:
 - `auth`
 - `expose`
 - `rawRequest`
-- `validateRawRequest`
+- `validate`
 - `rawResponse`
 
 Route-level options always override defaults.

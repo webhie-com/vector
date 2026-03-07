@@ -19,7 +19,7 @@ interface VectorConfigSchema {
       auth?: boolean;
       expose?: boolean;
       rawRequest?: boolean;
-      validateRawRequest?: boolean;
+      validate?: boolean;
       rawResponse?: boolean;
     };
   };
@@ -108,6 +108,7 @@ const config: VectorConfigSchema = {
     route: {
       expose: true,
       auth: false,
+      validate: true,
       rawResponse: false,
     },
   },
