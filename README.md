@@ -1,4 +1,5 @@
-# Vector Framework
+# vector
+<img width="1640" height="664" alt="vector-bw-banner" src="https://github.com/user-attachments/assets/afeb8c6e-0729-4fea-9054-7972f8af9365" />
 
 Blazing fast, secure, and developer-friendly API framework for Bun.
 
