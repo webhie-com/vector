@@ -64,11 +64,36 @@ bun vector dev
 
 Your API will be available at `http://localhost:3000`.
 
+## Production Start
+
+```bash
+bun vector start --config ./vector.config.ts --routes ./routes --port 8080 --host 0.0.0.0
+```
+
+Notes:
+
+- `start` uses the same config and route options as `dev`.
+- `start` sets `NODE_ENV=production`.
+- File watching is only enabled for `dev`.
+
 ## Optional: Validation + OpenAPI
 
 ```bash
 bun add -d zod
 ```
+
+Vector is not tied to Zod. It supports any validation library that implements the
+`StandardSchemaV1` interface (`~standard` v1).
+
+Common compatible choices include:
+
+- Zod (v4+)
+- Valibot
+- ArkType
+
+For OpenAPI schema conversion, your library also needs `StandardJSONSchemaV1`
+(`~standard.jsonSchema.input/output`). If those converters are missing, runtime
+validation still works, but schema conversion is skipped.
 
 ```ts
 import { route } from "vector-framework";
@@ -121,6 +146,8 @@ Start here for deeper guides:
 - [examples/routes/health.ts](examples/routes/health.ts)
 - [examples/routes/events.ts](examples/routes/events.ts)
 - [examples/routes/commerce.ts](examples/routes/commerce.ts)
+- [tests/e2e/test-routes.ts](tests/e2e/test-routes.ts) (broader endpoint patterns)
+- [tests/e2e/test-zod-routes.ts](tests/e2e/test-zod-routes.ts) (Zod + I/O validation flows)
 
 ## Contributing
 

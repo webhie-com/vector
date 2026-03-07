@@ -5,8 +5,16 @@
 ```bash
 bun vector dev
 bun vector start
-bun vector build
 ```
+
+## Command Behavior
+
+`dev` and `start` both run the server from source routes/config:
+
+- Both support `--config`, `--routes`, `--port`, `--host`, and `--cors`.
+- `start` sets `NODE_ENV=production`.
+- `dev` enables file watching by default.
+- `start` does not watch files.
 
 Common options:
 
@@ -15,6 +23,7 @@ bun vector dev --port 4000
 bun vector dev --host 0.0.0.0
 bun vector dev --routes ./api
 bun vector dev --config ./vector.config.ts
+bun vector start --config ./vector.config.prod.ts --routes ./api
 ```
 
 ## Route Discovery
@@ -34,13 +43,13 @@ Customize with `routeExcludePatterns`:
 
 ```ts
 const config = {
-  routesDir: './routes',
+  routesDir: "./routes",
   routeExcludePatterns: [
-    '*.test.ts',
-    '*.spec.ts',
-    '*.mock.ts',
-    '**/__tests__/**',
-    '_*.ts',
+    "*.test.ts",
+    "*.spec.ts",
+    "*.mock.ts",
+    "**/__tests__/**",
+    "_*.ts",
   ],
 };
 ```

@@ -4,6 +4,7 @@ import { watch } from 'node:fs';
 import { parseArgs } from 'node:util';
 import { getVectorInstance } from '../core/vector';
 import { ConfigLoader } from '../core/config-loader';
+import { resolveHost, resolvePort, resolveRoutesDir } from './option-resolution';
 
 // Compatibility layer for both Node and Bun
 const args = typeof Bun !== 'undefined' ? Bun.argv.slice(2) : process.argv.slice(2);
@@ -45,6 +46,9 @@ const { values, positionals } = parseArgs({
 });
 
 const command = positionals[0] || 'dev';
+const hasRoutesOption = args.some((arg) => arg === '--routes' || arg === '-r' || arg.startsWith('--routes='));
+const hasHostOption = args.some((arg) => arg === '--host' || arg === '-h' || arg.startsWith('--host='));
+const hasPortOption = args.some((arg) => arg === '--port' || arg === '-p' || arg.startsWith('--port='));
 
 async function runDev() {
   const isDev = command === 'dev';
@@ -62,15 +66,16 @@ async function runDev() {
 
     // Create the actual server start promise
     const serverStartPromise = (async (): Promise<{ server: any; vector: any; config: any }> => {
-      // Load configuration using ConfigLoader
-      const configLoader = new ConfigLoader(values.config as string | undefined);
-      const config = await configLoader.load();
+      const explicitConfigPath = values.config as string | undefined;
+      const configLoader = new ConfigLoader(explicitConfigPath);
+      const loadedConfig = await configLoader.load();
+      const config = { ...loadedConfig } as Record<string, any>;
 
-      // Merge CLI options with loaded config
-      // Only use CLI values if config doesn't have them
-      config.port = config.port ?? Number.parseInt(values.port as string);
-      config.hostname = config.hostname ?? (values.host as string);
-      config.routesDir = config.routesDir ?? (values.routes as string);
+      // Merge CLI options with loaded config.
+      // Explicit --port/--host always override config values.
+      config.port = resolvePort(config.port, hasPortOption, values.port as string);
+      config.hostname = resolveHost(config.hostname, hasHostOption, values.host as string);
+      config.routesDir = resolveRoutesDir(config.routesDir, hasRoutesOption, values.routes as string);
       config.development = config.development ?? isDev;
       config.autoDiscover = true; // Always auto-discover routes
 
@@ -211,73 +216,15 @@ async function runDev() {
   }
 }
 
-async function runBuild() {
-  try {
-    const { RouteScanner } = await import('../dev/route-scanner');
-    const { RouteGenerator } = await import('../dev/route-generator');
-
-    // Step 1: Scan and generate routes
-    const scanner = new RouteScanner(values.routes as string);
-    const generator = new RouteGenerator();
-
-    const routes = await scanner.scan();
-    await generator.generate(routes);
-
-    // Step 2: Build the application with Bun
-    if (typeof Bun !== 'undefined') {
-      // Build the CLI as an executable
-      const buildProcess = Bun.spawn([
-        'bun',
-        'build',
-        'src/cli/index.ts',
-        '--target',
-        'bun',
-        '--outfile',
-        'dist/server.js',
-        '--minify',
-      ]);
-
-      const exitCode = await buildProcess.exited;
-      if (exitCode !== 0) {
-        throw new Error(`Build failed with exit code ${exitCode}`);
-      }
-    } else {
-      // For Node.js, use child_process
-      const { spawnSync } = await import('child_process');
-      const result = spawnSync(
-        'bun',
-        ['build', 'src/cli/index.ts', '--target', 'bun', '--outfile', 'dist/server.js', '--minify'],
-        {
-          stdio: 'inherit',
-          shell: true,
-        }
-      );
-
-      if (result.status !== 0) {
-        throw new Error(`Build failed with exit code ${result.status}`);
-      }
-    }
-
-    console.log('\nBuild complete: dist/server.js\n');
-  } catch (error: any) {
-    const red = '\x1b[31m';
-    const reset = '\x1b[0m';
-    console.error(`\n${red}Error: ${error.message || error}${reset}\n`);
-    process.exit(1);
-  }
-}
-
 switch (command) {
   case 'dev':
     await runDev();
     break;
-  case 'build':
-    await runBuild();
-    break;
-  case 'start':
+  case 'start': {
     process.env.NODE_ENV = 'production';
     await runDev();
     break;
+  }
   default:
     console.error(`Unknown command: ${command}`);
     console.log(`
@@ -285,15 +232,14 @@ Usage: vector [command] [options]
 
 Commands:
   dev     Start development server (default)
-  build   Build for production
   start   Start production server
 
 Options:
   -p, --port <port>      Port to listen on (default: 3000)
   -h, --host <host>      Hostname to bind to (default: localhost)
-  -r, --routes <dir>     Routes directory (default: ./routes)
+  -r, --routes <dir>     Routes directory (dev/start)
   -w, --watch            Watch for file changes (default: true)
-  -c, --config <path>    Path to config file (default: vector.config.ts)
+  -c, --config <path>    Path to config file (dev/start)
   --cors                 Enable CORS (default: true)
 `);
     process.exit(1);
