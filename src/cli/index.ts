@@ -5,6 +5,7 @@ import { parseArgs } from 'node:util';
 import { getVectorInstance } from '../core/vector';
 import { ConfigLoader } from '../core/config-loader';
 import { resolveHost, resolvePort, resolveRoutesDir } from './option-resolution';
+import { installGracefulShutdownHandlers } from './graceful-shutdown';
 
 // Compatibility layer for both Node and Bun
 const args = typeof Bun !== 'undefined' ? Bun.argv.slice(2) : process.argv.slice(2);
@@ -55,6 +56,7 @@ async function runDev() {
 
   let server: any = null;
   let vector: any = null;
+  let removeShutdownHandlers: (() => void) | null = null;
 
   async function startServer(): Promise<{ server: any; vector: any; config: any }> {
     // Create a timeout promise that rejects after 10 seconds
@@ -131,6 +133,12 @@ async function runDev() {
     // Start the server initially
     const result = await startServer();
     server = result.server;
+
+    if (!removeShutdownHandlers) {
+      removeShutdownHandlers = installGracefulShutdownHandlers({
+        getTarget: () => vector,
+      });
+    }
 
     // Setup file watching for hot reload
     if (isDev && values.watch) {

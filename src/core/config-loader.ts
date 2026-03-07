@@ -35,8 +35,8 @@ export class ConfigLoader<TTypes extends VectorTypes = DefaultVectorTypes> {
         this.configSource = 'user';
       } catch (error: any) {
         const msg = error instanceof Error ? error.message : String(error);
-        console.error(`[Vector] Failed to load config from ${this.configPath}: ${msg}`);
-        console.error('[Vector] Server is using default configuration. Fix your config file and restart.');
+        console.error(`[vector] Failed to load config from ${this.configPath}: ${msg}`);
+        console.error('[vector] Server is using default configuration. Fix your config file and restart.');
         this.config = {};
       }
     } else {
@@ -62,9 +62,12 @@ export class ConfigLoader<TTypes extends VectorTypes = DefaultVectorTypes> {
       config.reusePort = this.config.reusePort;
       config.development = this.config.development;
       config.routesDir = this.config.routesDir || './routes';
+      config.routeExcludePatterns = this.config.routeExcludePatterns;
       config.idleTimeout = this.config.idleTimeout;
       config.defaults = this.config.defaults;
       config.openapi = this.config.openapi;
+      config.startup = this.config.startup;
+      config.shutdown = this.config.shutdown;
     }
 
     // Always auto-discover routes

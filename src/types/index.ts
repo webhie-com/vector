@@ -150,6 +150,8 @@ export interface VectorConfig<TTypes extends VectorTypes = DefaultVectorTypes> {
   idleTimeout?: number;
   defaults?: VectorDefaults;
   openapi?: OpenAPIOptions | boolean;
+  startup?: StartupHandler;
+  shutdown?: ShutdownHandler;
 }
 
 // New config-driven schema - flat structure
@@ -177,6 +179,10 @@ export interface VectorConfigSchema<TTypes extends VectorTypes = DefaultVectorTy
 
   // OpenAPI/docs configuration
   openapi?: OpenAPIOptions | boolean;
+
+  // Startup lifecycle
+  startup?: StartupHandler;
+  shutdown?: ShutdownHandler;
 
   // Custom types for TypeScript
   types?: VectorTypes;
@@ -220,6 +226,9 @@ export type AfterMiddlewareHandler<TTypes extends VectorTypes = DefaultVectorTyp
   request: VectorRequest<TTypes>
 ) => Promise<Response> | Response;
 export type MiddlewareHandler = BeforeMiddlewareHandler | AfterMiddlewareHandler;
+
+export type StartupHandler = () => Promise<void> | void;
+export type ShutdownHandler = () => Promise<void> | void;
 
 export type RouteHandler<TTypes extends VectorTypes = DefaultVectorTypes, TValidatedInput = undefined> = (
   request: VectorRequest<TTypes, TValidatedInput>
