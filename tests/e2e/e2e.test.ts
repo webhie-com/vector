@@ -6,18 +6,20 @@ import { createClient, withRetry } from './utils/http-client';
 describe('E2E Tests', () => {
   let server: Server;
   let client: ReturnType<typeof createClient>;
-  const PORT = 3001;
-  const BASE_URL = `http://localhost:${PORT}`;
+  let port = 0;
 
   beforeAll(async () => {
+    port = 3001 + Math.floor(Math.random() * 2000);
+    const baseUrl = `http://localhost:${port}`;
+
     // Start test server
     server = await testServer.serve({
-      port: PORT,
+      port,
       hostname: '0.0.0.0',
       development: false,
     });
 
-    client = createClient(BASE_URL);
+    client = createClient(baseUrl);
 
     // Wait for server to be ready
     await withRetry(

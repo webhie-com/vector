@@ -18,6 +18,10 @@ If `schema.input` is defined:
 - On failure, Vector returns `422 Unprocessable Entity`
 - On success, validator output is assigned to `req.validatedInput`
 - If validator output contains `body`, `params`, `query`, or `cookies`, those request fields are updated
+- Validation payload includes `params`, `query`, `headers`, `cookies`, and `body`
+
+Only define the fields you want to validate.
+You do not need to add placeholder `any` shapes for sections you are not validating.
 
 ## Raw Requests
 
@@ -59,26 +63,23 @@ Input validation failures use this structure:
 ## Example (Zod)
 
 ```ts
-import { route } from 'vector-framework';
-import { z } from 'zod';
+import { route } from "vector-framework";
+import { z } from "zod";
 
 const Input = z.object({
   params: z.object({ id: z.string() }),
-  query: z.object({}),
-  headers: z.object({}),
-  cookies: z.object({}),
   body: z.object({ name: z.string().min(1) }),
 });
 
 export const updateUser = route(
   {
-    method: 'PUT',
-    path: '/users/:id',
+    method: "PUT",
+    path: "/users/:id",
     expose: true,
     schema: { input: Input },
   },
   async (req) => {
     return { id: req.params.id, name: req.content.name };
-  }
+  },
 );
 ```

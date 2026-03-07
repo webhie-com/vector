@@ -21,12 +21,24 @@ interface NormalizedOpenAPIConfig {
   };
 }
 
+const OPENAPI_TAILWIND_ASSET_PATH = '/_vector/openapi/tailwindcdn.js';
+const OPENAPI_TAILWIND_ASSET_FILE = Bun.file(new URL('../openapi/assets/tailwindcdn.js', import.meta.url));
+const DOCS_HTML_CACHE_CONTROL = 'public, max-age=0, must-revalidate';
+const DOCS_ASSET_CACHE_CONTROL = 'public, max-age=31536000, immutable';
+
+interface OpenAPIDocsHtmlCacheEntry {
+  html: string;
+  gzip: Uint8Array;
+  etag: string;
+}
+
 export class VectorServer<TTypes extends VectorTypes = DefaultVectorTypes> {
   private server: Server | null = null;
   private router: VectorRouter<TTypes>;
   private config: VectorConfig<TTypes>;
   private openapiConfig: NormalizedOpenAPIConfig;
   private openapiDocCache: Record<string, unknown> | null = null;
+  private openapiDocsHtmlCache: OpenAPIDocsHtmlCacheEntry | null = null;
   private openapiWarningsLogged = false;
   private corsHandler: {
     preflight: (request: Request) => Response;
@@ -140,6 +152,49 @@ export class VectorServer<TTypes extends VectorTypes = DefaultVectorTypes> {
     return this.openapiDocCache;
   }
 
+  private getOpenAPIDocsHtmlCacheEntry(): OpenAPIDocsHtmlCacheEntry {
+    if (this.openapiDocsHtmlCache) {
+      return this.openapiDocsHtmlCache;
+    }
+
+    const html = renderOpenAPIDocsHtml(this.getOpenAPIDocument(), this.openapiConfig.path, OPENAPI_TAILWIND_ASSET_PATH);
+    const gzip = Bun.gzipSync(html);
+    const etag = `"${Bun.hash(html).toString(16)}"`;
+
+    this.openapiDocsHtmlCache = { html, gzip, etag };
+    return this.openapiDocsHtmlCache;
+  }
+
+  private requestAcceptsGzip(request: Request): boolean {
+    const acceptEncoding = request.headers.get('accept-encoding');
+    return Boolean(acceptEncoding && /\bgzip\b/i.test(acceptEncoding));
+  }
+
+  private validateReservedOpenAPIPaths(): void {
+    if (!this.openapiConfig.enabled) {
+      return;
+    }
+
+    const reserved = new Set<string>([this.openapiConfig.path]);
+    if (this.openapiConfig.docs.enabled) {
+      reserved.add(this.openapiConfig.docs.path);
+      reserved.add(OPENAPI_TAILWIND_ASSET_PATH);
+    }
+
+    const conflicts = this.router
+      .getRouteDefinitions()
+      .filter((route) => reserved.has(route.path))
+      .map((route) => `${route.method} ${route.path}`);
+
+    if (conflicts.length > 0) {
+      throw new Error(
+        `OpenAPI reserved path conflict: ${conflicts.join(
+          ', '
+        )}. Change your route path(s) or reconfigure openapi.path/docs.path.`
+      );
+    }
+  }
+
   private tryHandleOpenAPIRequest(request: Request): Response | null {
     if (!this.openapiConfig.enabled || request.method !== 'GET') {
       return null;
@@ -151,9 +206,49 @@ export class VectorServer<TTypes extends VectorTypes = DefaultVectorTypes> {
     }
 
     if (this.openapiConfig.docs.enabled && pathname === this.openapiConfig.docs.path) {
-      return new Response(renderOpenAPIDocsHtml(this.getOpenAPIDocument(), this.openapiConfig.path), {
+      const { html, gzip, etag } = this.getOpenAPIDocsHtmlCacheEntry();
+      if (request.headers.get('if-none-match') === etag) {
+        return new Response(null, {
+          status: 304,
+          headers: {
+            etag,
+            'cache-control': DOCS_HTML_CACHE_CONTROL,
+            vary: 'accept-encoding',
+          },
+        });
+      }
+
+      if (this.requestAcceptsGzip(request)) {
+        return new Response(gzip, {
+          status: 200,
+          headers: {
+            'content-type': 'text/html; charset=utf-8',
+            'content-encoding': 'gzip',
+            etag,
+            'cache-control': DOCS_HTML_CACHE_CONTROL,
+            vary: 'accept-encoding',
+          },
+        });
+      }
+
+      return new Response(html, {
         status: 200,
-        headers: { 'content-type': 'text/html; charset=utf-8' },
+        headers: {
+          'content-type': 'text/html; charset=utf-8',
+          etag,
+          'cache-control': DOCS_HTML_CACHE_CONTROL,
+          vary: 'accept-encoding',
+        },
+      });
+    }
+
+    if (this.openapiConfig.docs.enabled && pathname === OPENAPI_TAILWIND_ASSET_PATH) {
+      return new Response(OPENAPI_TAILWIND_ASSET_FILE, {
+        status: 200,
+        headers: {
+          'content-type': 'application/javascript; charset=utf-8',
+          'cache-control': DOCS_ASSET_CACHE_CONTROL,
+        },
       });
     }
 
@@ -195,6 +290,8 @@ export class VectorServer<TTypes extends VectorTypes = DefaultVectorTypes> {
   async start(): Promise<Server> {
     const port = this.config.port ?? 3000;
     const hostname = this.config.hostname || 'localhost';
+
+    this.validateReservedOpenAPIPaths();
 
     const fallbackFetch = async (request: Request): Promise<Response> => {
       try {
@@ -257,6 +354,7 @@ export class VectorServer<TTypes extends VectorTypes = DefaultVectorTypes> {
       this.server.stop();
       this.server = null;
       this.openapiDocCache = null;
+      this.openapiDocsHtmlCache = null;
       this.openapiWarningsLogged = false;
       console.log('Server stopped');
     }

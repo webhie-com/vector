@@ -1,6 +1,11 @@
-export function renderOpenAPIDocsHtml(spec: Record<string, unknown>, openapiPath: string): string {
+export function renderOpenAPIDocsHtml(
+  spec: Record<string, unknown>,
+  openapiPath: string,
+  tailwindScriptPath: string
+): string {
   const specJson = JSON.stringify(spec).replace(/<\/script/gi, '<\\/script');
   const openapiPathJson = JSON.stringify(openapiPath);
+  const tailwindScriptPathJson = JSON.stringify(tailwindScriptPath);
 
   return `<!DOCTYPE html>
 <html lang="en">
@@ -15,7 +20,7 @@ export function renderOpenAPIDocsHtml(spec: Record<string, unknown>, openapiPath
       document.documentElement.classList.remove('dark');
     }
   </script>
-  <script src="https://cdn.tailwindcss.com"></script>
+  <script src=${tailwindScriptPathJson}></script>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
   <script>
     tailwind.config = {

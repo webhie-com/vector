@@ -69,12 +69,101 @@ describe('OpenAPI server endpoints', () => {
     expect(docsResponse).toBeInstanceOf(Response);
     expect(docsResponse.status).toBe(200);
     expect(docsResponse.headers.get('content-type')).toContain('text/html');
+    expect(docsResponse.headers.get('cache-control')).toBe('public, max-age=0, must-revalidate');
+    expect(docsResponse.headers.get('etag')).toBeTruthy();
+    expect(docsResponse.headers.get('vary')).toBe('accept-encoding');
 
     const html = await docsResponse.text();
     expect(html).toContain('Vector API Documentation');
-    expect(html).toContain('cdn.tailwindcss.com');
+    expect(html).toContain('/_vector/openapi/tailwindcdn.js');
+    expect(html).not.toContain('cdn.tailwindcss.com');
     expect(html).toContain('id="sidebar-nav"');
     expect(html).toContain('/openapi.json');
+  });
+
+  it('serves gzip docs HTML when client accepts gzip', async () => {
+    const router = makeRouter();
+    router.route({ method: 'GET', path: '/health', expose: true }, async () => ({ ok: true }));
+
+    const server = new VectorServer(router, {
+      development: true,
+      openapi: {
+        enabled: true,
+        path: '/openapi.json',
+        docs: {
+          enabled: true,
+          path: '/docs',
+        },
+      },
+    });
+
+    const docsResponse = (server as any).tryHandleOpenAPIRequest(
+      new Request('http://localhost/docs', { headers: { 'accept-encoding': 'gzip, br' } })
+    ) as Response;
+
+    expect(docsResponse).toBeInstanceOf(Response);
+    expect(docsResponse.status).toBe(200);
+    expect(docsResponse.headers.get('content-encoding')).toBe('gzip');
+    expect(docsResponse.headers.get('content-type')).toContain('text/html');
+    expect(docsResponse.headers.get('vary')).toBe('accept-encoding');
+  });
+
+  it('returns 304 for docs HTML when etag matches', async () => {
+    const router = makeRouter();
+    router.route({ method: 'GET', path: '/health', expose: true }, async () => ({ ok: true }));
+
+    const server = new VectorServer(router, {
+      development: true,
+      openapi: {
+        enabled: true,
+        path: '/openapi.json',
+        docs: {
+          enabled: true,
+          path: '/docs',
+        },
+      },
+    });
+
+    const firstResponse = (server as any).tryHandleOpenAPIRequest(new Request('http://localhost/docs')) as Response;
+    const etag = firstResponse.headers.get('etag');
+    expect(etag).toBeTruthy();
+
+    const secondResponse = (server as any).tryHandleOpenAPIRequest(
+      new Request('http://localhost/docs', { headers: { 'if-none-match': etag! } })
+    ) as Response;
+
+    expect(secondResponse.status).toBe(304);
+    expect(secondResponse.headers.get('etag')).toBe(etag);
+    expect(secondResponse.headers.get('cache-control')).toBe('public, max-age=0, must-revalidate');
+  });
+
+  it('serves local Tailwind runtime asset for docs UI', async () => {
+    const router = makeRouter();
+    router.route({ method: 'GET', path: '/health', expose: true }, async () => ({ ok: true }));
+
+    const server = new VectorServer(router, {
+      development: true,
+      openapi: {
+        enabled: true,
+        path: '/openapi.json',
+        docs: {
+          enabled: true,
+          path: '/docs',
+        },
+      },
+    });
+
+    const scriptResponse = (server as any).tryHandleOpenAPIRequest(
+      new Request('http://localhost/_vector/openapi/tailwindcdn.js')
+    ) as Response;
+
+    expect(scriptResponse).toBeInstanceOf(Response);
+    expect(scriptResponse.status).toBe(200);
+    expect(scriptResponse.headers.get('content-type')).toContain('application/javascript');
+    expect(scriptResponse.headers.get('cache-control')).toBe('public, max-age=31536000, immutable');
+
+    const script = await scriptResponse.text();
+    expect(script).toContain('cdn.tailwindcss.com should not be used in production');
   });
 
   it('keeps user /docs route in OpenAPI spec when docs UI is disabled', async () => {
@@ -102,5 +191,81 @@ describe('OpenAPI server endpoints', () => {
 
     const docsResponse = (server as any).tryHandleOpenAPIRequest(new Request('http://localhost/docs'));
     expect(docsResponse).toBeNull();
+  });
+
+  it('rejects user route conflicts with reserved openapi path', () => {
+    const router = makeRouter();
+    router.route({ method: 'GET', path: '/openapi.json', expose: true }, async () => ({ ok: true }));
+
+    const server = new VectorServer(router, {
+      development: true,
+      openapi: {
+        enabled: true,
+        path: '/openapi.json',
+        docs: {
+          enabled: false,
+          path: '/docs',
+        },
+      },
+    });
+
+    expect(() => (server as any).validateReservedOpenAPIPaths()).toThrow(/reserved path conflict/i);
+  });
+
+  it('rejects user route conflicts with reserved docs path when docs are enabled', () => {
+    const router = makeRouter();
+    router.route({ method: 'GET', path: '/docs', expose: true }, async () => ({ ok: true }));
+
+    const server = new VectorServer(router, {
+      development: true,
+      openapi: {
+        enabled: true,
+        path: '/openapi.json',
+        docs: {
+          enabled: true,
+          path: '/docs',
+        },
+      },
+    });
+
+    expect(() => (server as any).validateReservedOpenAPIPaths()).toThrow(/reserved path conflict/i);
+  });
+
+  it('does not reject /docs route when docs UI is disabled', () => {
+    const router = makeRouter();
+    router.route({ method: 'GET', path: '/docs', expose: true }, async () => ({ ok: true }));
+
+    const server = new VectorServer(router, {
+      development: true,
+      openapi: {
+        enabled: true,
+        path: '/openapi.json',
+        docs: {
+          enabled: false,
+          path: '/docs',
+        },
+      },
+    });
+
+    expect(() => (server as any).validateReservedOpenAPIPaths()).not.toThrow();
+  });
+
+  it('rejects user route conflicts with reserved docs asset path when docs are enabled', () => {
+    const router = makeRouter();
+    router.route({ method: 'GET', path: '/_vector/openapi/tailwindcdn.js', expose: true }, async () => ({ ok: true }));
+
+    const server = new VectorServer(router, {
+      development: true,
+      openapi: {
+        enabled: true,
+        path: '/openapi.json',
+        docs: {
+          enabled: true,
+          path: '/docs',
+        },
+      },
+    });
+
+    expect(() => (server as any).validateReservedOpenAPIPaths()).toThrow(/reserved path conflict/i);
   });
 });

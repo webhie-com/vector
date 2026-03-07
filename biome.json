@@ -6,7 +6,7 @@
     "useIgnoreFile": true
   },
   "files": {
-    "includes": ["**", "!!**/dist", "!!**/node_modules"]
+    "includes": ["**", "!!**/dist", "!!**/node_modules", "!!src/openapi/assets/tailwindcdn.js"]
   },
   "formatter": {
     "enabled": true,

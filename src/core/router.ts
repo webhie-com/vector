@@ -8,10 +8,12 @@ import type {
   BunMethodMap,
   BunRouteTable,
   DefaultVectorTypes,
+  InferRouteInputFromSchemaDefinition,
   RouteBooleanDefaults,
   LegacyRouteEntry,
   RouteHandler,
   RouteOptions,
+  RouteSchemaDefinition,
   VectorRequest,
   VectorTypes,
 } from '../types';
@@ -83,6 +85,10 @@ export class VectorRouter<TTypes extends VectorTypes = DefaultVectorTypes> {
     return resolved;
   }
 
+  route<TSchemaDef extends RouteSchemaDefinition | undefined>(
+    options: Omit<RouteOptions<TTypes>, 'schema'> & { schema?: TSchemaDef },
+    handler: RouteHandler<TTypes, InferRouteInputFromSchemaDefinition<TSchemaDef>>
+  ): void;
   route(options: RouteOptions<TTypes>, handler: RouteHandler<TTypes>): void {
     const resolvedOptions = this.applyRouteBooleanDefaults(options);
     const method = resolvedOptions.method.toUpperCase();
@@ -211,7 +217,13 @@ export class VectorRouter<TTypes extends VectorTypes = DefaultVectorTypes> {
       request.context = {} as any;
     }
 
-    if (options?.params !== undefined && request.params === undefined) {
+    const hasEmptyParamsObject =
+      !!request.params &&
+      typeof request.params === 'object' &&
+      !Array.isArray(request.params) &&
+      Object.keys(request.params as Record<string, unknown>).length === 0;
+
+    if (options?.params !== undefined && (request.params === undefined || hasEmptyParamsObject)) {
       try {
         request.params = options.params;
       } catch {
@@ -287,13 +299,46 @@ export class VectorRouter<TTypes extends VectorTypes = DefaultVectorTypes> {
     }
   }
 
+  private resolveFallbackParams(request: Request, routeMatcher: RegExp | null): Record<string, string> | undefined {
+    if (!routeMatcher) {
+      return undefined;
+    }
+
+    const currentParams = (request as any).params;
+    if (
+      currentParams &&
+      typeof currentParams === 'object' &&
+      !Array.isArray(currentParams) &&
+      Object.keys(currentParams as Record<string, unknown>).length > 0
+    ) {
+      return undefined;
+    }
+
+    let pathname: string;
+    try {
+      pathname = ((request as any)._parsedUrl ?? new URL(request.url)).pathname;
+    } catch {
+      return undefined;
+    }
+
+    const matched = pathname.match(routeMatcher);
+    if (!matched?.groups) {
+      return undefined;
+    }
+
+    return matched.groups as Record<string, string>;
+  }
+
   private wrapHandler(options: RouteOptions<TTypes>, handler: RouteHandler<TTypes>) {
     const routePath = options.path;
+    const routeMatcher = routePath.includes(':') ? buildRouteRegex(routePath) : null;
 
     return async (request: Request) => {
       const vectorRequest = request as unknown as VectorRequest<TTypes>;
+      const fallbackParams = this.resolveFallbackParams(request, routeMatcher);
 
       this.prepareRequest(vectorRequest, {
+        params: fallbackParams,
         route: routePath,
         metadata: options.metadata,
       });
@@ -321,22 +366,22 @@ export class VectorRouter<TTypes extends VectorTypes = DefaultVectorTypes> {
         }
 
         if (!options.rawRequest && req.method !== 'GET' && req.method !== 'HEAD') {
+          let parsedContent: unknown = null;
           try {
             const contentType = req.headers.get('content-type');
             if (contentType?.startsWith('application/json')) {
-              req.content = await req.json();
+              parsedContent = await req.json();
             } else if (contentType?.startsWith('application/x-www-form-urlencoded')) {
-              req.content = Object.fromEntries(await req.formData());
+              parsedContent = Object.fromEntries(await req.formData());
             } else if (contentType?.startsWith('multipart/form-data')) {
-              req.content = await req.formData();
+              parsedContent = await req.formData();
             } else {
-              req.content = await req.text();
+              parsedContent = await req.text();
             }
-            this.setBodyAlias(req, req.content);
           } catch {
-            req.content = null;
-            this.setBodyAlias(req, null);
+            parsedContent = null;
           }
+          this.setContentAndBodyAlias(req, parsedContent);
         }
 
         const inputValidationResponse = await this.validateInputSchema(req, options);
@@ -480,18 +525,40 @@ export class VectorRouter<TTypes extends VectorTypes = DefaultVectorTypes> {
     const validated = validatedValue as Record<string, unknown>;
 
     if ('params' in validated) {
-      request.params = validated.params as any;
+      try {
+        request.params = validated.params as any;
+      } catch {
+        // Request.params can be readonly on Bun-native requests.
+      }
     }
     if ('query' in validated) {
-      request.query = validated.query as any;
+      try {
+        request.query = validated.query as any;
+      } catch {
+        // Request.query can be readonly/non-configurable on some request objects.
+      }
     }
     if ('cookies' in validated) {
-      request.cookies = validated.cookies as any;
+      try {
+        request.cookies = validated.cookies as any;
+      } catch {
+        // Request.cookies can be readonly/non-configurable on some request objects.
+      }
     }
     if ('body' in validated) {
-      request.content = validated.body;
-      this.setBodyAlias(request, validated.body);
+      this.setContentAndBodyAlias(request, validated.body);
     }
+  }
+
+  private setContentAndBodyAlias(request: VectorRequest<TTypes>, value: unknown): void {
+    try {
+      request.content = value;
+    } catch {
+      // Request.content can be readonly/non-configurable on some request objects.
+      return;
+    }
+
+    this.setBodyAlias(request, value);
   }
 
   private setBodyAlias(request: VectorRequest<TTypes>, value: unknown): void {

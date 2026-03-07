@@ -8,10 +8,12 @@ import { toFileUrl } from '../utils/path';
 import type {
   CacheHandler,
   DefaultVectorTypes,
+  InferRouteInputFromSchemaDefinition,
   LegacyRouteEntry,
   ProtectedHandler,
   RouteHandler,
   RouteOptions,
+  RouteSchemaDefinition,
   VectorConfig,
   VectorTypes,
 } from '../types';
@@ -74,6 +76,10 @@ export class Vector<TTypes extends VectorTypes = DefaultVectorTypes> {
   }
 
   // Internal method to add route
+  addRoute<TSchemaDef extends RouteSchemaDefinition | undefined>(
+    options: Omit<RouteOptions<TTypes>, 'schema'> & { schema?: TSchemaDef },
+    handler: RouteHandler<TTypes, InferRouteInputFromSchemaDefinition<TSchemaDef>>
+  ): void;
   addRoute(options: RouteOptions<TTypes>, handler: RouteHandler<TTypes>): void {
     this.router.route(options, handler);
   }
@@ -147,10 +153,7 @@ export class Vector<TTypes extends VectorTypes = DefaultVectorTypes> {
                 this.router.addRoute(exported);
                 this.logRouteLoaded(exported);
               } else if (typeof exported === 'function') {
-                this.router.route(
-                  route.options as RouteOptions<TTypes>,
-                  exported as RouteHandler<TTypes>
-                );
+                this.router.route(route.options as RouteOptions<TTypes>, exported as RouteHandler<TTypes>);
                 this.logRouteLoaded(route.options as RouteOptions<TTypes>);
               }
             }

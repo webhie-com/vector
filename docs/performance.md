@@ -15,7 +15,11 @@ Run examples:
 bun run test:load
 bun run test:soak
 bun run test:benchmark
+bun run test:benchmark:io-schema
 ```
+
+`test:benchmark:io-schema` is a concurrency sweep with mixed validated API traffic and
+Promise-based simulated I/O, useful for estimating max RPS under typical app patterns.
 
 Performance depends on route logic, auth/cache integrations, and infrastructure.
 Use benchmark numbers as directional rather than absolute.

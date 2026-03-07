@@ -40,11 +40,7 @@ function shouldVaryByOrigin(config: CorsConfig): boolean {
   );
 }
 
-function buildCorsHeaders(
-  origin: string | null,
-  config: CorsConfig,
-  varyByOrigin: boolean
-): Record<string, string> {
+function buildCorsHeaders(origin: string | null, config: CorsConfig, varyByOrigin: boolean): Record<string, string> {
   const headers: Record<string, string> = {};
   if (origin) {
     headers['access-control-allow-origin'] = origin;

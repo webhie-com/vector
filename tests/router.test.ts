@@ -314,6 +314,43 @@ describe('VectorRouter', () => {
       expect(getResponse.status).toBe(200);
       expect(postResponse.status).toBe(200);
     });
+
+    it('should derive route params when native request does not provide params', async () => {
+      let capturedParams: any;
+
+      router.route({ method: 'GET', path: '/native/:id', expose: true }, async (req) => {
+        capturedParams = req.params;
+        return { id: req.params?.id };
+      });
+
+      const routeTable = router.getRouteTable();
+      const methodMap = routeTable['/native/:id'] as Record<string, (request: Request) => Promise<Response>>;
+      const response = await methodMap.GET(new Request('http://localhost/native/123'));
+
+      expect(response.status).toBe(200);
+      expect(capturedParams).toEqual({ id: '123' });
+      expect(await response.json()).toEqual({ id: '123' });
+    });
+
+    it('should derive multiple route params when native request does not provide params', async () => {
+      let capturedParams: any;
+
+      router.route({ method: 'GET', path: '/orgs/:orgId/users/:userId', expose: true }, async (req) => {
+        capturedParams = req.params;
+        return { orgId: req.params?.orgId, userId: req.params?.userId };
+      });
+
+      const routeTable = router.getRouteTable();
+      const methodMap = routeTable['/orgs/:orgId/users/:userId'] as Record<
+        string,
+        (request: Request) => Promise<Response>
+      >;
+      const response = await methodMap.GET(new Request('http://localhost/orgs/acme/users/42'));
+
+      expect(response.status).toBe(200);
+      expect(capturedParams).toEqual({ orgId: 'acme', userId: '42' });
+      expect(await response.json()).toEqual({ orgId: 'acme', userId: '42' });
+    });
   });
 
   // Bug B2: bulkAddRoutes method

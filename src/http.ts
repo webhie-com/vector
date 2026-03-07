@@ -257,10 +257,6 @@ export function api<TTypes extends VectorTypes = DefaultVectorTypes, TValidatedI
         }
       }
 
-      if (req.content) {
-        req.body = req.content;
-      }
-
       const result = await fn(req as unknown as VectorRequest<TTypes, TValidatedInput>);
 
       return rawResponse ? result : ApiResponse.success(result, responseContentType);

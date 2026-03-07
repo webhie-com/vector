@@ -52,6 +52,7 @@
     "*.min.js",
     "*.d.ts",
     "test-results/**",
-    "benchmark-results/**"
+    "benchmark-results/**",
+    "src/openapi/assets/**"
   ]
 }

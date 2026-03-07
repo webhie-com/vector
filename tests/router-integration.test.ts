@@ -89,6 +89,36 @@ describe('Router — request body parsing', () => {
     expect(captured).toBe('hello world');
   });
 
+  it('does not throw when content field is readonly during body parse', async () => {
+    const { router } = makeRouter();
+    let captured: any;
+
+    router.route({ method: 'POST', path: '/readonly-content-parse', expose: true }, async (req) => {
+      captured = {
+        content: req.content,
+        body: req.body,
+      };
+      return { ok: true };
+    });
+
+    const req = new Request('http://localhost/readonly-content-parse', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ name: 'Alice' }),
+    });
+    Object.defineProperty(req, 'content', {
+      value: 'locked',
+      writable: false,
+      configurable: true,
+    });
+
+    const res = await router.handle(req);
+
+    expect(res.status).toBe(200);
+    expect(captured.content).toBe('locked');
+    expect(typeof captured.body?.getReader).toBe('function');
+  });
+
   it('does not parse body for GET requests', async () => {
     const { router } = makeRouter();
     let captured: any = 'untouched';
@@ -336,6 +366,393 @@ describe('Router — schema validation', () => {
     expect(res.status).toBe(422);
     expect(body.issues[0].message).toBe('Nested issue');
     expect(body.issues[0].path).toEqual(['query', 'q']);
+  });
+
+  it('passes headers and cookies into schema input payload', async () => {
+    const { router } = makeRouter();
+    let payloadSeenByValidator: any;
+
+    const input = standardSchema(async (value) => {
+      payloadSeenByValidator = value;
+      return { value };
+    });
+
+    router.route(
+      {
+        method: 'POST',
+        path: '/validate-headers-cookies',
+        expose: true,
+        schema: { input },
+      },
+      async () => ({ ok: true })
+    );
+
+    const res = await router.handle(
+      new Request('http://localhost/validate-headers-cookies?page=2', {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          authorization: 'Bearer abc',
+          cookie: 'session=s1; theme=dark',
+        },
+        body: JSON.stringify({ name: 'alice' }),
+      })
+    );
+
+    expect(res.status).toBe(200);
+    expect(payloadSeenByValidator.query).toEqual({ page: '2' });
+    expect(payloadSeenByValidator.cookies).toEqual({ session: 's1', theme: 'dark' });
+    expect(payloadSeenByValidator.headers.authorization).toBe('Bearer abc');
+    expect(payloadSeenByValidator.headers['content-type']).toBe('application/json');
+  });
+
+  it('returns 422 when header/cookie validation fails', async () => {
+    const { router } = makeRouter();
+
+    const input = standardSchema(async (value) => {
+      const payload = value as any;
+      const issues: Array<{ message: string; path: string[]; code: string }> = [];
+
+      if (!payload.headers.authorization) {
+        issues.push({
+          message: 'Authorization header is required',
+          path: ['headers', 'authorization'],
+          code: 'required',
+        });
+      }
+
+      if (!payload.cookies.session) {
+        issues.push({
+          message: 'Session cookie is required',
+          path: ['cookies', 'session'],
+          code: 'required',
+        });
+      }
+
+      return issues.length ? { issues } : { value: payload };
+    });
+
+    router.route(
+      {
+        method: 'POST',
+        path: '/validate-header-cookie-required',
+        expose: true,
+        schema: { input },
+      },
+      async () => ({ ok: true })
+    );
+
+    const res = await router.handle(
+      new Request('http://localhost/validate-header-cookie-required', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({}),
+      })
+    );
+    const body = await res.json();
+
+    expect(res.status).toBe(422);
+    expect(body.issues).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ path: ['headers', 'authorization'], code: 'required' }),
+        expect.objectContaining({ path: ['cookies', 'session'], code: 'required' }),
+      ])
+    );
+  });
+
+  it('normalizes header keys to lowercase in schema payload', async () => {
+    const { router } = makeRouter();
+    let payloadSeenByValidator: any;
+
+    const input = standardSchema(async (value) => {
+      payloadSeenByValidator = value;
+      return { value };
+    });
+
+    router.route(
+      {
+        method: 'POST',
+        path: '/validate-header-normalization',
+        expose: true,
+        schema: { input },
+      },
+      async () => ({ ok: true })
+    );
+
+    const res = await router.handle(
+      new Request('http://localhost/validate-header-normalization', {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          Authorization: 'Bearer MixedCase',
+          'X-Request-ID': 'req-1',
+        },
+        body: JSON.stringify({ ok: true }),
+      })
+    );
+
+    expect(res.status).toBe(200);
+    expect(payloadSeenByValidator.headers.authorization).toBe('Bearer MixedCase');
+    expect(payloadSeenByValidator.headers['x-request-id']).toBe('req-1');
+    expect(payloadSeenByValidator.headers.Authorization).toBeUndefined();
+  });
+
+  it('preserves duplicate header values as comma-joined strings in schema payload', async () => {
+    const { router } = makeRouter();
+    let payloadSeenByValidator: any;
+
+    const input = standardSchema(async (value) => {
+      payloadSeenByValidator = value;
+      return { value };
+    });
+
+    router.route(
+      {
+        method: 'POST',
+        path: '/validate-duplicate-headers',
+        expose: true,
+        schema: { input },
+      },
+      async () => ({ ok: true })
+    );
+
+    const headers = new Headers({ 'content-type': 'application/json' });
+    headers.append('x-tag', 'a');
+    headers.append('x-tag', 'b');
+
+    const res = await router.handle(
+      new Request('http://localhost/validate-duplicate-headers', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ ok: true }),
+      })
+    );
+
+    expect(res.status).toBe(200);
+    expect(payloadSeenByValidator.headers['x-tag']).toContain('a');
+    expect(payloadSeenByValidator.headers['x-tag']).toContain('b');
+  });
+
+  it('parses cookies without decoding and uses last value for duplicate names', async () => {
+    const { router } = makeRouter();
+    let payloadSeenByValidator: any;
+
+    const input = standardSchema(async (value) => {
+      payloadSeenByValidator = value;
+      return { value };
+    });
+
+    router.route(
+      {
+        method: 'POST',
+        path: '/validate-cookie-parser',
+        expose: true,
+        schema: { input },
+      },
+      async () => ({ ok: true })
+    );
+
+    const res = await router.handle(
+      new Request('http://localhost/validate-cookie-parser', {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          cookie: 'session=first; badpair; encoded=a%20b; session=second; quoted="x y"',
+        },
+        body: JSON.stringify({ ok: true }),
+      })
+    );
+
+    expect(res.status).toBe(200);
+    expect(payloadSeenByValidator.cookies.session).toBe('second');
+    expect(payloadSeenByValidator.cookies.encoded).toBe('a%20b');
+    expect(payloadSeenByValidator.cookies.quoted).toBe('"x y"');
+    expect(payloadSeenByValidator.cookies.badpair).toBeUndefined();
+  });
+
+  it('does not mutate req.headers when validated output includes headers', async () => {
+    const { router } = makeRouter();
+    let seenHeaderFromReq: string | null = null;
+    let seenValidatedHeaders: any;
+
+    const input = standardSchema(async (value) => {
+      const payload = value as any;
+      return {
+        value: {
+          ...payload,
+          headers: {
+            authorization: 'Bearer rewritten',
+          },
+        },
+      };
+    });
+
+    router.route(
+      {
+        method: 'POST',
+        path: '/validate-header-no-mutate',
+        expose: true,
+        schema: { input },
+      },
+      async (req) => {
+        seenHeaderFromReq = req.headers.get('authorization');
+        seenValidatedHeaders = (req.validatedInput as any)?.headers;
+        return { ok: true };
+      }
+    );
+
+    const res = await router.handle(
+      new Request('http://localhost/validate-header-no-mutate', {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          authorization: 'Bearer original',
+        },
+        body: JSON.stringify({ ok: true }),
+      })
+    );
+
+    expect(res.status).toBe(200);
+    expect(seenHeaderFromReq as unknown as string).toBe('Bearer original');
+    expect(seenValidatedHeaders).toEqual({ authorization: 'Bearer rewritten' });
+  });
+
+  it('returns 422 for rawRequest schema when raw body fails validation', async () => {
+    const { router } = makeRouter();
+
+    const input = standardSchema(async (value) => {
+      const payload = value as any;
+      const rawBody = payload.body;
+      if (typeof rawBody !== 'string' || !rawBody.trim().startsWith('{')) {
+        return {
+          issues: [{ message: 'Raw JSON body is required', path: ['body'], code: 'invalid_type' }],
+        };
+      }
+      return { value: payload };
+    });
+
+    router.route(
+      {
+        method: 'POST',
+        path: '/validate-raw-body-fail',
+        expose: true,
+        rawRequest: true,
+        schema: { input },
+      },
+      async () => ({ ok: true })
+    );
+
+    const res = await router.handle(
+      new Request('http://localhost/validate-raw-body-fail', {
+        method: 'POST',
+        headers: { 'content-type': 'text/plain' },
+        body: 'not-json',
+      })
+    );
+    const body = await res.json();
+
+    expect(res.status).toBe(422);
+    expect(body.target).toBe('input');
+    expect(body.issues[0]).toMatchObject({
+      path: ['body'],
+      code: 'invalid_type',
+    });
+  });
+
+  it('applies validator-provided body on GET requests', async () => {
+    const { router } = makeRouter();
+    let seenBody: any;
+
+    const input = standardSchema(async (value) => {
+      const payload = value as any;
+      return {
+        value: {
+          ...payload,
+          body: { injected: true, source: 'validator' },
+        },
+      };
+    });
+
+    router.route(
+      {
+        method: 'GET',
+        path: '/schema-get-injected-body',
+        expose: true,
+        schema: { input },
+      },
+      async (req) => {
+        seenBody = req.content;
+        return { ok: true };
+      }
+    );
+
+    const res = await router.handle(new Request('http://localhost/schema-get-injected-body?page=1'));
+    expect(res.status).toBe(200);
+    expect(seenBody).toEqual({ injected: true, source: 'validator' });
+  });
+
+  it('does not fail when validated output targets readonly request fields', async () => {
+    const { router } = makeRouter();
+    let captured: any;
+
+    const input = standardSchema(async () => ({
+      value: {
+        params: { id: '999' },
+        query: { page: 2 },
+        cookies: { session: 'upgraded' },
+        body: { normalized: true },
+      },
+    }));
+
+    router.route(
+      {
+        method: 'POST',
+        path: '/readonly-validated/:id',
+        expose: true,
+        rawRequest: true,
+        schema: { input },
+      },
+      async (req) => {
+        captured = {
+          params: req.params,
+          query: req.query,
+          cookies: req.cookies,
+          content: req.content,
+          body: req.body,
+          validatedInput: req.validatedInput,
+        };
+        return { ok: true };
+      }
+    );
+
+    const request = new Request('http://localhost/readonly-validated/1?page=1', {
+      method: 'POST',
+      headers: {
+        cookie: 'session=abc',
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({ original: true }),
+    });
+
+    Object.defineProperty(request, 'params', { value: { id: '1' }, writable: false, configurable: true });
+    Object.defineProperty(request, 'query', { value: { page: '1' }, writable: false, configurable: true });
+    Object.defineProperty(request, 'cookies', { value: { session: 'abc' }, writable: false, configurable: true });
+    Object.defineProperty(request, 'content', { value: 'locked', writable: false, configurable: true });
+
+    const res = await router.handle(request);
+
+    expect(res.status).toBe(200);
+    expect(captured.params).toEqual({ id: '1' });
+    expect(captured.query).toEqual({ page: '1' });
+    expect(captured.cookies).toEqual({ session: 'abc' });
+    expect(captured.content).toBe('locked');
+    expect(typeof captured.body?.getReader).toBe('function');
+    expect(captured.validatedInput).toMatchObject({
+      params: { id: '999' },
+      query: { page: 2 },
+      cookies: { session: 'upgraded' },
+      body: { normalized: true },
+    });
   });
 
   it('applies transformed query/cookies and keeps parsed body when validated output omits body', async () => {
