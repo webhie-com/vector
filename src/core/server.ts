@@ -1,5 +1,6 @@
 import type { Server } from 'bun';
-import { cors } from 'itty-router';
+import { STATIC_RESPONSES } from '../constants';
+import { cors } from '../utils/cors';
 import type { CorsOptions, DefaultVectorTypes, VectorConfig, VectorTypes } from '../types';
 import type { VectorRouter } from './router';
 
@@ -7,8 +8,11 @@ export class VectorServer<TTypes extends VectorTypes = DefaultVectorTypes> {
   private server: Server | null = null;
   private router: VectorRouter<TTypes>;
   private config: VectorConfig<TTypes>;
-  private corsHandler: any;
-  private corsHeaders: Record<string, string> | null = null;
+  private corsHandler: {
+    preflight: (request: Request) => Response;
+    corsify: (response: Response, request: Request) => Response;
+  } | null = null;
+  private corsHeadersEntries: [string, string][] | null = null;
 
   constructor(router: VectorRouter<TTypes>, config: VectorConfig<TTypes>) {
     this.router = router;
@@ -19,10 +23,12 @@ export class VectorServer<TTypes extends VectorTypes = DefaultVectorTypes> {
       const { preflight, corsify } = cors(opts);
       this.corsHandler = { preflight, corsify };
 
-      // Pre-build static CORS headers when origin is a fixed string.
-      // Avoids cloning the Response on every request via corsify().
-      if (typeof opts.origin === 'string') {
-        this.corsHeaders = {
+      // Pre-build static CORS headers when origin does not require per-request reflection.
+      const canUseStaticCorsHeaders =
+        typeof opts.origin === 'string' && (opts.origin !== '*' || !opts.credentials);
+
+      if (canUseStaticCorsHeaders) {
+        const corsHeaders: Record<string, string> = {
           'access-control-allow-origin': opts.origin,
           'access-control-allow-methods': opts.allowMethods,
           'access-control-allow-headers': opts.allowHeaders,
@@ -30,9 +36,14 @@ export class VectorServer<TTypes extends VectorTypes = DefaultVectorTypes> {
           'access-control-max-age': String(opts.maxAge),
         };
         if (opts.credentials) {
-          this.corsHeaders['access-control-allow-credentials'] = 'true';
+          corsHeaders['access-control-allow-credentials'] = 'true';
         }
+        this.corsHeadersEntries = Object.entries(corsHeaders);
       }
+
+      // Pass CORS behavior to router so matched routes also receive CORS headers.
+      this.router.setCorsHeaders(this.corsHeadersEntries);
+      this.router.setCorsHandler(this.corsHeadersEntries ? null : this.corsHandler.corsify);
     }
   }
 
@@ -53,33 +64,37 @@ export class VectorServer<TTypes extends VectorTypes = DefaultVectorTypes> {
     };
   }
 
+  private applyCors(response: Response, request?: Request): Response {
+    if (this.corsHeadersEntries) {
+      for (const [k, v] of this.corsHeadersEntries) {
+        response.headers.set(k, v);
+      }
+      return response;
+    }
+
+    if (this.corsHandler && request) {
+      return this.corsHandler.corsify(response, request);
+    }
+
+    return response;
+  }
+
   async start(): Promise<Server> {
-    const port = this.config.port || 3000;
+    const port = this.config.port ?? 3000;
     const hostname = this.config.hostname || 'localhost';
 
-    const fetch = async (request: Request): Promise<Response> => {
+    const fallbackFetch = async (request: Request): Promise<Response> => {
       try {
-        // Handle CORS preflight
+        // Handle CORS preflight for any path
         if (this.corsHandler && request.method === 'OPTIONS') {
           return this.corsHandler.preflight(request);
         }
 
-        // Try to handle the request with our router
-        let response = await this.router.handle(request);
-
-        // Apply CORS headers if configured
-        if (this.corsHeaders) {
-          for (const [k, v] of Object.entries(this.corsHeaders)) {
-            response.headers.set(k, v);
-          }
-        } else if (this.corsHandler) {
-          response = this.corsHandler.corsify(response, request);
-        }
-
-        return response;
+        // No route matched — return 404
+        return this.applyCors(STATIC_RESPONSES.NOT_FOUND.clone() as unknown as Response, request);
       } catch (error) {
         console.error('Server error:', error);
-        return new Response('Internal Server Error', { status: 500 });
+        return this.applyCors(new Response('Internal Server Error', { status: 500 }), request);
       }
     };
 
@@ -88,24 +103,21 @@ export class VectorServer<TTypes extends VectorTypes = DefaultVectorTypes> {
         port,
         hostname,
         reusePort: this.config.reusePort !== false,
-        fetch,
+        routes: this.router.getRouteTable(),
+        fetch: fallbackFetch,
         idleTimeout: this.config.idleTimeout || 60,
-        error: (error) => {
+        error: (error, request?: Request) => {
           console.error('[ERROR] Server error:', error);
-          return new Response('Internal Server Error', { status: 500 });
+          return this.applyCors(new Response('Internal Server Error', { status: 500 }), request);
         },
       });
 
-      // Validate that the server actually started
       if (!this.server || !this.server.port) {
         throw new Error(`Failed to start server on ${hostname}:${port} - server object is invalid`);
       }
 
-      // Server logs are handled by CLI
-
       return this.server;
     } catch (error: any) {
-      // Enhance error message with context for common issues
       if (error.code === 'EADDRINUSE' || error.message?.includes('address already in use')) {
         error.message = `Port ${port} is already in use`;
         error.port = port;
@@ -134,7 +146,7 @@ export class VectorServer<TTypes extends VectorTypes = DefaultVectorTypes> {
   }
 
   getPort(): number {
-    return this.server?.port || this.config.port || 3000;
+    return this.server?.port ?? this.config.port ?? 3000;
   }
 
   getHostname(): string {

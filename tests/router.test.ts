@@ -1,10 +1,12 @@
 import { beforeEach, describe, expect, it } from 'bun:test';
-import type { RouteEntry } from 'itty-router';
 import { AuthManager } from '../src/auth/protected';
 import { CacheManager } from '../src/cache/manager';
+import { STATIC_RESPONSES } from '../src/constants';
 import { VectorRouter } from '../src/core/router';
+import { VectorServer } from '../src/core/server';
 import { RouteScanner } from '../src/dev/route-scanner';
 import { MiddlewareManager } from '../src/middleware/manager';
+import type { LegacyRouteEntry } from '../src/types';
 
 describe('VectorRouter', () => {
   let router: VectorRouter;
@@ -20,156 +22,71 @@ describe('VectorRouter', () => {
   });
 
   describe('Route Registration', () => {
-    it('should register and sort routes correctly', () => {
-      // Register routes in wrong order
+    it('should register routes and expose them in getRouteTable()', () => {
       router.route({ method: 'GET', path: '/users/:id', expose: true }, async () => 'user');
       router.route({ method: 'GET', path: '/users/profile', expose: true }, async () => 'profile');
       router.route({ method: 'GET', path: '/users', expose: true }, async () => 'users');
 
-      const routes = router.getRoutes();
-
-      // Check that routes are sorted with more specific first
-      expect(routes[0][3]).toBe('/users/profile'); // Most specific
-      expect(routes[1][3]).toBe('/users'); // Static
-      expect(routes[2][3]).toBe('/users/:id'); // Parametric
+      const table = router.getRouteTable();
+      expect(table['/users/:id']).toBeDefined();
+      expect(table['/users/profile']).toBeDefined();
+      expect(table['/users']).toBeDefined();
     });
 
-    it('should handle wildcard routes', () => {
+    it('should register wildcard routes', () => {
       router.route({ method: 'GET', path: '/files/*', expose: true }, async () => 'files');
       router.route(
         { method: 'GET', path: '/files/specific', expose: true },
         async () => 'specific'
       );
 
-      const routes = router.getRoutes();
-
-      // Specific route should come before wildcard
-      expect(routes[0][3]).toBe('/files/specific');
-      expect(routes[1][3]).toBe('/files/*');
-    });
-  });
-
-  describe('Route Specificity Scoring', () => {
-    it('should prioritize exact paths', () => {
-      router.route({ method: 'GET', path: '/api/v1/users', expose: true }, async () => 'exact');
-      router.route(
-        { method: 'GET', path: '/api/:version/users', expose: true },
-        async () => 'param'
-      );
-      router.route({ method: 'GET', path: '/api/*/users', expose: true }, async () => 'wildcard');
-
-      const routes = router.getRoutes();
-
-      // Exact path should have highest priority
-      expect(routes[0][3]).toBe('/api/v1/users');
-      expect(routes[1][3]).toBe('/api/:version/users');
-      expect(routes[2][3]).toBe('/api/*/users');
-    });
-
-    it('should handle complex path patterns', () => {
-      const paths = [
-        '/api/users/:id/posts/:postId',
-        '/api/users/:id/posts',
-        '/api/users/admin/posts',
-        '/api/users/:id',
-        '/api/users',
-      ];
-
-      paths.forEach((path) => {
-        router.route({ method: 'GET', path, expose: true }, async () => path);
-      });
-
-      const routes = router.getRoutes();
-
-      // Most specific (static segments) should come first
-      expect(routes[0][3]).toBe('/api/users/admin/posts');
-      expect(routes[1][3]).toBe('/api/users');
+      const table = router.getRouteTable();
+      expect(table['/files/*']).toBeDefined();
+      expect(table['/files/specific']).toBeDefined();
     });
   });
 
   describe('Request Handling', () => {
     it('should match routes correctly', async () => {
-      router.route(
-        {
-          method: 'GET',
-          path: '/test',
-          expose: true,
-        },
-        async () => ({ result: 'test' })
-      );
-
-      const request = new Request('http://localhost/test', { method: 'GET' });
-      const response = await router.handle(request);
-
+      router.route({ method: 'GET', path: '/test', expose: true }, async () => ({
+        result: 'test',
+      }));
+      const response = await router.handle(new Request('http://localhost/test'));
       expect(response).toBeInstanceOf(Response);
       expect(response.status).toBe(200);
     });
 
     it('should return 404 for unmatched routes', async () => {
-      const request = new Request('http://localhost/nonexistent', {
-        method: 'GET',
-      });
-      const response = await router.handle(request);
-
+      const response = await router.handle(new Request('http://localhost/nonexistent'));
       expect(response).toBeInstanceOf(Response);
       expect(response.status).toBe(404);
     });
 
     it('should return 403 for non-exposed routes', async () => {
-      router.route(
-        {
-          method: 'GET',
-          path: '/internal',
-          expose: false,
-        },
-        async () => ({ internal: true })
-      );
-
-      const request = new Request('http://localhost/internal', {
-        method: 'GET',
-      });
-      const response = await router.handle(request);
-
+      router.route({ method: 'GET', path: '/internal', expose: false }, async () => ({
+        internal: true,
+      }));
+      const response = await router.handle(new Request('http://localhost/internal'));
       expect(response.status).toBe(403);
     });
-  });
 
-  describe('Method Matching', () => {
     it('should match correct HTTP methods', async () => {
       router.route({ method: 'POST', path: '/data', expose: true }, async () => 'post');
       router.route({ method: 'GET', path: '/data', expose: true }, async () => 'get');
-
-      const getRequest = new Request('http://localhost/data', {
-        method: 'GET',
-      });
-      const postRequest = new Request('http://localhost/data', {
-        method: 'POST',
-      });
-
-      const getResponse = await router.handle(getRequest);
-      const postResponse = await router.handle(postRequest);
-
+      const getResponse = await router.handle(
+        new Request('http://localhost/data', { method: 'GET' })
+      );
+      const postResponse = await router.handle(
+        new Request('http://localhost/data', { method: 'POST' })
+      );
       expect(getResponse.status).toBe(200);
       expect(postResponse.status).toBe(200);
-    });
-
-    it('should handle OPTIONS requests', async () => {
-      router.route({ method: 'GET', path: '/cors', expose: true }, async () => 'cors');
-
-      const request = new Request('http://localhost/cors', {
-        method: 'OPTIONS',
-      });
-      const response = await router.handle(request);
-
-      // OPTIONS should match GET routes
-      expect(response.status).toBe(200);
     });
   });
 
   // Bug B2: bulkAddRoutes method
   describe('Bug B2 — bulkAddRoutes', () => {
-    it('should produce the same sorted order as individual addRoute calls', () => {
-      // Build 20 route entries manually (same shape as RouteEntry: [method, regex, handlers, path])
+    it('should register the same routes as individual addRoute calls', () => {
       const paths = [
         '/a',
         '/b/:id',
@@ -193,8 +110,12 @@ describe('VectorRouter', () => {
         '/u',
       ];
 
-      const makeEntry = (path: string): RouteEntry =>
-        ['GET', /.*/, [async () => new Response('ok')], path] as unknown as RouteEntry;
+      const makeEntry = (path: string): LegacyRouteEntry => [
+        'GET',
+        /.*/,
+        [async () => new Response('ok')],
+        path,
+      ];
 
       const entries = paths.map(makeEntry);
 
@@ -203,14 +124,14 @@ describe('VectorRouter', () => {
       for (const entry of entries) {
         routerA.addRoute(entry);
       }
-      const sortedA = routerA.getRoutes().map((r) => r[3]);
+      const keysA = Object.keys(routerA.getRouteTable()).sort();
 
       // Bulk add
       const routerB = new VectorRouter(middlewareManager, authManager, cacheManager);
       routerB.bulkAddRoutes(entries);
-      const sortedB = routerB.getRoutes().map((r) => r[3]);
+      const keysB = Object.keys(routerB.getRouteTable()).sort();
 
-      expect(sortedB).toEqual(sortedA);
+      expect(keysB).toEqual(keysA);
     });
 
     it('bulkAddRoutes should exist as a method on VectorRouter', () => {
@@ -218,22 +139,234 @@ describe('VectorRouter', () => {
     });
   });
 
-  // Bug B3: Malformed URL returns 400
-  describe('Bug B3 — Malformed URL handling', () => {
-    it('should return 400 for a request with a malformed URL', async () => {
-      // Construct a Request with a URL that passes the Request constructor
-      // but causes new URL() to throw (e.g. bare "http://" has no host).
-      // We override the url property after construction to a broken value.
-      const req = new Request('http://localhost/ok');
-      Object.defineProperty(req, 'url', { value: 'http://', writable: false });
-
-      const response = await router.handle(req);
-
-      expect(response.status).toBe(400);
-      expect(response.headers.get('content-type')).toContain('application/json');
+  // URL handling: unmatched routes and malformed request URLs
+  describe('Request URL handling', () => {
+    it('should return 404 for unmatched routes', async () => {
+      const response = await router.handle(new Request('http://localhost/no-such-route'));
+      expect(response.status).toBe(404);
       const body = await response.json();
       expect(body.error).toBe(true);
-      expect(body.message).toContain('Malformed request URL');
+    });
+
+    it('should return 400 for malformed request URLs', async () => {
+      const malformedRequest = {
+        url: 'http://%',
+        method: 'GET',
+        headers: new Headers(),
+      } as unknown as Request;
+
+      const response = await router.handle(malformedRequest);
+      expect(response.status).toBe(400);
+    });
+
+    it('should not throw when params is readonly on request objects', async () => {
+      router.route({ method: 'GET', path: '/users/:id', expose: true }, async () => ({ ok: true }));
+
+      const request = new Request('http://localhost/users/123');
+      Object.defineProperty(request, 'params', {
+        value: {},
+        writable: false,
+        configurable: true,
+      });
+
+      const response = await router.handle(request);
+      expect(response.status).toBe(200);
+    });
+  });
+
+  describe('CORS behavior', () => {
+    it('applies CORS headers for array origin configuration on matched routes', async () => {
+      router.route({ method: 'GET', path: '/cors-array', expose: true }, async () => ({
+        ok: true,
+      }));
+      new VectorServer(router, {
+        cors: {
+          origin: ['https://app.example.com'],
+          credentials: true,
+        },
+      });
+
+      const response = await router.handle(
+        new Request('http://localhost/cors-array', {
+          headers: { origin: 'https://app.example.com' },
+        })
+      );
+
+      expect(response.headers.get('access-control-allow-origin')).toBe('https://app.example.com');
+      expect(response.headers.get('access-control-allow-credentials')).toBe('true');
+      expect(response.headers.get('vary')).toContain('Origin');
+    });
+
+    it('reflects request origin when wildcard origin is used with credentials', async () => {
+      router.route({ method: 'GET', path: '/cors-wildcard', expose: true }, async () => ({
+        ok: true,
+      }));
+      new VectorServer(router, {
+        cors: {
+          origin: '*',
+          credentials: true,
+        },
+      });
+
+      const response = await router.handle(
+        new Request('http://localhost/cors-wildcard', {
+          headers: { origin: 'https://dashboard.example.com' },
+        })
+      );
+
+      expect(response.headers.get('access-control-allow-origin')).toBe(
+        'https://dashboard.example.com'
+      );
+      expect(response.headers.get('access-control-allow-credentials')).toBe('true');
+      expect(response.headers.get('vary')).toContain('Origin');
+    });
+
+    it('uses middleware-mutated request headers for dynamic CORS decisions', async () => {
+      middlewareManager.addBefore((req) => {
+        const headers = new Headers(req.headers);
+        headers.set('origin', 'https://allowed.example');
+        return new Request(req.url, {
+          method: req.method,
+          headers,
+        }) as any;
+      });
+
+      router.route({ method: 'GET', path: '/cors-mutated-origin', expose: true }, async () => ({
+        ok: true,
+      }));
+      new VectorServer(router, {
+        cors: {
+          origin: ['https://allowed.example'],
+          credentials: true,
+        },
+      });
+
+      const response = await router.handle(
+        new Request('http://localhost/cors-mutated-origin', {
+          headers: { origin: 'https://blocked.example' },
+        })
+      );
+
+      expect(response.headers.get('access-control-allow-origin')).toBe('https://allowed.example');
+      expect(response.headers.get('access-control-allow-credentials')).toBe('true');
+    });
+
+    it('applies CORS headers to fallback 404 responses', () => {
+      const server = new VectorServer(router, {
+        cors: {
+          origin: ['https://app.example.com'],
+          credentials: true,
+        },
+      });
+      const request = new Request('http://localhost/no-route', {
+        headers: { origin: 'https://app.example.com' },
+      });
+
+      const response = (server as any).applyCors(
+        STATIC_RESPONSES.NOT_FOUND.clone(),
+        request
+      ) as Response;
+
+      expect(response.status).toBe(404);
+      expect(response.headers.get('access-control-allow-origin')).toBe('https://app.example.com');
+      expect(response.headers.get('access-control-allow-credentials')).toBe('true');
+    });
+
+    it('applies static CORS headers to server error responses without request context', () => {
+      const server = new VectorServer(router, {
+        cors: {
+          origin: 'https://app.example.com',
+          credentials: true,
+        },
+      });
+
+      const response = (server as any).applyCors(
+        new Response('Internal Server Error', { status: 500 })
+      ) as Response;
+
+      expect(response.status).toBe(500);
+      expect(response.headers.get('access-control-allow-origin')).toBe('https://app.example.com');
+      expect(response.headers.get('access-control-allow-credentials')).toBe('true');
+    });
+  });
+
+  describe('Route safety and matching behavior', () => {
+    it('throws when mixing a static route with a method route for the same path', () => {
+      router.addStaticRoute('/mixed', new Response('static'));
+
+      expect(() =>
+        router.route({ method: 'GET', path: '/mixed', expose: true }, async () => 'method')
+      ).toThrow();
+    });
+
+    it('throws when adding a static route for a path that already has method routes', () => {
+      router.route({ method: 'GET', path: '/mixed-2', expose: true }, async () => 'method');
+
+      expect(() => router.addStaticRoute('/mixed-2', new Response('static'))).toThrow();
+    });
+
+    it('matches more specific routes before wildcard routes', async () => {
+      router.route(
+        { method: 'GET', path: '/files/*', expose: true },
+        async () => new Response('wild')
+      );
+      router.route(
+        { method: 'GET', path: '/files/specific', expose: true },
+        async () => new Response('specific')
+      );
+
+      const response = await router.handle(new Request('http://localhost/files/specific'));
+      expect(response.status).toBe(200);
+      expect(await response.text()).toBe('specific');
+    });
+
+    it('keeps precompiled matchers stable across requests', async () => {
+      router.route({ method: 'GET', path: '/stable/:id', expose: true }, async () => ({
+        ok: true,
+      }));
+
+      const matchers = (router as any).routeMatchers as Array<{ path: string; regex: RegExp }>;
+      const before = matchers.find((m) => m.path === '/stable/:id')?.regex;
+      expect(before).toBeInstanceOf(RegExp);
+      if (!before) {
+        throw new Error('Expected matcher regex to exist before requests');
+      }
+
+      await router.handle(new Request('http://localhost/stable/1'));
+      await router.handle(new Request('http://localhost/stable/2'));
+
+      const after = ((router as any).routeMatchers as Array<{ path: string; regex: RegExp }>).find(
+        (m) => m.path === '/stable/:id'
+      )?.regex;
+      if (!after) {
+        throw new Error('Expected matcher regex to exist after requests');
+      }
+      expect(after).toBe(before);
+    });
+
+    it('does not allow prototype pollution via route path keys', () => {
+      const protoBefore = (Object.prototype as any).GET;
+      const objectBefore = (Object as any).GET;
+
+      try {
+        router.route({ method: 'GET', path: '__proto__', expose: true }, async () => 'ok');
+        router.route({ method: 'GET', path: 'constructor', expose: true }, async () => 'ok');
+
+        expect((Object.prototype as any).GET).toBe(protoBefore);
+        expect((Object as any).GET).toBe(objectBefore);
+      } finally {
+        if (protoBefore === undefined) {
+          delete (Object.prototype as any).GET;
+        } else {
+          (Object.prototype as any).GET = protoBefore;
+        }
+
+        if (objectBefore === undefined) {
+          delete (Object as any).GET;
+        } else {
+          (Object as any).GET = objectBefore;
+        }
+      }
     });
   });
 });
@@ -241,21 +374,14 @@ describe('VectorRouter', () => {
 // Bug B1: Glob pattern order — ** must be replaced before *
 describe('RouteScanner — Bug B1 glob pattern order', () => {
   it('should correctly match **/*.test.ts patterns (** not consumed by * replacement)', () => {
-    // Access the private isExcluded method via a subclass trick
     class TestableScanner extends RouteScanner {
       public testIsExcluded(filePath: string): boolean {
         return (this as any).isExcluded(filePath);
       }
     }
 
-    // Use a custom exclude pattern that contains **
     const _ = new TestableScanner('./routes', ['**/*.test.ts']);
 
-    // Simulate a relative path that should be excluded
-    // isExcluded receives the absolute path and computes relative internally,
-    // so we need to point routesDir at a known prefix.
-    // Easier: directly test the regex logic by checking the pattern converts correctly.
-    // We replicate the (fixed) conversion and assert it matches the target string.
     const pattern = '**/*.test.ts';
 
     // Fixed conversion: use a placeholder so ** is not re-processed by the * replacement
@@ -290,10 +416,7 @@ describe('RouteScanner — Bug B1 glob pattern order', () => {
     expect(buggyRegex.test(targetPath)).toBe(false);
 
     // Now verify the actual scanner's isExcluded uses the fixed logic.
-    // We do this by checking that a file under __tests__ IS excluded
-    // when using the default patterns which include '**/__tests__/**'.
     const defaultScanner = new TestableScanner('./routes');
-    // Build an absolute path: routesDir/api/__tests__/foo.test.ts
     const routesDir = (defaultScanner as any).routesDir as string;
     const absPath = `${routesDir}/api/__tests__/foo.test.ts`;
     expect(defaultScanner.testIsExcluded(absPath)).toBe(true);

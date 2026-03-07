@@ -16,3 +16,9 @@ export function buildRouteRegex(path: string): RegExp {
       .replace(/(\/?)\*/g, '($1.*)?')}/*$`
   );
 }
+
+export default {
+  toFileUrl,
+  normalizePath,
+  buildRouteRegex,
+};

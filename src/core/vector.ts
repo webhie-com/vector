@@ -1,5 +1,4 @@
 import type { Server } from 'bun';
-import type { RouteEntry } from 'itty-router';
 import { AuthManager } from '../auth/protected';
 import { CacheManager } from '../cache/manager';
 import { RouteGenerator } from '../dev/route-generator';
@@ -9,6 +8,7 @@ import { toFileUrl } from '../utils/path';
 import type {
   CacheHandler,
   DefaultVectorTypes,
+  LegacyRouteEntry,
   ProtectedHandler,
   RouteHandler,
   RouteOptions,
@@ -17,6 +17,12 @@ import type {
 } from '../types';
 import { VectorRouter } from './router';
 import { VectorServer } from './server';
+
+interface LoadedRouteDefinition<TTypes extends VectorTypes = DefaultVectorTypes> {
+  entry: { method: string; path: string };
+  options: RouteOptions<TTypes>;
+  handler: RouteHandler<TTypes>;
+}
 
 // Internal-only class - not exposed to users
 export class Vector<TTypes extends VectorTypes = DefaultVectorTypes> {
@@ -72,8 +78,8 @@ export class Vector<TTypes extends VectorTypes = DefaultVectorTypes> {
   }
 
   // Internal method to add route
-  addRoute(options: RouteOptions<TTypes>, handler: RouteHandler<TTypes>): RouteEntry {
-    return this.router.route(options, handler);
+  addRoute(options: RouteOptions<TTypes>, handler: RouteHandler<TTypes>): void {
+    this.router.route(options, handler);
   }
 
   // Internal method to start server - only called by CLI
@@ -136,25 +142,24 @@ export class Vector<TTypes extends VectorTypes = DefaultVectorTypes> {
             if (exported) {
               if (this.isRouteDefinition(exported)) {
                 // Use router.route() to ensure middleware is applied
-                const routeDef = exported as any;
-                this.router.route(routeDef.options, routeDef.handler);
-                this.logRouteLoaded(routeDef.options);
+                this.router.route(exported.options, exported.handler);
+                this.logRouteLoaded(exported.options);
               } else if (this.isRouteEntry(exported)) {
                 // Legacy support for direct RouteEntry (won't have middleware)
-                this.router.addRoute(exported as RouteEntry);
-                this.logRouteLoaded(exported as RouteEntry);
+                this.router.addRoute(exported);
+                this.logRouteLoaded(exported);
               } else if (typeof exported === 'function') {
-                this.router.route(route.options as any, exported);
-                this.logRouteLoaded(route.options);
+                this.router.route(
+                  route.options as RouteOptions<TTypes>,
+                  exported as RouteHandler<TTypes>
+                );
+                this.logRouteLoaded(route.options as RouteOptions<TTypes>);
               }
             }
           } catch (error) {
             console.error(`Failed to load route ${route.name} from ${route.path}:`, error);
           }
         }
-
-        // Ensure routes are properly sorted after loading all
-        this.router.sortRoutes();
       }
     } catch (error) {
       if ((error as any).code !== 'ENOENT' && (error as any).code !== 'ENOTDIR') {
@@ -166,36 +171,49 @@ export class Vector<TTypes extends VectorTypes = DefaultVectorTypes> {
   async loadRoute(routeModule: any) {
     if (typeof routeModule === 'function') {
       const routeEntry = routeModule();
-      if (Array.isArray(routeEntry)) {
-        this.router.addRoute(routeEntry as RouteEntry);
+      if (this.isRouteEntry(routeEntry)) {
+        this.router.addRoute(routeEntry);
       }
     } else if (routeModule && typeof routeModule === 'object') {
       for (const [, value] of Object.entries(routeModule)) {
         if (typeof value === 'function') {
-          const routeEntry = (value as any)();
-          if (Array.isArray(routeEntry)) {
-            this.router.addRoute(routeEntry as RouteEntry);
+          const routeEntry = value();
+          if (this.isRouteEntry(routeEntry)) {
+            this.router.addRoute(routeEntry);
           }
         }
       }
     }
   }
 
-  private isRouteEntry(value: any): boolean {
-    return Array.isArray(value) && value.length >= 3;
-  }
+  private isRouteEntry(value: unknown): value is LegacyRouteEntry {
+    if (!Array.isArray(value) || value.length < 3) {
+      return false;
+    }
 
-  private isRouteDefinition(value: any): boolean {
+    const [method, matcher, handlers, path] = value;
     return (
-      value &&
-      typeof value === 'object' &&
-      'entry' in value &&
-      'options' in value &&
-      'handler' in value
+      typeof method === 'string' &&
+      matcher instanceof RegExp &&
+      Array.isArray(handlers) &&
+      handlers.length > 0 &&
+      handlers.every((handler) => typeof handler === 'function') &&
+      (path === undefined || typeof path === 'string')
     );
   }
 
-  private logRouteLoaded(_: RouteEntry | RouteOptions): void {
+  private isRouteDefinition(value: unknown): value is LoadedRouteDefinition<TTypes> {
+    return (
+      value !== null &&
+      typeof value === 'object' &&
+      'entry' in value &&
+      'options' in value &&
+      'handler' in value &&
+      typeof (value as LoadedRouteDefinition<TTypes>).handler === 'function'
+    );
+  }
+
+  private logRouteLoaded(_: RouteOptions<TTypes> | LegacyRouteEntry): void {
     // Silent - no logging
   }
 
