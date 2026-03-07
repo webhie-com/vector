@@ -3,6 +3,7 @@ import { AuthManager } from '../src/auth/protected';
 import { CacheManager } from '../src/cache/manager';
 import { VectorRouter } from '../src/core/router';
 import { MiddlewareManager } from '../src/middleware/manager';
+import type { StandardSchemaV1 } from '../src/types';
 
 function makeRouter() {
   const middleware = new MiddlewareManager();
@@ -24,7 +25,9 @@ function jsonRequest(url: string, method = 'POST', body?: object) {
   });
 }
 
-function standardSchema(validate: (value: unknown) => unknown | Promise<unknown>) {
+function standardSchema<TOutput = unknown>(
+  validate: StandardSchemaV1<unknown, TOutput>['~standard']['validate']
+): StandardSchemaV1<unknown, TOutput> {
   return {
     '~standard': {
       version: 1 as const,
@@ -304,6 +307,139 @@ describe('Router — schema validation', () => {
     expect(res.status).toBe(422);
     expect(body.message).toBe('Validation failed');
     expect(body.issues[0].message).toBe('Broken payload');
+  });
+
+  it('maps thrown cause.issues to 422', async () => {
+    const { router } = makeRouter();
+
+    const input = standardSchema(async () => {
+      const error = new Error('wrapped');
+      (error as any).cause = {
+        issues: [{ message: 'Nested issue', path: ['query', 'q'] }],
+      };
+      throw error;
+    });
+
+    router.route(
+      {
+        method: 'POST',
+        path: '/throw-cause-issues',
+        expose: true,
+        schema: { input },
+      },
+      async () => ({ ok: true })
+    );
+
+    const res = await router.handle(jsonRequest('http://localhost/throw-cause-issues', 'POST', { q: 1 }));
+    const body = await res.json();
+
+    expect(res.status).toBe(422);
+    expect(body.issues[0].message).toBe('Nested issue');
+    expect(body.issues[0].path).toEqual(['query', 'q']);
+  });
+
+  it('applies transformed query/cookies and keeps parsed body when validated output omits body', async () => {
+    const { router } = makeRouter();
+    let seenQuery: any;
+    let seenCookies: any;
+    let seenBody: any;
+
+    const input = standardSchema(async (value) => {
+      const payload = value as any;
+      return {
+        value: {
+          params: payload.params,
+          query: { page: Number(payload.query.page) },
+          cookies: { session: String(payload.cookies.session).toUpperCase() },
+        },
+      };
+    });
+
+    router.route(
+      {
+        method: 'POST',
+        path: '/transform/:id',
+        expose: true,
+        schema: { input },
+      },
+      async (req) => {
+        seenQuery = req.query;
+        seenCookies = req.cookies;
+        seenBody = req.content;
+        return { id: req.params?.id };
+      }
+    );
+
+    const request = new Request('http://localhost/transform/abc?page=2', {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        cookie: 'session=abc123',
+      },
+      body: JSON.stringify({ name: 'alice' }),
+    });
+    const res = await router.handle(request);
+
+    expect(res.status).toBe(200);
+    expect(seenQuery).toEqual({ page: 2 });
+    expect(seenCookies).toEqual({ session: 'ABC123' });
+    expect(seenBody).toEqual({ name: 'alice' });
+  });
+
+  it('keeps existing request fields when validator returns non-object output', async () => {
+    const { router } = makeRouter();
+    let captured: any;
+
+    const input = standardSchema(async () => ({ value: 'opaque-token' }));
+
+    router.route(
+      {
+        method: 'POST',
+        path: '/non-object/:id',
+        expose: true,
+        schema: { input },
+      },
+      async (req) => {
+        captured = {
+          validatedInput: req.validatedInput,
+          params: req.params,
+          body: req.content,
+        };
+        return { ok: true };
+      }
+    );
+
+    const res = await router.handle(jsonRequest('http://localhost/non-object/42', 'POST', { a: 1 }));
+    expect(res.status).toBe(200);
+    expect(captured.validatedInput).toBe('opaque-token');
+    expect(captured.params).toEqual({ id: '42' });
+    expect(captured.body).toEqual({ a: 1 });
+  });
+
+  it('validates GET requests with schema input and keeps body undefined', async () => {
+    const { router } = makeRouter();
+    let payloadSeenByValidator: any;
+
+    const input = standardSchema(async (value) => {
+      payloadSeenByValidator = value;
+      return { value };
+    });
+
+    router.route(
+      {
+        method: 'GET',
+        path: '/schema-get/:id',
+        expose: true,
+        schema: { input },
+      },
+      async () => ({ ok: true })
+    );
+
+    const res = await router.handle(new Request('http://localhost/schema-get/99?page=1'));
+    expect(res.status).toBe(200);
+    expect(payloadSeenByValidator.params).toEqual({ id: '99' });
+    expect(payloadSeenByValidator.query).toEqual({ page: '1' });
+    expect(payloadSeenByValidator.body).toBeUndefined();
   });
 });
 

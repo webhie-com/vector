@@ -47,6 +47,29 @@ describe('schema-validation utils', () => {
     }
   });
 
+  it('treats empty issues arrays as success', async () => {
+    const schema = makeSchema((value) => ({
+      issues: [],
+      value: { wrapped: value },
+    }));
+    const result = await runStandardValidation(schema as any, { ok: true });
+
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.value).toEqual({ wrapped: { ok: true } });
+    }
+  });
+
+  it('treats validators that return no issues/value as success with undefined value', async () => {
+    const schema = makeSchema(() => ({}));
+    const result = await runStandardValidation(schema as any, { ok: true });
+
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.value).toBeUndefined();
+    }
+  });
+
   it('extracts thrown issues from common error shapes', () => {
     const direct = extractThrownIssues([{ message: 'x' }]);
     expect(direct).toEqual([{ message: 'x' }]);
@@ -59,6 +82,9 @@ describe('schema-validation utils', () => {
 
     const none = extractThrownIssues(new Error('boom'));
     expect(none).toBeNull();
+
+    const malformed = extractThrownIssues({ cause: { issues: 'nope' } });
+    expect(malformed).toBeNull();
   });
 
   it('normalizes validation issues deterministically', () => {
@@ -84,6 +110,14 @@ describe('schema-validation utils', () => {
         path: [],
       },
     ]);
+  });
+
+  it('normalizes mixed primitive path segments and skips nullish values', () => {
+    const normalized = normalizeValidationIssues([{ path: [0, true, false, null, undefined], message: 'x' }], false);
+    expect(normalized[0]).toEqual({
+      message: 'x',
+      path: [0, 'true', 'false'],
+    });
   });
 
   it('includes raw issue payload only when requested', () => {

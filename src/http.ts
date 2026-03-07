@@ -4,28 +4,35 @@ import type {
   DefaultVectorTypes,
   GetAuthType,
   InferRouteInputFromSchemaDefinition,
-  RouteOptions,
   RouteSchemaDefinition,
   VectorRequest,
   VectorTypes,
 } from './types';
 import { getVectorInstance } from './core/vector';
 
-interface ExtendedApiOptions extends ApiOptions {
+interface ExtendedApiOptions<TSchemaDef extends RouteSchemaDefinition | undefined = RouteSchemaDefinition | undefined>
+  extends ApiOptions<TSchemaDef> {
   method: string;
   path: string;
 }
 
-export interface RouteDefinition<TTypes extends VectorTypes = DefaultVectorTypes> {
+export interface RouteDefinition<
+  TTypes extends VectorTypes = DefaultVectorTypes,
+  TValidatedInput = undefined,
+  TSchemaDef extends RouteSchemaDefinition | undefined = RouteSchemaDefinition | undefined,
+> {
   entry: { method: string; path: string };
-  options: ExtendedApiOptions;
-  handler: (req: VectorRequest<TTypes>) => Promise<unknown>;
+  options: ExtendedApiOptions<TSchemaDef>;
+  handler: (req: VectorRequest<TTypes, TValidatedInput>) => Promise<unknown> | unknown;
 }
 
-export function route<TTypes extends VectorTypes = DefaultVectorTypes>(
-  options: ExtendedApiOptions,
-  fn: (req: VectorRequest<TTypes>) => Promise<unknown>
-): RouteDefinition<TTypes> {
+export function route<
+  TTypes extends VectorTypes = DefaultVectorTypes,
+  TSchemaDef extends RouteSchemaDefinition | undefined = RouteSchemaDefinition | undefined,
+>(
+  options: ExtendedApiOptions<TSchemaDef>,
+  fn: (req: VectorRequest<TTypes, InferRouteInputFromSchemaDefinition<TSchemaDef>>) => Promise<unknown> | unknown
+): RouteDefinition<TTypes, InferRouteInputFromSchemaDefinition<TSchemaDef>, TSchemaDef> {
   return {
     entry: {
       method: options.method.toUpperCase(),
@@ -42,9 +49,7 @@ function stringifyData(data: unknown): string {
     return JSON.stringify(val);
   } catch (e) {
     if (e instanceof TypeError && /\bbigint\b/i.test(e.message)) {
-      return JSON.stringify(val, (_key, value) =>
-        typeof value === 'bigint' ? value.toString() : value
-      );
+      return JSON.stringify(val, (_key, value) => (typeof value === 'bigint' ? value.toString() : value));
     }
     throw e;
   }
@@ -200,7 +205,7 @@ export const protectedRoute = async <TTypes extends VectorTypes = DefaultVectorT
   }
 };
 
-export interface ApiOptions {
+export interface ApiOptions<TSchemaDef extends RouteSchemaDefinition | undefined = RouteSchemaDefinition | undefined> {
   auth?: boolean;
   expose?: boolean;
   rawRequest?: boolean;
@@ -208,7 +213,7 @@ export interface ApiOptions {
   rawResponse?: boolean;
   cache?: CacheOptions | number | null;
   responseContentType?: string;
-  schema?: RouteSchemaDefinition;
+  schema?: TSchemaDef;
 }
 
 export function api<TTypes extends VectorTypes = DefaultVectorTypes, TValidatedInput = undefined>(
@@ -251,12 +256,12 @@ export function api<TTypes extends VectorTypes = DefaultVectorTypes, TValidatedI
           req.content = null;
         }
       }
-      
+
       if (req.content) {
-        req.body = req.content; 
+        req.body = req.content;
       }
 
-      const result = await fn(req);
+      const result = await fn(req as unknown as VectorRequest<TTypes, TValidatedInput>);
 
       return rawResponse ? result : ApiResponse.success(result, responseContentType);
     } catch (err: unknown) {

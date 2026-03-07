@@ -4,9 +4,10 @@ import { CacheManager } from '../src/cache/manager';
 import { STATIC_RESPONSES } from '../src/constants';
 import { VectorRouter } from '../src/core/router';
 import { VectorServer } from '../src/core/server';
+import { Vector, getVectorInstance } from '../src/core/vector';
 import { RouteScanner } from '../src/dev/route-scanner';
 import { MiddlewareManager } from '../src/middleware/manager';
-import type { LegacyRouteEntry } from '../src/types';
+import type { LegacyRouteEntry, RouteBooleanDefaults } from '../src/types';
 
 describe('VectorRouter', () => {
   let router: VectorRouter;
@@ -164,15 +165,152 @@ describe('VectorRouter', () => {
       expect(visibleResponse.status).toBe(200);
     });
 
+    it('should apply rawRequest default and allow explicit override', async () => {
+      router.setRouteBooleanDefaults({ rawRequest: true });
+      let defaultCaptured: unknown = 'unset';
+      let overrideCaptured: unknown = 'unset';
+
+      router.route(
+        {
+          method: 'POST',
+          path: '/raw-default',
+          expose: true,
+        },
+        async (req) => {
+          defaultCaptured = req.content;
+          return { ok: true };
+        }
+      );
+      router.route(
+        {
+          method: 'POST',
+          path: '/raw-override',
+          expose: true,
+          rawRequest: false,
+        },
+        async (req) => {
+          overrideCaptured = req.content;
+          return { ok: true };
+        }
+      );
+
+      await router.handle(
+        new Request('http://localhost/raw-default', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ a: 1 }),
+        })
+      );
+      await router.handle(
+        new Request('http://localhost/raw-override', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ a: 1 }),
+        })
+      );
+
+      expect(defaultCaptured).toBeUndefined();
+      expect(overrideCaptured).toEqual({ a: 1 });
+    });
+
+    it('should apply rawResponse default and allow explicit override', async () => {
+      router.setRouteBooleanDefaults({ rawResponse: true });
+
+      router.route(
+        {
+          method: 'GET',
+          path: '/raw-response-default',
+          expose: true,
+        },
+        async () => 'plain-default'
+      );
+      router.route(
+        {
+          method: 'GET',
+          path: '/raw-response-override',
+          expose: true,
+          rawResponse: false,
+        },
+        async () => 'json-override'
+      );
+
+      const defaultResponse = await router.handle(new Request('http://localhost/raw-response-default'));
+      const overrideResponse = await router.handle(new Request('http://localhost/raw-response-override'));
+
+      expect(defaultResponse.status).toBe(200);
+      expect(await defaultResponse.text()).toBe('plain-default');
+
+      expect(overrideResponse.status).toBe(200);
+      expect(await overrideResponse.text()).toBe('"json-override"');
+    });
+
+    it('should apply validateRawRequest default when rawRequest default is enabled', async () => {
+      router.setRouteBooleanDefaults({ rawRequest: true, validateRawRequest: false });
+      let skippedCalled = false;
+      let validatedCalled = false;
+
+      const failingSchema = {
+        '~standard': {
+          version: 1 as const,
+          vendor: 'test',
+          validate: async () => ({
+            issues: [{ message: 'must fail', path: ['body'] }],
+          }),
+        },
+      };
+
+      router.route(
+        {
+          method: 'POST',
+          path: '/validate-raw-default-skip',
+          expose: true,
+          schema: { input: failingSchema },
+        },
+        async () => {
+          skippedCalled = true;
+          return { ok: true };
+        }
+      );
+      router.route(
+        {
+          method: 'POST',
+          path: '/validate-raw-default-override',
+          expose: true,
+          validateRawRequest: true,
+          schema: { input: failingSchema },
+        },
+        async () => {
+          validatedCalled = true;
+          return { ok: true };
+        }
+      );
+
+      const skippedResponse = await router.handle(
+        new Request('http://localhost/validate-raw-default-skip', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ a: 1 }),
+        })
+      );
+      const validatedResponse = await router.handle(
+        new Request('http://localhost/validate-raw-default-override', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ a: 1 }),
+        })
+      );
+
+      expect(skippedResponse.status).toBe(200);
+      expect(skippedCalled).toBe(true);
+      expect(validatedResponse.status).toBe(422);
+      expect(validatedCalled).toBe(false);
+    });
+
     it('should match correct HTTP methods', async () => {
       router.route({ method: 'POST', path: '/data', expose: true }, async () => 'post');
       router.route({ method: 'GET', path: '/data', expose: true }, async () => 'get');
-      const getResponse = await router.handle(
-        new Request('http://localhost/data', { method: 'GET' })
-      );
-      const postResponse = await router.handle(
-        new Request('http://localhost/data', { method: 'POST' })
-      );
+      const getResponse = await router.handle(new Request('http://localhost/data', { method: 'GET' }));
+      const postResponse = await router.handle(new Request('http://localhost/data', { method: 'POST' }));
       expect(getResponse.status).toBe(200);
       expect(postResponse.status).toBe(200);
     });
@@ -204,12 +342,7 @@ describe('VectorRouter', () => {
         '/u',
       ];
 
-      const makeEntry = (path: string): LegacyRouteEntry => [
-        'GET',
-        /.*/,
-        [async () => new Response('ok')],
-        path,
-      ];
+      const makeEntry = (path: string): LegacyRouteEntry => ['GET', /.*/, [async () => new Response('ok')], path];
 
       const entries = paths.map(makeEntry);
 
@@ -308,9 +441,7 @@ describe('VectorRouter', () => {
         })
       );
 
-      expect(response.headers.get('access-control-allow-origin')).toBe(
-        'https://dashboard.example.com'
-      );
+      expect(response.headers.get('access-control-allow-origin')).toBe('https://dashboard.example.com');
       expect(response.headers.get('access-control-allow-credentials')).toBe('true');
       expect(response.headers.get('vary')).toContain('Origin');
     });
@@ -356,10 +487,7 @@ describe('VectorRouter', () => {
         headers: { origin: 'https://app.example.com' },
       });
 
-      const response = (server as any).applyCors(
-        STATIC_RESPONSES.NOT_FOUND.clone(),
-        request
-      ) as Response;
+      const response = (server as any).applyCors(STATIC_RESPONSES.NOT_FOUND.clone(), request) as Response;
 
       expect(response.status).toBe(404);
       expect(response.headers.get('access-control-allow-origin')).toBe('https://app.example.com');
@@ -374,9 +502,7 @@ describe('VectorRouter', () => {
         },
       });
 
-      const response = (server as any).applyCors(
-        new Response('Internal Server Error', { status: 500 })
-      ) as Response;
+      const response = (server as any).applyCors(new Response('Internal Server Error', { status: 500 })) as Response;
 
       expect(response.status).toBe(500);
       expect(response.headers.get('access-control-allow-origin')).toBe('https://app.example.com');
@@ -388,9 +514,7 @@ describe('VectorRouter', () => {
     it('throws when mixing a static route with a method route for the same path', () => {
       router.addStaticRoute('/mixed', new Response('static'));
 
-      expect(() =>
-        router.route({ method: 'GET', path: '/mixed', expose: true }, async () => 'method')
-      ).toThrow();
+      expect(() => router.route({ method: 'GET', path: '/mixed', expose: true }, async () => 'method')).toThrow();
     });
 
     it('throws when adding a static route for a path that already has method routes', () => {
@@ -400,14 +524,8 @@ describe('VectorRouter', () => {
     });
 
     it('matches more specific routes before wildcard routes', async () => {
-      router.route(
-        { method: 'GET', path: '/files/*', expose: true },
-        async () => new Response('wild')
-      );
-      router.route(
-        { method: 'GET', path: '/files/specific', expose: true },
-        async () => new Response('specific')
-      );
+      router.route({ method: 'GET', path: '/files/*', expose: true }, async () => new Response('wild'));
+      router.route({ method: 'GET', path: '/files/specific', expose: true }, async () => new Response('specific'));
 
       const response = await router.handle(new Request('http://localhost/files/specific'));
       expect(response.status).toBe(200);
@@ -462,6 +580,58 @@ describe('VectorRouter', () => {
         }
       }
     });
+  });
+});
+
+describe('Vector Config Defaults Wiring', () => {
+  it('passes defaults.route values into router defaults during startServer', async () => {
+    Vector.resetInstance();
+    const vector = getVectorInstance();
+    const router = vector.getRouter();
+    const originalSetDefaults = router.setRouteBooleanDefaults.bind(router);
+    const originalStart = VectorServer.prototype.start;
+    let capturedDefaults: RouteBooleanDefaults | undefined;
+
+    (router as any).setRouteBooleanDefaults = (defaults?: RouteBooleanDefaults) => {
+      capturedDefaults = defaults;
+      return originalSetDefaults(defaults);
+    };
+
+    VectorServer.prototype.start = async function () {
+      return {
+        stop() {},
+        port: 0,
+        hostname: 'localhost',
+      } as any;
+    };
+
+    try {
+      await vector.startServer({
+        autoDiscover: false,
+        defaults: {
+          route: {
+            auth: true,
+            expose: false,
+            rawRequest: true,
+            validateRawRequest: false,
+            rawResponse: true,
+          },
+        },
+      });
+
+      expect(capturedDefaults).toEqual({
+        auth: true,
+        expose: false,
+        rawRequest: true,
+        validateRawRequest: false,
+        rawResponse: true,
+      });
+    } finally {
+      VectorServer.prototype.start = originalStart;
+      (router as any).setRouteBooleanDefaults = originalSetDefaults;
+      vector.stop();
+      Vector.resetInstance();
+    }
   });
 });
 

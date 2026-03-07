@@ -45,8 +45,7 @@ export class VectorServer<TTypes extends VectorTypes = DefaultVectorTypes> {
       this.corsHandler = { preflight, corsify };
 
       // Pre-build static CORS headers when origin does not require per-request reflection.
-      const canUseStaticCorsHeaders =
-        typeof opts.origin === 'string' && (opts.origin !== '*' || !opts.credentials);
+      const canUseStaticCorsHeaders = typeof opts.origin === 'string' && (opts.origin !== '*' || !opts.credentials);
 
       if (canUseStaticCorsHeaders) {
         const corsHeaders: Record<string, string> = {
@@ -204,19 +203,14 @@ export class VectorServer<TTypes extends VectorTypes = DefaultVectorTypes> {
           return this.corsHandler.preflight(request);
         }
 
-        // Built-in docs endpoints are handled before user routes to avoid conflicts
-        let response = this.tryHandleOpenAPIRequest(request) || (await this.router.handle(request));
-
-        // Apply CORS headers if configured
-        if (this.corsHeaders) {
-          for (const [k, v] of this.corsHeadersEntries) {
-            response.headers.set(k, v);
-          }
-        } else if (this.corsHandler) {
-          response = this.corsHandler.corsify(response, request);
+        // Handle built-in docs endpoints for requests that fell through the Bun route table.
+        const openapiResponse = this.tryHandleOpenAPIRequest(request);
+        if (openapiResponse) {
+          return this.applyCors(openapiResponse, request);
         }
 
-        return response;
+        // No route matched — return 404
+        return this.applyCors(STATIC_RESPONSES.NOT_FOUND.clone() as unknown as Response, request);
       } catch (error) {
         console.error('Server error:', error);
         return this.applyCors(new Response('Internal Server Error', { status: 500 }), request);

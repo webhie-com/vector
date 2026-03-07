@@ -1,4 +1,3 @@
-import type { IRequest } from 'itty-router';
 import type { StandardJSONSchemaV1, StandardSchemaV1, StandardTypedV1 } from './standard-schema';
 
 // Default AuthUser type - users can override this with their own type
@@ -45,6 +44,8 @@ type DefaultQueryShape = { [key: string]: string | string[] | undefined };
 type DefaultParamsShape = Record<string, string>;
 type DefaultCookiesShape = Record<string, string>;
 
+type BaseVectorRequest = Omit<Request, 'body' | 'json' | 'text' | 'formData' | 'arrayBuffer' | 'blob'>;
+
 type InferValidatedSection<TValidatedInput, TKey extends string, TFallback> = [TValidatedInput] extends [undefined]
   ? TFallback
   : TValidatedInput extends Record<string, unknown>
@@ -53,13 +54,15 @@ type InferValidatedSection<TValidatedInput, TKey extends string, TFallback> = [T
       : TFallback
     : TFallback;
 
+type InferValidatedInputValue<TValidatedInput> = [TValidatedInput] extends [undefined] ? unknown : TValidatedInput;
+
 export type BunRouteHandler = (req: Request) => Response | Promise<Response>;
 export type BunMethodMap = Record<string, BunRouteHandler>;
 export type BunRouteTable = Record<string, BunMethodMap | Response>;
 export type LegacyRouteEntry = [string, RegExp, [BunRouteHandler, ...BunRouteHandler[]], string?];
 
-export interface VectorRequest<TTypes extends VectorTypes = DefaultVectorTypes>
-  extends Omit<Request, 'json' | 'text' | 'formData' | 'arrayBuffer' | 'blob'> {
+export interface VectorRequest<TTypes extends VectorTypes = DefaultVectorTypes, TValidatedInput = undefined>
+  extends BaseVectorRequest {
   authUser?: GetAuthType<TTypes>;
   context: GetContextType<TTypes>;
   metadata?: GetMetadataType<TTypes>;
@@ -69,7 +72,7 @@ export interface VectorRequest<TTypes extends VectorTypes = DefaultVectorTypes>
   query: InferValidatedSection<TValidatedInput, 'query', DefaultQueryShape>;
   headers: Headers;
   cookies?: InferValidatedSection<TValidatedInput, 'cookies', DefaultCookiesShape>;
-  validatedInput?: unknown;
+  validatedInput?: InferValidatedInputValue<TValidatedInput>;
   startTime?: number;
   [key: string]: any;
 }

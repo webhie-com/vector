@@ -40,6 +40,7 @@ export class VectorRouter<TTypes extends VectorTypes = DefaultVectorTypes> {
   private authManager: AuthManager<TTypes>;
   private cacheManager: CacheManager<TTypes>;
   private routeBooleanDefaults: RouteBooleanDefaults = {};
+  private routeDefinitions: RegisteredRouteDefinition<TTypes>[] = [];
   private routeTable: BunRouteTable = Object.create(null) as BunRouteTable;
   private routeMatchers: RouteMatcher[] = [];
   private corsHeadersEntries: [string, string][] | null = null;
@@ -63,12 +64,38 @@ export class VectorRouter<TTypes extends VectorTypes = DefaultVectorTypes> {
     this.corsHandler = handler;
   }
 
+  setRouteBooleanDefaults(defaults?: RouteBooleanDefaults): void {
+    this.routeBooleanDefaults = { ...defaults };
+  }
+
+  private applyRouteBooleanDefaults(options: RouteOptions<TTypes>): RouteOptions<TTypes> {
+    const resolved = { ...options };
+    const defaults = this.routeBooleanDefaults;
+
+    const keys: (keyof RouteBooleanDefaults)[] = ['auth', 'expose', 'rawRequest', 'validateRawRequest', 'rawResponse'];
+
+    for (const key of keys) {
+      if (resolved[key] === undefined && defaults[key] !== undefined) {
+        (resolved as any)[key] = defaults[key];
+      }
+    }
+
+    return resolved;
+  }
+
   route(options: RouteOptions<TTypes>, handler: RouteHandler<TTypes>): void {
-    const method = options.method.toUpperCase();
-    const path = options.path;
-    const wrappedHandler = this.wrapHandler(options, handler);
+    const resolvedOptions = this.applyRouteBooleanDefaults(options);
+    const method = resolvedOptions.method.toUpperCase();
+    const path = resolvedOptions.path;
+    const wrappedHandler = this.wrapHandler(resolvedOptions, handler);
     const methodMap = this.getOrCreateMethodMap(path);
     methodMap[method] = wrappedHandler;
+
+    this.routeDefinitions.push({
+      method,
+      path,
+      options: resolvedOptions,
+    });
   }
 
   addRoute(entry: LegacyRouteEntry): void {
@@ -76,6 +103,17 @@ export class VectorRouter<TTypes extends VectorTypes = DefaultVectorTypes> {
     if (!path) return;
     const methodMap = this.getOrCreateMethodMap(path);
     methodMap[method.toUpperCase()] = handlers[0];
+
+    const normalizedMethod = method.toUpperCase();
+    this.routeDefinitions.push({
+      method: normalizedMethod,
+      path,
+      options: {
+        method: normalizedMethod,
+        path,
+        expose: true,
+      } as RouteOptions<TTypes>,
+    });
   }
 
   bulkAddRoutes(entries: LegacyRouteEntry[]): void {
@@ -87,9 +125,7 @@ export class VectorRouter<TTypes extends VectorTypes = DefaultVectorTypes> {
   addStaticRoute(path: string, response: Response): void {
     const existing = this.routeTable[path];
     if (existing && !(existing instanceof Response)) {
-      throw new Error(
-        `Cannot register static route for path "${path}" because method routes already exist.`
-      );
+      throw new Error(`Cannot register static route for path "${path}" because method routes already exist.`);
     }
     this.routeTable[path] = response;
     this.removeRouteMatcher(path);
@@ -101,19 +137,26 @@ export class VectorRouter<TTypes extends VectorTypes = DefaultVectorTypes> {
 
   // Legacy compatibility: returns route entries in a flat list for tests
   getRoutes(): LegacyRouteEntry[] {
-    const result: LegacyRouteEntry[] = [];
-    for (const [path, value] of Object.entries(this.routeTable)) {
-      if (value instanceof Response) continue;
+    const routes: LegacyRouteEntry[] = [];
+    for (const matcher of this.routeMatchers) {
+      const value = this.routeTable[matcher.path];
+      if (!value || value instanceof Response) continue;
+
       for (const [method, handler] of Object.entries(value as BunMethodMap)) {
-        result.push([method, /.*/, [handler], path]);
+        routes.push([method, matcher.regex, [handler], matcher.path]);
       }
     }
-    return result;
+    return routes;
+  }
+
+  getRouteDefinitions(): RegisteredRouteDefinition<TTypes>[] {
+    return [...this.routeDefinitions];
   }
 
   clearRoutes(): void {
     this.routeTable = Object.create(null) as BunRouteTable;
     this.routeMatchers = [];
+    this.routeDefinitions = [];
   }
 
   // Legacy shim — no-op (Bun handles route priority natively)
@@ -182,21 +225,39 @@ export class VectorRouter<TTypes extends VectorTypes = DefaultVectorTypes> {
       request.metadata = options.metadata;
     }
 
-    if (!request.query && request.url) {
-      const url = (request as any)._parsedUrl ?? new URL(request.url);
-      const query: Record<string, string | string[]> = {};
-      for (const [key, value] of url.searchParams) {
-        if (key in query) {
-          if (Array.isArray(query[key])) {
-            (query[key] as string[]).push(value);
-          } else {
-            query[key] = [query[key] as string, value];
-          }
-        } else {
-          query[key] = value;
+    if (request.query == null && request.url) {
+      try {
+        Object.defineProperty(request, 'query', {
+          get() {
+            const url = (this as any)._parsedUrl ?? new URL(this.url);
+            const query = VectorRouter.parseQuery(url);
+            Object.defineProperty(this, 'query', {
+              value: query,
+              writable: true,
+              configurable: true,
+              enumerable: true,
+            });
+            return query;
+          },
+          set(value) {
+            Object.defineProperty(this, 'query', {
+              value,
+              writable: true,
+              configurable: true,
+              enumerable: true,
+            });
+          },
+          configurable: true,
+          enumerable: true,
+        });
+      } catch {
+        const url = (request as any)._parsedUrl ?? new URL(request.url);
+        try {
+          request.query = VectorRouter.parseQuery(url);
+        } catch {
+          // Leave query as-is when request shape is non-extensible.
         }
       }
-      request.query = query;
     }
 
     if (!Object.getOwnPropertyDescriptor(request, 'cookies')) {
@@ -228,8 +289,6 @@ export class VectorRouter<TTypes extends VectorTypes = DefaultVectorTypes> {
 
   private wrapHandler(options: RouteOptions<TTypes>, handler: RouteHandler<TTypes>) {
     const routePath = options.path;
-    const corsEntries = () => this.corsHeadersEntries;
-    const corsHandler = () => this.corsHandler;
 
     return async (request: Request) => {
       const vectorRequest = request as unknown as VectorRequest<TTypes>;
@@ -273,14 +332,14 @@ export class VectorRouter<TTypes extends VectorTypes = DefaultVectorTypes> {
             } else {
               req.content = await req.text();
             }
-            this.setBodyAlias(request, request.content);
+            this.setBodyAlias(req, req.content);
           } catch {
-            request.content = null;
-            this.setBodyAlias(request, null);
+            req.content = null;
+            this.setBodyAlias(req, null);
           }
         }
 
-        const inputValidationResponse = await this.validateInputSchema(request, options);
+        const inputValidationResponse = await this.validateInputSchema(req, options);
         if (inputValidationResponse) {
           return inputValidationResponse;
         }
@@ -351,13 +410,13 @@ export class VectorRouter<TTypes extends VectorTypes = DefaultVectorTypes> {
         response = await this.middlewareManager.executeFinally(response, req);
 
         // Apply pre-built CORS headers if configured
-        const entries = corsEntries();
+        const entries = this.corsHeadersEntries;
         if (entries) {
           for (const [k, v] of entries) {
             response.headers.set(k, v);
           }
         } else {
-          const dynamicCors = corsHandler();
+          const dynamicCors = this.corsHandler;
           if (dynamicCors) {
             response = dynamicCors(response, req as unknown as Request);
           }
@@ -487,45 +546,10 @@ export class VectorRouter<TTypes extends VectorTypes = DefaultVectorTypes> {
     }
   }
 
-  addRoute(routeEntry: RouteEntry) {
-    this.routes.push(routeEntry);
-    const method = String(routeEntry[0] || '').toUpperCase();
-    const path = String(routeEntry[3] || '');
-    this.routeDefinitions.push({
-      method,
-      path,
-      options: {
-        method,
-        path,
-        expose: true,
-      } as RouteOptions<TTypes>,
-    });
-    this.sortRoutes(); // Sort routes after adding a new one
-  }
-
-  bulkAddRoutes(entries: RouteEntry[]): void {
-    for (const entry of entries) {
-      this.routes.push(entry);
-      const method = String(entry[0] || '').toUpperCase();
-      const path = String(entry[3] || '');
-      this.routeDefinitions.push({
-        method,
-        path,
-        options: {
-          method,
-          path,
-          expose: true,
-        } as RouteOptions<TTypes>,
-      });
-    }
-  
-
   private getOrCreateMethodMap(path: string): BunMethodMap {
     const existing = this.routeTable[path];
     if (existing instanceof Response) {
-      throw new Error(
-        `Cannot register method route for path "${path}" because a static route already exists.`
-      );
+      throw new Error(`Cannot register method route for path "${path}" because a static route already exists.`);
     }
     if (existing) {
       return existing as BunMethodMap;
@@ -537,24 +561,9 @@ export class VectorRouter<TTypes extends VectorTypes = DefaultVectorTypes> {
     return methodMap;
   }
 
-
-  getRouteDefinitions(): RegisteredRouteDefinition<TTypes>[] {
-    return [...this.routeDefinitions];
-  }
-
-  async handle(request: Request): Promise<Response> {
-    let url: URL;
-    try {
-      url = new URL(request.url);
-    } catch {
-      return APIError.badRequest('Malformed request URL');
-    }
-}
-
   private addRouteMatcher(path: string): void {
     if (this.routeMatchers.some((matcher) => matcher.path === path)) {
       return;
-
     }
 
     this.routeMatchers.push({
@@ -575,36 +584,47 @@ export class VectorRouter<TTypes extends VectorTypes = DefaultVectorTypes> {
     this.routeMatchers = this.routeMatchers.filter((matcher) => matcher.path !== path);
   }
 
-  clearRoutes(): void {
-    this.routes = [];
-    this.routeDefinitions = [];
-    this.specificityCache.clear();
+  private static parseQuery(url: URL): Record<string, string | string[]> {
+    const query: Record<string, string | string[]> = {};
+    for (const [key, value] of url.searchParams) {
+      if (key in query) {
+        const existing = query[key];
+        if (Array.isArray(existing)) {
+          existing.push(value);
+        } else {
+          query[key] = [existing as string, value];
+        }
+      } else {
+        query[key] = value;
+      }
+    }
+    return query;
   }
 
   private routeSpecificityScore(path: string): number {
+    const STATIC_SEGMENT_WEIGHT = 1000;
+    const PARAM_SEGMENT_WEIGHT = 10;
+    const WILDCARD_WEIGHT = 1;
+    const EXACT_MATCH_BONUS = 10000;
+
     const segments = path.split('/').filter(Boolean);
-    let staticSegments = 0;
-    let paramSegments = 0;
-    let wildcardSegments = 0;
-    let literalLength = 0;
+    let score = 0;
 
     for (const segment of segments) {
       if (segment.includes('*')) {
-        wildcardSegments++;
+        score += WILDCARD_WEIGHT;
       } else if (segment.startsWith(':')) {
-        paramSegments++;
+        score += PARAM_SEGMENT_WEIGHT;
       } else {
-        staticSegments++;
-        literalLength += segment.length;
+        score += STATIC_SEGMENT_WEIGHT;
       }
     }
 
-    return (
-      staticSegments * 10_000 +
-      literalLength * 100 +
-      segments.length * 10 -
-      paramSegments * 5_000 -
-      wildcardSegments * 20_000
-    );
+    score += path.length;
+    if (!path.includes(':') && !path.includes('*')) {
+      score += EXACT_MATCH_BONUS;
+    }
+
+    return score;
   }
 }
