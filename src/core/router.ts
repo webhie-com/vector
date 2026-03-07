@@ -5,19 +5,35 @@ import { APIError, createResponse } from '../http';
 import type { MiddlewareManager } from '../middleware/manager';
 import type {
   DefaultVectorTypes,
+  RouteBooleanDefaults,
   RouteHandler,
   RouteOptions,
   VectorRequest,
   VectorTypes,
 } from '../types';
 import { buildRouteRegex } from '../utils/path';
+import {
+  createValidationErrorPayload,
+  extractThrownIssues,
+  isStandardRouteSchema,
+  normalizeValidationIssues,
+  runStandardValidation,
+} from '../utils/schema-validation';
+
+export interface RegisteredRouteDefinition<TTypes extends VectorTypes = DefaultVectorTypes> {
+  method: string;
+  path: string;
+  options: RouteOptions<TTypes>;
+}
 
 export class VectorRouter<TTypes extends VectorTypes = DefaultVectorTypes> {
   private middlewareManager: MiddlewareManager<TTypes>;
   private authManager: AuthManager<TTypes>;
   private cacheManager: CacheManager<TTypes>;
   private routes: RouteEntry[] = [];
+  private routeDefinitions: RegisteredRouteDefinition<TTypes>[] = [];
   private specificityCache: Map<string, number> = new Map();
+  private routeBooleanDefaults: RouteBooleanDefaults = {};
 
   constructor(
     middlewareManager: MiddlewareManager<TTypes>,
@@ -95,17 +111,42 @@ export class VectorRouter<TTypes extends VectorTypes = DefaultVectorTypes> {
   }
 
   route(options: RouteOptions<TTypes>, handler: RouteHandler<TTypes>): RouteEntry {
-    const wrappedHandler = this.wrapHandler(options, handler);
+    const resolvedOptions: RouteOptions<TTypes> = this.applyRouteBooleanDefaults(options);
+    const wrappedHandler = this.wrapHandler(resolvedOptions, handler);
     const routeEntry: RouteEntry = [
-      options.method.toUpperCase(),
-      this.createRouteRegex(options.path),
+      resolvedOptions.method.toUpperCase(),
+      this.createRouteRegex(resolvedOptions.path),
       [wrappedHandler],
-      options.path,
+      resolvedOptions.path,
     ];
 
     this.routes.push(routeEntry);
+    this.routeDefinitions.push({
+      method: resolvedOptions.method.toUpperCase(),
+      path: resolvedOptions.path,
+      options: resolvedOptions,
+    });
     this.sortRoutes(); // Sort routes after adding
     return routeEntry;
+  }
+
+  setRouteBooleanDefaults(defaults?: RouteBooleanDefaults): void {
+    this.routeBooleanDefaults = { ...defaults };
+  }
+
+  private applyRouteBooleanDefaults(options: RouteOptions<TTypes>): RouteOptions<TTypes> {
+    const resolved = { ...options };
+    const defaults = this.routeBooleanDefaults;
+
+    const keys: (keyof RouteBooleanDefaults)[] = ['auth', 'expose', 'rawRequest', 'validateRawRequest', 'rawResponse'];
+
+    for (const key of keys) {
+      if (resolved[key] === undefined && defaults[key] !== undefined) {
+        (resolved as any)[key] = defaults[key];
+      }
+    }
+
+    return resolved;
   }
 
   private createRouteRegex(path: string): RegExp {
@@ -228,9 +269,16 @@ export class VectorRouter<TTypes extends VectorTypes = DefaultVectorTypes> {
             } else {
               request.content = await request.text();
             }
+            this.setBodyAlias(request, request.content);
           } catch {
             request.content = null;
+            this.setBodyAlias(request, null);
           }
+        }
+
+        const inputValidationResponse = await this.validateInputSchema(request, options);
+        if (inputValidationResponse) {
+          return inputValidationResponse;
         }
 
         let result;
@@ -299,20 +347,155 @@ export class VectorRouter<TTypes extends VectorTypes = DefaultVectorTypes> {
     };
   }
 
+  private isDevelopmentMode(): boolean {
+    const nodeEnv = typeof Bun !== 'undefined' ? Bun.env.NODE_ENV : process.env.NODE_ENV;
+    return nodeEnv !== 'production';
+  }
+
+  private async buildInputValidationPayload(
+    request: VectorRequest<TTypes>,
+    options: RouteOptions<TTypes>
+  ): Promise<Record<string, unknown>> {
+    let body = request.content;
+
+    if (
+      options.rawRequest &&
+      options.validateRawRequest !== false &&
+      request.method !== 'GET' &&
+      request.method !== 'HEAD'
+    ) {
+      try {
+        body = await (request as unknown as Request).clone().text();
+      } catch {
+        body = null;
+      }
+    }
+
+    return {
+      params: request.params ?? {},
+      query: request.query ?? {},
+      headers: Object.fromEntries(request.headers.entries()),
+      cookies: request.cookies ?? {},
+      body,
+    };
+  }
+
+  private applyValidatedInput(request: VectorRequest<TTypes>, validatedValue: unknown): void {
+    request.validatedInput = validatedValue;
+
+    if (!validatedValue || typeof validatedValue !== 'object') {
+      return;
+    }
+
+    const validated = validatedValue as Record<string, unknown>;
+
+    if ('params' in validated) {
+      request.params = validated.params as any;
+    }
+    if ('query' in validated) {
+      request.query = validated.query as any;
+    }
+    if ('cookies' in validated) {
+      request.cookies = validated.cookies as any;
+    }
+    if ('body' in validated) {
+      request.content = validated.body;
+      this.setBodyAlias(request, validated.body);
+    }
+  }
+
+  private setBodyAlias(request: VectorRequest<TTypes>, value: unknown): void {
+    try {
+      request.body = value as any;
+    } catch {
+      // Keep request.content as source of truth when body alias is readonly.
+    }
+  }
+
+  private async validateInputSchema(
+    request: VectorRequest<TTypes>,
+    options: RouteOptions<TTypes>
+  ): Promise<Response | null> {
+    const inputSchema = options.schema?.input;
+
+    if (!inputSchema) {
+      return null;
+    }
+
+    if (options.rawRequest && options.validateRawRequest === false) {
+      return null;
+    }
+
+    if (!isStandardRouteSchema(inputSchema)) {
+      return APIError.internalServerError('Invalid route schema configuration', options.responseContentType);
+    }
+
+    const includeRawIssues = this.isDevelopmentMode();
+    const payload = await this.buildInputValidationPayload(request, options);
+
+    try {
+      const validation = await runStandardValidation(inputSchema, payload);
+      if (!validation.success) {
+        const issues = normalizeValidationIssues(validation.issues, includeRawIssues);
+        return createResponse(422, createValidationErrorPayload('input', issues), options.responseContentType);
+      }
+
+      this.applyValidatedInput(request, validation.value);
+      return null;
+    } catch (error) {
+      const thrownIssues = extractThrownIssues(error);
+      if (thrownIssues) {
+        const issues = normalizeValidationIssues(thrownIssues, includeRawIssues);
+        return createResponse(422, createValidationErrorPayload('input', issues), options.responseContentType);
+      }
+
+      return APIError.internalServerError(
+        error instanceof Error ? error.message : 'Validation failed',
+        options.responseContentType
+      );
+    }
+  }
+
   addRoute(routeEntry: RouteEntry) {
     this.routes.push(routeEntry);
+    const method = String(routeEntry[0] || '').toUpperCase();
+    const path = String(routeEntry[3] || '');
+    this.routeDefinitions.push({
+      method,
+      path,
+      options: {
+        method,
+        path,
+        expose: true,
+      } as RouteOptions<TTypes>,
+    });
     this.sortRoutes(); // Sort routes after adding a new one
   }
 
   bulkAddRoutes(entries: RouteEntry[]): void {
     for (const entry of entries) {
       this.routes.push(entry);
+      const method = String(entry[0] || '').toUpperCase();
+      const path = String(entry[3] || '');
+      this.routeDefinitions.push({
+        method,
+        path,
+        options: {
+          method,
+          path,
+          expose: true,
+        } as RouteOptions<TTypes>,
+      });
     }
     this.sortRoutes(); // Sort once after all routes are added — O(n log n) instead of O(n²)
   }
 
   getRoutes(): RouteEntry[] {
     return this.routes;
+  }
+
+  getRouteDefinitions(): RegisteredRouteDefinition<TTypes>[] {
+    return [...this.routeDefinitions];
   }
 
   async handle(request: Request): Promise<Response> {
@@ -350,6 +533,7 @@ export class VectorRouter<TTypes extends VectorTypes = DefaultVectorTypes> {
 
   clearRoutes(): void {
     this.routes = [];
+    this.routeDefinitions = [];
     this.specificityCache.clear();
   }
 }

@@ -16,7 +16,8 @@
     "@biomejs/cli-darwin-arm64": "^2.4.6",
     "@types/bun": "latest",
     "oxlint": "^1.15.0",
-    "typescript": "^5.0.0"
+    "typescript": "^5.0.0",
+    "zod": "^4.3.6"
   },
   "peerDependencies": {
     "bun": ">=1.0.0"
@@ -84,7 +85,10 @@
     "build:ts": "tsc",
     "build:bundle": "bun build src/index.ts --format esm --minify --outfile dist/index.mjs && bun build src/index.ts --format cjs --minify --outfile dist/index.js",
     "build:cli": "bun build src/cli/index.ts --target bun --outfile dist/cli.js",
-    "test": "bun test tests/api-error.test.ts tests/cache.test.ts tests/middleware.test.ts tests/middleware-integration.test.ts tests/router.test.ts",
+    "local:cli:build": "bun run build:lib",
+    "local:cli:dev": "bun run dist/cli.js dev --config ./vector.config.ts",
+    "local:cli:start": "bun run dist/cli.js start --config ./vector.config.ts",
+    "test": "bun test tests/api-error.test.ts tests/cache.test.ts tests/middleware.test.ts tests/middleware-integration.test.ts tests/router.test.ts tests/schema-validation.test.ts tests/openapi-generator.test.ts tests/openapi-server.test.ts",
     "test:unit": "bun test tests/*.test.ts",
     "test:watch": "bun test --watch tests/*.test.ts",
     "test:coverage": "bun test --coverage tests/*.test.ts",

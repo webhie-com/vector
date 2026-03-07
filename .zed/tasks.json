@@ -1,0 +1,14 @@
+[
+  {
+    "label": "Lint: oxlint",
+    "command": "bun run lint",
+    "use_new_terminal": false,
+    "allow_concurrent_runs": false
+  },
+  {
+    "label": "Lint: oxlint --fix",
+    "command": "bun run lint:fix",
+    "use_new_terminal": false,
+    "allow_concurrent_runs": false
+  }
+]

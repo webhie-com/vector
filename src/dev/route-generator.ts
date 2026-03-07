@@ -36,9 +36,7 @@ export class RouteGenerator {
 
       if (fileRoutes.some((r) => r.name === 'default')) {
         if (namedImports.length > 0) {
-          imports.push(
-            `import ${importName}, { ${namedImports.join(', ')} } from '${relativePath}';`
-          );
+          imports.push(`import ${importName}, { ${namedImports.join(', ')} } from '${relativePath}';`);
         } else {
           imports.push(`import ${importName} from '${relativePath}';`);
         }

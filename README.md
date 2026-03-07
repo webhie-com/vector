@@ -29,6 +29,13 @@ const config: VectorConfigSchema = {
   hostname: "localhost",
   development: process.env.NODE_ENV !== "production",
   routesDir: "./routes", // Auto-discovers routes here
+  defaults: {
+    route: {
+      auth: false, // Set true to require auth on all routes unless route sets auth: false
+      expose: true, // Applies to routes that omit expose
+      rawResponse: false, // Applies to routes that omit rawResponse
+    },
+  },
 
   // CORS configuration
   cors: {
@@ -63,14 +70,14 @@ const config: VectorConfigSchema = {
     async (request) => {
       console.log(`${request.method} ${request.url}`);
       return request;
-    }
+    },
   ],
   after: [
     async (response, request) => {
       const duration = Date.now() - (request.startTime || Date.now());
       response.headers.set("X-Response-Time", `${duration}ms`);
       return response;
-    }
+    },
   ],
 };
 
@@ -92,7 +99,7 @@ export const hello = route(
   },
   async (req) => {
     return { message: `Hello ${req.params.name}!` };
-  }
+  },
 );
 
 // Protected endpoint - uses auth from config
@@ -108,7 +115,7 @@ export const getProfile = route(
       user: req.authUser, // Typed from your auth handler
       timestamp: new Date(),
     };
-  }
+  },
 );
 
 // Cached endpoint
@@ -123,8 +130,80 @@ export const getUsers = route(
     // Expensive operation, will be cached
     const users = await db.users.findMany();
     return { users };
-  }
+  },
 );
+```
+
+### 2b. Add Schema Validation + OpenAPI (Zod Example)
+
+```bash
+bun add -d zod
+```
+
+```typescript
+// routes/users.ts
+import { route } from "vector-framework";
+import { z } from "zod";
+
+const CreateUserInput = z.object({
+  params: z.object({}),
+  query: z.object({}),
+  headers: z.object({}),
+  cookies: z.object({}),
+  body: z.object({
+    email: z.string().email(),
+    name: z.string().min(1),
+  }),
+});
+
+const CreateUserResponse = z.object({
+  id: z.string(),
+  email: z.string().email(),
+  name: z.string(),
+});
+
+export const createUser = route(
+  {
+    method: "POST",
+    path: "/users",
+    expose: true,
+    schema: {
+      input: CreateUserInput,
+      output: {
+        201: CreateUserResponse,
+      },
+    },
+  },
+  async (req) => {
+    // Values can be transformed by the validator and are available on req.validatedInput
+    const body = req.content;
+    return { id: crypto.randomUUID(), email: body.email, name: body.name };
+  },
+);
+```
+
+```typescript
+// vector.config.ts
+import type { VectorConfigSchema } from "vector-framework";
+
+const config: VectorConfigSchema = {
+  development: true,
+  openapi: {
+    // enabled by default in development; shown for clarity
+    enabled: true,
+    path: "/openapi.json",
+    docs: false, // /docs is off by default
+  },
+};
+
+export default config;
+```
+
+Then run:
+
+```bash
+bun vector dev
+curl http://localhost:3000/openapi.json
 ```
 
 ### 3. Start Your Server
@@ -207,7 +286,7 @@ export const adminOnly = route<MyAppTypes>(
       user: req.authUser.email,
       permissions: req.authUser.permissions,
     };
-  }
+  },
 );
 ```
 
@@ -217,17 +296,25 @@ export const adminOnly = route<MyAppTypes>(
 
 ```typescript
 interface RouteOptions {
-  method: string;           // HTTP method (GET, POST, etc.)
-  path: string;            // Route path with params (/users/:id)
-  expose?: boolean;        // Make route accessible (default: true)
-  auth?: boolean;          // Require authentication
-  cache?: number | {       // Cache configuration
-    ttl: number;          // Time to live in seconds
-    key?: string;         // Custom cache key
-  };
-  rawRequest?: boolean;    // Skip body parsing
-  rawResponse?: boolean;   // Return raw response
+  method: string; // HTTP method (GET, POST, etc.)
+  path: string; // Route path with params (/users/:id)
+  expose?: boolean; // Make route accessible (default: true)
+  auth?: boolean; // Require authentication
+  cache?:
+    | number
+    | {
+        // Cache configuration
+        ttl: number; // Time to live in seconds
+        key?: string; // Custom cache key
+      };
+  rawRequest?: boolean; // Skip body parsing
+  validateRawRequest?: boolean; // For rawRequest=true, set false to skip schema.input validation
+  rawResponse?: boolean; // Return raw response
   responseContentType?: string; // Response content type
+  schema?: {
+    input?: StandardSchemaV1;
+    output?: Record<number | `${number}` | "default", StandardSchemaV1>;
+  };
 }
 ```
 
@@ -240,15 +327,16 @@ export const example = route(
   { method: "POST", path: "/example/:id" },
   async (req) => {
     // All available request properties:
-    req.params.id;        // URL parameters
-    req.query.search;      // Query parameters
-    req.headers;           // Request headers
-    req.cookies;           // Parsed cookies
-    req.content;           // Parsed body (JSON/form data)
-    req.authUser;          // Authenticated user (when auth: true)
-    req.context;           // Request context
-    req.metadata;          // Route metadata
-  }
+    req.params.id; // URL parameters
+    req.query.search; // Query parameters
+    req.headers; // Request headers
+    req.cookies; // Parsed cookies
+    req.content; // Parsed body (JSON/form data)
+    req.validatedInput; // Full validator output (when schema.input is configured)
+    req.authUser; // Authenticated user (when auth: true)
+    req.context; // Request context
+    req.metadata; // Route metadata
+  },
 );
 ```
 
@@ -287,7 +375,7 @@ export const example = route(
     } catch (error) {
       throw APIError.internalServerError("Processing failed");
     }
-  }
+  },
 );
 ```
 
@@ -298,24 +386,53 @@ export const example = route(
 ```typescript
 interface VectorConfigSchema {
   // Server
-  port?: number;              // Server port (default: 3000)
-  hostname?: string;          // Server hostname (default: localhost)
-  reusePort?: boolean;        // Reuse port (default: true)
-  development?: boolean;      // Development mode
-  routesDir?: string;         // Routes directory (default: ./routes)
+  port?: number; // Server port (default: 3000)
+  hostname?: string; // Server hostname (default: localhost)
+  reusePort?: boolean; // Reuse port (default: true)
+  development?: boolean; // Development mode
+  routesDir?: string; // Routes directory (default: ./routes)
   routeExcludePatterns?: string[]; // Patterns to exclude from route scanning
-  idleTimeout?: number;       // Idle timeout in seconds
+  idleTimeout?: number; // Idle timeout in seconds
+  defaults?: {
+    route?: {
+      auth?: boolean;
+      expose?: boolean;
+      rawRequest?: boolean;
+      validateRawRequest?: boolean;
+      rawResponse?: boolean;
+    };
+  };
 
   // CORS
   cors?: CorsOptions | boolean;
 
+  // OpenAPI
+  openapi?:
+    | boolean
+    | {
+        enabled?: boolean; // default: true in development, false in production
+        path?: string; // default: /openapi.json
+        target?: string; // default: openapi-3.0
+        docs?:
+          | boolean
+          | {
+              enabled?: boolean; // default: false
+              path?: string; // default: /docs
+            };
+        info?: {
+          title?: string;
+          version?: string;
+          description?: string;
+        };
+      };
+
   // Handlers
-  auth?: ProtectedHandler;    // Authentication handler
-  cache?: CacheHandler;        // Cache handler
+  auth?: ProtectedHandler; // Authentication handler
+  cache?: CacheHandler; // Cache handler
 
   // Middleware
   before?: BeforeMiddleware[]; // Pre-request middleware
-  after?: AfterMiddleware[];    // Post-response middleware
+  after?: AfterMiddleware[]; // Post-response middleware
 }
 ```
 
@@ -334,6 +451,13 @@ const config: VectorConfigSchema = {
   routesDir: "./api/routes",
   routeExcludePatterns: ["*.test.ts", "*.spec.ts"], // Optional: custom exclusions
   idleTimeout: 60,
+  defaults: {
+    route: {
+      auth: true, // Route-level auth still overrides this
+      expose: true,
+      rawResponse: false,
+    },
+  },
 
   cors: {
     origin: ["https://example.com", "https://app.example.com"],
@@ -341,6 +465,17 @@ const config: VectorConfigSchema = {
     allowHeaders: ["Content-Type", "Authorization", "X-Request-ID"],
     allowMethods: ["GET", "POST", "PUT", "DELETE"],
     maxAge: 86400,
+  },
+
+  openapi: {
+    enabled: process.env.NODE_ENV !== "production",
+    path: "/openapi.json",
+    target: "openapi-3.0",
+    docs: false,
+    info: {
+      title: "My API",
+      version: "1.0.0",
+    },
   },
 
   auth: async (request) => {
@@ -366,7 +501,9 @@ const config: VectorConfigSchema = {
     // Logging middleware
     async (request) => {
       request.startTime = Date.now();
-      console.log(`[${new Date().toISOString()}] ${request.method} ${request.url}`);
+      console.log(
+        `[${new Date().toISOString()}] ${request.method} ${request.url}`,
+      );
       return request;
     },
 
@@ -457,10 +594,27 @@ const config: VectorConfigSchema = {
     "*.spec.ts",
     "*.mock.ts",
     "**/__tests__/**", // Exclude any nested __tests__ directory
-    "_*.ts",           // Exclude files starting with underscore
+    "_*.ts", // Exclude files starting with underscore
   ],
 };
 ```
+
+## Validation Compatibility
+
+Runtime validation support is standards-only:
+
+- `schema.input` / `schema.output` must implement `StandardSchemaV1`
+- OpenAPI conversion is attempted only when schema also exposes `StandardJSONSchemaV1`
+- No custom adapters are used by the framework
+
+Libraries like Zod, Valibot, and ArkType can work as long as they implement the Standard Schema interfaces.
+
+## Migration Notes
+
+- Existing routes without `schema` continue to work unchanged.
+- `schema` is optional, and both `schema.input` and `schema.output` are optional.
+- Validation errors from `schema.input` return `422` with normalized issue payload.
+- For `rawRequest: true`, input validation runs when `schema.input` exists unless `validateRawRequest: false`.
 
 ## Performance
 
@@ -476,12 +630,15 @@ Benchmarks show Vector handling **100,000+ requests/second** on standard hardwar
 ## Why Vector?
 
 ### For Encore Users
+
 Love Encore's declarative API design but need more flexibility? Vector provides the same developer experience with the freedom to deploy anywhere Bun runs.
 
 ### For Express/Fastify Users
+
 Tired of middleware chains and verbose configurations? Vector's declarative approach makes APIs cleaner and more maintainable.
 
 ### For New Projects
+
 Starting fresh? Vector gives you production-ready features from day one with minimal configuration.
 
 ## Error Reference
@@ -694,7 +851,7 @@ export const example = route(
       // Generic server error
       throw APIError.internalServerError("Failed to create user");
     }
-  }
+  },
 );
 ```
 

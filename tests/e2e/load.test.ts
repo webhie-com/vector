@@ -18,10 +18,7 @@ const CONFIG = {
 };
 
 async function runLoadTest() {
-  Reporter.printTestHeader(
-    'Load Testing Suite',
-    'Testing server performance under various load conditions'
-  );
+  Reporter.printTestHeader('Load Testing Suite', 'Testing server performance under various load conditions');
 
   let server: Server;
   const client = createClient(CONFIG.baseUrl);
@@ -46,10 +43,7 @@ async function runLoadTest() {
 
     // Run test scenarios
     for (const scenario of CONFIG.testScenarios) {
-      Reporter.printTestHeader(
-        scenario.name,
-        `${scenario.concurrent} concurrent, ${scenario.total} total requests`
-      );
+      Reporter.printTestHeader(scenario.name, `${scenario.concurrent} concurrent, ${scenario.total} total requests`);
 
       const metrics = new MetricsCollector();
       const memoryMonitor = new MemoryMonitor();
@@ -88,9 +82,7 @@ async function runLoadTest() {
       memoryMonitor.start(500);
 
       // Execute concurrent requests
-      console.log(
-        `\nExecuting ${scenario.total} requests with ${scenario.concurrent} concurrent connections...`
-      );
+      console.log(`\nExecuting ${scenario.total} requests with ${scenario.concurrent} concurrent connections...`);
 
       let completed = 0;
       const batchSize = scenario.concurrent;

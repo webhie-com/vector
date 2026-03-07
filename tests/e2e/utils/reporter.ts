@@ -16,9 +16,7 @@ export class Reporter {
 
     console.log('\n Response Times');
     console.log(`  Average:    ${metrics.averageResponseTime.toFixed(0)}ms`);
-    console.log(
-      `  Min/Max:    ${metrics.minResponseTime.toFixed(0)}ms / ${metrics.maxResponseTime.toFixed(0)}ms`
-    );
+    console.log(`  Min/Max:    ${metrics.minResponseTime.toFixed(0)}ms / ${metrics.maxResponseTime.toFixed(0)}ms`);
 
     console.log('\n Percentiles');
     console.log(`  P50:        ${metrics.percentiles.p50.toFixed(0)}ms`);
@@ -68,13 +66,7 @@ export class Reporter {
     Object.entries(distribution)
       .sort(([a], [b]) => a.localeCompare(b))
       .forEach(([code, count]) => {
-        const marker = code.startsWith('2')
-          ? '✓'
-          : code.startsWith('4')
-            ? '!'
-            : code.startsWith('5')
-              ? '✗'
-              : '•';
+        const marker = code.startsWith('2') ? '✓' : code.startsWith('4') ? '!' : code.startsWith('5') ? '✗' : '•';
         console.log(`  ${marker} ${code.padEnd(6)} ${count}`);
       });
   }
@@ -91,11 +83,7 @@ export class Reporter {
     });
   }
 
-  static printBenchmarkComparison(
-    current: Metrics,
-    baseline?: Metrics,
-    title = 'Benchmark Comparison'
-  ): void {
+  static printBenchmarkComparison(current: Metrics, baseline?: Metrics, title = 'Benchmark Comparison'): void {
     console.log('\n' + '═'.repeat(60));
     console.log(`🏁 ${title}`);
     console.log('═'.repeat(60));
@@ -105,14 +93,10 @@ export class Reporter {
     if (baseline) {
       console.log('\n📊 Comparison with Baseline:');
 
-      const throughputDiff =
-        ((current.throughput - baseline.throughput) / baseline.throughput) * 100;
+      const throughputDiff = ((current.throughput - baseline.throughput) / baseline.throughput) * 100;
       const avgTimeDiff =
-        ((current.averageResponseTime - baseline.averageResponseTime) /
-          baseline.averageResponseTime) *
-        100;
-      const p95Diff =
-        ((current.percentiles.p95 - baseline.percentiles.p95) / baseline.percentiles.p95) * 100;
+        ((current.averageResponseTime - baseline.averageResponseTime) / baseline.averageResponseTime) * 100;
+      const p95Diff = ((current.percentiles.p95 - baseline.percentiles.p95) / baseline.percentiles.p95) * 100;
 
       console.log(`  Throughput: ${Reporter.formatDiff(throughputDiff, true)}`);
       console.log(`  Avg Response Time: ${Reporter.formatDiff(avgTimeDiff, false)}`);

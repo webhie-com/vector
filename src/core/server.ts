@@ -1,7 +1,24 @@
 import type { Server } from 'bun';
 import { cors } from 'itty-router';
-import type { CorsOptions, DefaultVectorTypes, VectorConfig, VectorTypes } from '../types';
+import { renderOpenAPIDocsHtml } from '../openapi/docs-ui';
+import { generateOpenAPIDocument } from '../openapi/generator';
+import type { CorsOptions, DefaultVectorTypes, OpenAPIOptions, VectorConfig, VectorTypes } from '../types';
 import type { VectorRouter } from './router';
+
+interface NormalizedOpenAPIConfig {
+  enabled: boolean;
+  path: string;
+  target: string;
+  docs: {
+    enabled: boolean;
+    path: string;
+  };
+  info?: {
+    title?: string;
+    version?: string;
+    description?: string;
+  };
+}
 
 export class VectorServer<TTypes extends VectorTypes = DefaultVectorTypes> {
   private server: Server | null = null;
@@ -9,10 +26,14 @@ export class VectorServer<TTypes extends VectorTypes = DefaultVectorTypes> {
   private config: VectorConfig<TTypes>;
   private corsHandler: any;
   private corsHeaders: Record<string, string> | null = null;
+  private openapiConfig: NormalizedOpenAPIConfig;
+  private openapiDocCache: Record<string, unknown> | null = null;
+  private openapiWarningsLogged = false;
 
   constructor(router: VectorRouter<TTypes>, config: VectorConfig<TTypes>) {
     this.router = router;
     this.config = config;
+    this.openapiConfig = this.normalizeOpenAPIConfig(config.openapi, config.development);
 
     if (config.cors) {
       const opts = this.normalizeCorsOptions(config.cors);
@@ -34,6 +55,97 @@ export class VectorServer<TTypes extends VectorTypes = DefaultVectorTypes> {
         }
       }
     }
+  }
+
+  private normalizeOpenAPIConfig(
+    openapi: OpenAPIOptions | boolean | undefined,
+    development: boolean | undefined
+  ): NormalizedOpenAPIConfig {
+    const isDev = development !== false && process.env.NODE_ENV !== 'production';
+    const defaultEnabled = isDev;
+
+    if (openapi === false) {
+      return {
+        enabled: false,
+        path: '/openapi.json',
+        target: 'openapi-3.0',
+        docs: { enabled: false, path: '/docs' },
+      };
+    }
+
+    if (openapi === true) {
+      return {
+        enabled: true,
+        path: '/openapi.json',
+        target: 'openapi-3.0',
+        docs: { enabled: false, path: '/docs' },
+      };
+    }
+
+    const openapiObject = openapi || {};
+    const docsValue = openapiObject.docs;
+    const docs =
+      typeof docsValue === 'boolean'
+        ? { enabled: docsValue, path: '/docs' }
+        : {
+            enabled: docsValue?.enabled === true,
+            path: docsValue?.path || '/docs',
+          };
+
+    return {
+      enabled: openapiObject.enabled ?? defaultEnabled,
+      path: openapiObject.path || '/openapi.json',
+      target: openapiObject.target || 'openapi-3.0',
+      docs,
+      info: openapiObject.info,
+    };
+  }
+
+  private isDocsReservedPath(path: string): boolean {
+    return path === this.openapiConfig.path || path === this.openapiConfig.docs.path;
+  }
+
+  private getOpenAPIDocument(): Record<string, unknown> {
+    if (this.openapiDocCache) {
+      return this.openapiDocCache;
+    }
+
+    const routes = this.router.getRouteDefinitions().filter((route) => !this.isDocsReservedPath(route.path));
+
+    const result = generateOpenAPIDocument(routes as any, {
+      target: this.openapiConfig.target,
+      info: this.openapiConfig.info,
+    });
+
+    if (!this.openapiWarningsLogged && result.warnings.length > 0) {
+      for (const warning of result.warnings) {
+        console.warn(warning);
+      }
+      this.openapiWarningsLogged = true;
+    }
+
+    this.openapiDocCache = result.document;
+    return this.openapiDocCache;
+  }
+
+  private tryHandleOpenAPIRequest(request: Request): Response | null {
+    if (!this.openapiConfig.enabled || request.method !== 'GET') {
+      return null;
+    }
+
+    const pathname = new URL(request.url).pathname;
+    if (pathname === this.openapiConfig.path) {
+      return Response.json(this.getOpenAPIDocument());
+    }
+
+    if (this.openapiConfig.docs.enabled && pathname === this.openapiConfig.docs.path) {
+      return new Response(renderOpenAPIDocsHtml(this.getOpenAPIDocument(), this.openapiConfig.path), {
+        status: 200,
+        headers: { 'content-type': 'text/html; charset=utf-8' },
+      });
+    }
+
+    return null;
   }
 
   private normalizeCorsOptions(options: CorsOptions): any {
@@ -64,8 +176,8 @@ export class VectorServer<TTypes extends VectorTypes = DefaultVectorTypes> {
           return this.corsHandler.preflight(request);
         }
 
-        // Try to handle the request with our router
-        let response = await this.router.handle(request);
+        // Built-in docs endpoints are handled before user routes to avoid conflicts
+        let response = this.tryHandleOpenAPIRequest(request) || (await this.router.handle(request));
 
         // Apply CORS headers if configured
         if (this.corsHeaders) {
@@ -125,6 +237,8 @@ export class VectorServer<TTypes extends VectorTypes = DefaultVectorTypes> {
     if (this.server) {
       this.server.stop();
       this.server = null;
+      this.openapiDocCache = null;
+      this.openapiWarningsLogged = false;
       console.log('Server stopped');
     }
   }

@@ -24,6 +24,16 @@ function jsonRequest(url: string, method = 'POST', body?: object) {
   });
 }
 
+function standardSchema(validate: (value: unknown) => unknown | Promise<unknown>) {
+  return {
+    '~standard': {
+      version: 1 as const,
+      vendor: 'test',
+      validate,
+    },
+  };
+}
+
 describe('Router — request body parsing', () => {
   it('parses JSON body on POST', async () => {
     const { router } = makeRouter();
@@ -100,6 +110,200 @@ describe('Router — request body parsing', () => {
 
     await router.handle(jsonRequest('http://localhost/raw', 'POST', { x: 1 }));
     expect(captured).toBeUndefined();
+  });
+});
+
+describe('Router — schema validation', () => {
+  it('returns 422 with normalized issues when input validation fails', async () => {
+    const { router } = makeRouter();
+    let called = false;
+
+    const input = standardSchema(async () => ({
+      issues: [
+        {
+          message: 'Email is required',
+          path: ['body', 'email'],
+          code: 'required',
+        },
+      ],
+    }));
+
+    router.route(
+      {
+        method: 'POST',
+        path: '/validate',
+        expose: true,
+        schema: { input },
+      },
+      async () => {
+        called = true;
+        return { ok: true };
+      }
+    );
+
+    const res = await router.handle(jsonRequest('http://localhost/validate', 'POST', { email: '' }));
+    const body = await res.json();
+
+    expect(res.status).toBe(422);
+    expect(called).toBe(false);
+    expect(body.message).toBe('Validation failed');
+    expect(body.target).toBe('input');
+    expect(body.issues[0]).toMatchObject({
+      message: 'Email is required',
+      path: ['body', 'email'],
+      code: 'required',
+    });
+  });
+
+  it('applies validated input output to request for handlers', async () => {
+    const { router } = makeRouter();
+    let validatedInput: any;
+
+    const input = standardSchema(async (value) => {
+      const payload = value as any;
+      return {
+        value: {
+          ...payload,
+          body: {
+            name: String(payload.body?.name || '')
+              .trim()
+              .toUpperCase(),
+          },
+        },
+      };
+    });
+
+    router.route(
+      {
+        method: 'POST',
+        path: '/validate-pass',
+        expose: true,
+        schema: { input },
+      },
+      async (req) => {
+        validatedInput = req.validatedInput;
+        return { normalized: req.content.name };
+      }
+    );
+
+    const res = await router.handle(
+      jsonRequest('http://localhost/validate-pass', 'POST', {
+        name: '  alice  ',
+      })
+    );
+
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ normalized: 'ALICE' });
+    expect(validatedInput.body.name).toBe('ALICE');
+  });
+
+  it('returns 500 when schema config is invalid', async () => {
+    const { router } = makeRouter();
+
+    router.route(
+      {
+        method: 'POST',
+        path: '/invalid-schema',
+        expose: true,
+        schema: { input: {} as any },
+      },
+      async () => ({ ok: true })
+    );
+
+    const res = await router.handle(jsonRequest('http://localhost/invalid-schema', 'POST', {}));
+    const body = await res.json();
+
+    expect(res.status).toBe(500);
+    expect(body.message).toBe('Invalid route schema configuration');
+  });
+
+  it('skips raw-request validation when validateRawRequest is explicitly false', async () => {
+    const { router } = makeRouter();
+    let validateCalled = false;
+
+    const input = standardSchema(async () => {
+      validateCalled = true;
+      return { value: { body: { fromValidation: true } } };
+    });
+
+    router.route(
+      {
+        method: 'POST',
+        path: '/raw-skip-validate',
+        expose: true,
+        rawRequest: true,
+        validateRawRequest: false,
+        schema: { input },
+      },
+      async () => ({ ok: true })
+    );
+
+    const res = await router.handle(jsonRequest('http://localhost/raw-skip-validate', 'POST', { a: 1 }));
+    expect(res.status).toBe(200);
+    expect(validateCalled).toBe(false);
+  });
+
+  it('validates raw requests by default when schema.input exists', async () => {
+    const { router } = makeRouter();
+    let bodySeenByValidator: unknown;
+
+    const input = standardSchema(async (value) => {
+      const payload = value as any;
+      bodySeenByValidator = payload.body;
+      return {
+        value: {
+          ...payload,
+          body: { parsed: true },
+        },
+      };
+    });
+
+    let contentSeenByHandler: any;
+    router.route(
+      {
+        method: 'POST',
+        path: '/raw-validate',
+        expose: true,
+        rawRequest: true,
+        schema: { input },
+      },
+      async (req) => {
+        contentSeenByHandler = req.content;
+        return { ok: true };
+      }
+    );
+
+    const res = await router.handle(jsonRequest('http://localhost/raw-validate', 'POST', { a: 1 }));
+    expect(res.status).toBe(200);
+    expect(typeof bodySeenByValidator).toBe('string');
+    expect(contentSeenByHandler).toEqual({ parsed: true });
+  });
+
+  it('maps thrown validation issues to 422', async () => {
+    const { router } = makeRouter();
+
+    const input = standardSchema(async () => {
+      throw {
+        issues: [{ message: 'Broken payload', path: ['body'] }],
+      };
+    });
+
+    router.route(
+      {
+        method: 'POST',
+        path: '/throw-issues',
+        expose: true,
+        schema: { input },
+      },
+      async () => ({ ok: true })
+    );
+
+    const res = await router.handle(jsonRequest('http://localhost/throw-issues', 'POST', { a: 1 }));
+    const body = await res.json();
+
+    expect(res.status).toBe(422);
+    expect(body.message).toBe('Validation failed');
+    expect(body.issues[0].message).toBe('Broken payload');
   });
 });
 
@@ -180,13 +384,10 @@ describe('Router — caching integration', () => {
     const { router } = makeRouter();
     let callCount = 0;
 
-    router.route(
-      { method: 'GET', path: '/cached-obj', expose: true, cache: { ttl: 60 } },
-      async () => {
-        callCount++;
-        return { value: callCount };
-      }
-    );
+    router.route({ method: 'GET', path: '/cached-obj', expose: true, cache: { ttl: 60 } }, async () => {
+      callCount++;
+      return { value: callCount };
+    });
 
     await router.handle(new Request('http://localhost/cached-obj'));
     await router.handle(new Request('http://localhost/cached-obj'));

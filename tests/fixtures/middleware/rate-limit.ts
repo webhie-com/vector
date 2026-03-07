@@ -6,8 +6,7 @@ const WINDOW_MS = 60000; // 1 minute
 const MAX_REQUESTS = 100;
 
 export default async function rateLimit(request: VectorRequest) {
-  const ip =
-    request.headers.get('x-forwarded-for') || request.headers.get('cf-connecting-ip') || 'unknown';
+  const ip = request.headers.get('x-forwarded-for') || request.headers.get('cf-connecting-ip') || 'unknown';
 
   const now = Date.now();
   const userLimit = requestCounts.get(ip);

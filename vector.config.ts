@@ -8,8 +8,14 @@ const config: VectorConfigSchema = {
   hostname: 'localhost',
   reusePort: true,
   development: process.env.NODE_ENV !== 'production',
-  routesDir: './routes',
-
+  routesDir: './examples/routes',
+  defaults: {
+    route: {
+      auth: false,
+      expose: true,
+      rawResponse: false,
+    },
+  },
   // CORS configuration
   cors: {
     origin: '*',
@@ -18,6 +24,22 @@ const config: VectorConfigSchema = {
     allowMethods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
     exposeHeaders: ['Authorization'],
     maxAge: 86400,
+  },
+
+  // Local OpenAPI endpoints for development
+  openapi: {
+    enabled: true,
+    path: '/openapi.json',
+    target: 'openapi-3.0',
+    docs: {
+      enabled: true,
+      path: '/docs',
+    },
+    info: {
+      title: 'Vector Local API',
+      version: '0.0.0-local',
+      description: 'Local development OpenAPI document',
+    },
   },
 
   // Optional: Custom TypeScript types

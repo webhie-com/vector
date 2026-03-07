@@ -36,10 +36,7 @@ describe('VectorRouter', () => {
 
     it('should handle wildcard routes', () => {
       router.route({ method: 'GET', path: '/files/*', expose: true }, async () => 'files');
-      router.route(
-        { method: 'GET', path: '/files/specific', expose: true },
-        async () => 'specific'
-      );
+      router.route({ method: 'GET', path: '/files/specific', expose: true }, async () => 'specific');
 
       const routes = router.getRoutes();
 
@@ -52,10 +49,7 @@ describe('VectorRouter', () => {
   describe('Route Specificity Scoring', () => {
     it('should prioritize exact paths', () => {
       router.route({ method: 'GET', path: '/api/v1/users', expose: true }, async () => 'exact');
-      router.route(
-        { method: 'GET', path: '/api/:version/users', expose: true },
-        async () => 'param'
-      );
+      router.route({ method: 'GET', path: '/api/:version/users', expose: true }, async () => 'param');
       router.route({ method: 'GET', path: '/api/*/users', expose: true }, async () => 'wildcard');
 
       const routes = router.getRoutes();
@@ -131,6 +125,66 @@ describe('VectorRouter', () => {
       const response = await router.handle(request);
 
       expect(response.status).toBe(403);
+    });
+
+    it('should require auth by default when enabled globally', async () => {
+      router.setRouteBooleanDefaults({ auth: true });
+      router.route(
+        {
+          method: 'GET',
+          path: '/default-protected',
+          expose: true,
+        },
+        async () => ({ ok: true })
+      );
+
+      const request = new Request('http://localhost/default-protected', { method: 'GET' });
+      const response = await router.handle(request);
+
+      expect(response.status).toBe(401);
+    });
+
+    it('should allow route-level auth override when global auth default is enabled', async () => {
+      router.setRouteBooleanDefaults({ auth: true });
+      router.route(
+        {
+          method: 'GET',
+          path: '/public',
+          expose: true,
+          auth: false,
+        },
+        async () => ({ ok: true })
+      );
+
+      const request = new Request('http://localhost/public', { method: 'GET' });
+      const response = await router.handle(request);
+
+      expect(response.status).toBe(200);
+    });
+
+    it('should apply expose default and allow explicit override', async () => {
+      router.setRouteBooleanDefaults({ expose: false });
+      router.route(
+        {
+          method: 'GET',
+          path: '/hidden-default',
+        },
+        async () => ({ ok: true })
+      );
+      router.route(
+        {
+          method: 'GET',
+          path: '/visible-override',
+          expose: true,
+        },
+        async () => ({ ok: true })
+      );
+
+      const hiddenResponse = await router.handle(new Request('http://localhost/hidden-default', { method: 'GET' }));
+      const visibleResponse = await router.handle(new Request('http://localhost/visible-override', { method: 'GET' }));
+
+      expect(hiddenResponse.status).toBe(403);
+      expect(visibleResponse.status).toBe(200);
     });
   });
 

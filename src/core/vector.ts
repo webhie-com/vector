@@ -36,11 +36,7 @@ export class Vector<TTypes extends VectorTypes = DefaultVectorTypes> {
     this.middlewareManager = new MiddlewareManager<TTypes>();
     this.authManager = new AuthManager<TTypes>();
     this.cacheManager = new CacheManager<TTypes>();
-    this.router = new VectorRouter<TTypes>(
-      this.middlewareManager,
-      this.authManager,
-      this.cacheManager
-    );
+    this.router = new VectorRouter<TTypes>(this.middlewareManager, this.authManager, this.cacheManager);
   }
 
   // Internal use only - not exposed to users
@@ -79,6 +75,13 @@ export class Vector<TTypes extends VectorTypes = DefaultVectorTypes> {
   // Internal method to start server - only called by CLI
   async startServer(config?: VectorConfig<TTypes>): Promise<Server> {
     this.config = { ...this.config, ...config };
+    const routeDefaults = { ...this.config.defaults?.route };
+    // Legacy compatibility: keep authByDefault as a fallback alias.
+    // Explicit defaults.route.auth always wins if provided.
+    if (this.config.authByDefault === true && routeDefaults.auth === undefined) {
+      routeDefaults.auth = true;
+    }
+    this.router.setRouteBooleanDefaults(routeDefaults);
 
     // Clear previous middleware to avoid accumulation across multiple starts
     this.middlewareManager.clear();
@@ -186,13 +189,7 @@ export class Vector<TTypes extends VectorTypes = DefaultVectorTypes> {
   }
 
   private isRouteDefinition(value: any): boolean {
-    return (
-      value &&
-      typeof value === 'object' &&
-      'entry' in value &&
-      'options' in value &&
-      'handler' in value
-    );
+    return value && typeof value === 'object' && 'entry' in value && 'options' in value && 'handler' in value;
   }
 
   private logRouteLoaded(_: RouteEntry | RouteOptions): void {

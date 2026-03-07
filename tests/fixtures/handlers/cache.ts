@@ -18,11 +18,7 @@ setInterval(() => {
   }
 }, 60000); // Clean every minute
 
-export default async function cacheHandler(
-  key: string,
-  factory: () => Promise<any>,
-  ttl: number
-): Promise<any> {
+export default async function cacheHandler(key: string, factory: () => Promise<any>, ttl: number): Promise<any> {
   // Check if cached and not expired
   const cached = cache.get(key);
   if (cached && cached.expires > Date.now()) {

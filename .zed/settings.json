@@ -1,0 +1,49 @@
+{
+  "format_on_save": "on",
+  "languages": {
+    "TypeScript": {
+      "formatter": {
+        "external": {
+          "command": "bunx",
+          "arguments": ["@biomejs/biome", "format", "--stdin-file-path", "{buffer_path}"]
+        }
+      },
+      "code_actions_on_format": {
+        "source.organizeImports.biome": true,
+        "source.fixAll.biome": true
+      }
+    },
+    "TSX": {
+      "formatter": {
+        "external": {
+          "command": "bunx",
+          "arguments": ["@biomejs/biome", "format", "--stdin-file-path", "{buffer_path}"]
+        }
+      },
+      "code_actions_on_format": {
+        "source.organizeImports.biome": true,
+        "source.fixAll.biome": true
+      }
+    },
+    "JavaScript": {
+      "formatter": {
+        "external": {
+          "command": "bunx",
+          "arguments": ["@biomejs/biome", "format", "--stdin-file-path", "{buffer_path}"]
+        }
+      },
+      "code_actions_on_format": {
+        "source.organizeImports.biome": true,
+        "source.fixAll.biome": true
+      }
+    },
+    "JSON": {
+      "formatter": {
+        "external": {
+          "command": "bunx",
+          "arguments": ["@biomejs/biome", "format", "--stdin-file-path", "{buffer_path}"]
+        }
+      }
+    }
+  }
+}

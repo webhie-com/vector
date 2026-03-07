@@ -88,10 +88,7 @@ async function waitForServer(url: string, timeoutMs = 10000): Promise<void> {
 }
 
 async function runBenchmark() {
-  Reporter.printTestHeader(
-    'Benchmark Suite',
-    'Comprehensive performance benchmarking across various request rates'
-  );
+  Reporter.printTestHeader('Benchmark Suite', 'Comprehensive performance benchmarking across various request rates');
 
   let serverProcess: ReturnType<typeof Bun.spawn> | null = null;
   const client = createClient(CONFIG.baseUrl);
@@ -102,14 +99,11 @@ async function runBenchmark() {
     // Start test server in a separate process so it gets its own event loop
     // and doesn't compete with benchmark workers for the same JS thread
     console.log('Starting test server...');
-    serverProcess = Bun.spawn(
-      ['bun', 'run', new URL('./test-server-process.ts', import.meta.url).pathname],
-      {
-        env: { ...process.env, PORT: String(CONFIG.port) },
-        stdout: 'pipe',
-        stderr: 'inherit',
-      }
-    );
+    serverProcess = Bun.spawn(['bun', 'run', new URL('./test-server-process.ts', import.meta.url).pathname], {
+      env: { ...process.env, PORT: String(CONFIG.port) },
+      stdout: 'pipe',
+      stderr: 'inherit',
+    });
 
     // Wait until the server writes "READY"
     if (!serverProcess.stdout) {
@@ -232,8 +226,7 @@ async function runBenchmark() {
         const elapsed = Date.now() - startTime;
         const progress = (elapsed / CONFIG.benchmarkDuration) * 100;
 
-        const progressBar =
-          '█'.repeat(Math.floor(progress / 2)) + '░'.repeat(50 - Math.floor(progress / 2));
+        const progressBar = '█'.repeat(Math.floor(progress / 2)) + '░'.repeat(50 - Math.floor(progress / 2));
         process.stdout.write(
           `\r[${progressBar}] ${progress.toFixed(1)}% | ` +
             `Requests: ${totalRequests} | ` +
@@ -275,10 +268,7 @@ async function runBenchmark() {
       });
 
       // Report individual benchmark results
-      Reporter.printMetrics(
-        testMetrics,
-        `${targetRPS} RPS target | ${testMetrics.throughput.toFixed(0)} RPS actual`
-      );
+      Reporter.printMetrics(testMetrics, `${targetRPS} RPS target | ${testMetrics.throughput.toFixed(0)} RPS actual`);
 
       console.log('\nResource Usage');
       console.log(`  Memory Avg:  ${Reporter.formatBytes(memoryMetrics.average.heapUsed)}`);
@@ -373,10 +363,7 @@ async function runBenchmark() {
       }
     }
 
-    const peakSweep = sweepResults.reduce(
-      (best, r) => (r.throughput > best.throughput ? r : best),
-      sweepResults[0]
-    );
+    const peakSweep = sweepResults.reduce((best, r) => (r.throughput > best.throughput ? r : best), sweepResults[0]);
     console.log(
       `\nPeak: ${peakSweep.throughput.toFixed(0)} req/s at ${peakSweep.concurrency} connections (P95 ${peakSweep.p95}ms, ${peakSweep.errorRate.toFixed(1)}% errors)`
     );

@@ -120,8 +120,7 @@ async function runSoakTest() {
       const currentMetrics = metrics.getMetrics();
 
       // Show progress
-      const progressBar =
-        '█'.repeat(Math.floor(progress / 2)) + '░'.repeat(50 - Math.floor(progress / 2));
+      const progressBar = '█'.repeat(Math.floor(progress / 2)) + '░'.repeat(50 - Math.floor(progress / 2));
       process.stdout.write(
         `\r[${progressBar}] ${progress.toFixed(1)}% | ` +
           `Requests: ${totalRequests} | ` +
@@ -244,9 +243,7 @@ async function runSoakTest() {
       const lastCheckpoint = checkpoints[checkpoints.length - 1];
 
       const rtDegradation =
-        ((lastCheckpoint.avgResponseTime - firstCheckpoint.avgResponseTime) /
-          firstCheckpoint.avgResponseTime) *
-        100;
+        ((lastCheckpoint.avgResponseTime - firstCheckpoint.avgResponseTime) / firstCheckpoint.avgResponseTime) * 100;
 
       console.log('\n📉 Performance Degradation:');
       console.log(`  Response Time: ${rtDegradation > 0 ? '+' : ''}${rtDegradation.toFixed(2)}%`);

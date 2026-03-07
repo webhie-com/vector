@@ -142,9 +142,7 @@ async function runDev() {
           if (isReloading || now - lastReloadTime < 1000) return;
 
           const segments = filename ? filename.split(/[/\\]/) : [];
-          const excluded = segments.some((s) =>
-            ['node_modules', '.git', '.vector', 'dist'].includes(s)
-          );
+          const excluded = segments.some((s) => ['node_modules', '.git', '.vector', 'dist'].includes(s));
           if (
             filename &&
             (filename.endsWith('.ts') || filename.endsWith('.js') || filename.endsWith('.json')) &&
