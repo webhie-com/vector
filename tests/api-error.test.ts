@@ -144,6 +144,6 @@ describe('route helper', () => {
     expect(definition.entry).toEqual({ method: 'GET', path: '/health' });
     expect(definition.options.path).toBe('/health');
     expect(typeof definition.handler).toBe('function');
-    expect('_handler' in (definition as Record<string, unknown>)).toBe(false);
+    expect('_handler' in definition).toBe(false);
   });
 });

@@ -64,7 +64,7 @@ export class VectorServer<TTypes extends VectorTypes = DefaultVectorTypes> {
     };
   }
 
-  private applyCors(response: Response, request: Request): Response {
+  private applyCors(response: Response, request?: Request): Response {
     if (this.corsHeadersEntries) {
       for (const [k, v] of this.corsHeadersEntries) {
         response.headers.set(k, v);
@@ -72,7 +72,7 @@ export class VectorServer<TTypes extends VectorTypes = DefaultVectorTypes> {
       return response;
     }
 
-    if (this.corsHandler) {
+    if (this.corsHandler && request) {
       return this.corsHandler.corsify(response, request);
     }
 
@@ -106,9 +106,9 @@ export class VectorServer<TTypes extends VectorTypes = DefaultVectorTypes> {
         routes: this.router.getRouteTable(),
         fetch: fallbackFetch,
         idleTimeout: this.config.idleTimeout || 60,
-        error: (error) => {
+        error: (error, request?: Request) => {
           console.error('[ERROR] Server error:', error);
-          return new Response('Internal Server Error', { status: 500 });
+          return this.applyCors(new Response('Internal Server Error', { status: 500 }), request);
         },
       });
 

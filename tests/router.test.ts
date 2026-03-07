@@ -158,6 +158,20 @@ describe('VectorRouter', () => {
       const response = await router.handle(malformedRequest);
       expect(response.status).toBe(400);
     });
+
+    it('should not throw when params is readonly on request objects', async () => {
+      router.route({ method: 'GET', path: '/users/:id', expose: true }, async () => ({ ok: true }));
+
+      const request = new Request('http://localhost/users/123');
+      Object.defineProperty(request, 'params', {
+        value: {},
+        writable: false,
+        configurable: true,
+      });
+
+      const response = await router.handle(request);
+      expect(response.status).toBe(200);
+    });
   });
 
   describe('CORS behavior', () => {
@@ -207,6 +221,36 @@ describe('VectorRouter', () => {
       expect(response.headers.get('vary')).toContain('Origin');
     });
 
+    it('uses middleware-mutated request headers for dynamic CORS decisions', async () => {
+      middlewareManager.addBefore((req) => {
+        const headers = new Headers(req.headers);
+        headers.set('origin', 'https://allowed.example');
+        return new Request(req.url, {
+          method: req.method,
+          headers,
+        }) as any;
+      });
+
+      router.route({ method: 'GET', path: '/cors-mutated-origin', expose: true }, async () => ({
+        ok: true,
+      }));
+      new VectorServer(router, {
+        cors: {
+          origin: ['https://allowed.example'],
+          credentials: true,
+        },
+      });
+
+      const response = await router.handle(
+        new Request('http://localhost/cors-mutated-origin', {
+          headers: { origin: 'https://blocked.example' },
+        })
+      );
+
+      expect(response.headers.get('access-control-allow-origin')).toBe('https://allowed.example');
+      expect(response.headers.get('access-control-allow-credentials')).toBe('true');
+    });
+
     it('applies CORS headers to fallback 404 responses', () => {
       const server = new VectorServer(router, {
         cors: {
@@ -224,6 +268,23 @@ describe('VectorRouter', () => {
       ) as Response;
 
       expect(response.status).toBe(404);
+      expect(response.headers.get('access-control-allow-origin')).toBe('https://app.example.com');
+      expect(response.headers.get('access-control-allow-credentials')).toBe('true');
+    });
+
+    it('applies static CORS headers to server error responses without request context', () => {
+      const server = new VectorServer(router, {
+        cors: {
+          origin: 'https://app.example.com',
+          credentials: true,
+        },
+      });
+
+      const response = (server as any).applyCors(
+        new Response('Internal Server Error', { status: 500 })
+      ) as Response;
+
+      expect(response.status).toBe(500);
       expect(response.headers.get('access-control-allow-origin')).toBe('https://app.example.com');
       expect(response.headers.get('access-control-allow-credentials')).toBe('true');
     });
@@ -267,6 +328,9 @@ describe('VectorRouter', () => {
       const matchers = (router as any).routeMatchers as Array<{ path: string; regex: RegExp }>;
       const before = matchers.find((m) => m.path === '/stable/:id')?.regex;
       expect(before).toBeInstanceOf(RegExp);
+      if (!before) {
+        throw new Error('Expected matcher regex to exist before requests');
+      }
 
       await router.handle(new Request('http://localhost/stable/1'));
       await router.handle(new Request('http://localhost/stable/2'));
@@ -274,6 +338,9 @@ describe('VectorRouter', () => {
       const after = ((router as any).routeMatchers as Array<{ path: string; regex: RegExp }>).find(
         (m) => m.path === '/stable/:id'
       )?.regex;
+      if (!after) {
+        throw new Error('Expected matcher regex to exist after requests');
+      }
       expect(after).toBe(before);
     });
 

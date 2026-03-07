@@ -124,7 +124,11 @@ export class VectorRouter<TTypes extends VectorTypes = DefaultVectorTypes> {
       if (request.method === 'OPTIONS' || request.method in methodMap) {
         const match = pathname.match(matcher.regex);
         if (match) {
-          (request as any).params = match.groups ?? {};
+          try {
+            (request as any).params = match.groups ?? {};
+          } catch {
+            // Request.params can be readonly on Bun-native requests.
+          }
           const handler = methodMap[request.method] ?? methodMap['GET'];
           if (handler) {
             const response = await handler(request);
@@ -333,7 +337,7 @@ export class VectorRouter<TTypes extends VectorTypes = DefaultVectorTypes> {
         } else {
           const dynamicCors = corsHandler();
           if (dynamicCors) {
-            response = dynamicCors(response, request);
+            response = dynamicCors(response, req as unknown as Request);
           }
         }
 
@@ -419,5 +423,3 @@ export class VectorRouter<TTypes extends VectorTypes = DefaultVectorTypes> {
     );
   }
 }
-
-export { STATIC_RESPONSES };
