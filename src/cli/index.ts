@@ -4,6 +4,7 @@ import { watch } from 'node:fs';
 import { parseArgs } from 'node:util';
 import { getVectorInstance } from '../core/vector';
 import { ConfigLoader } from '../core/config-loader';
+import { resolveHost, resolvePort, resolveRoutesDir } from './option-resolution';
 
 // Compatibility layer for both Node and Bun
 const args = typeof Bun !== 'undefined' ? Bun.argv.slice(2) : process.argv.slice(2);
@@ -49,50 +50,6 @@ const hasRoutesOption = args.some((arg) => arg === '--routes' || arg === '-r' ||
 const hasHostOption = args.some((arg) => arg === '--host' || arg === '-h' || arg.startsWith('--host='));
 const hasPortOption = args.some((arg) => arg === '--port' || arg === '-p' || arg.startsWith('--port='));
 
-function resolveRoutesDir(configRoutesDir?: string): string {
-  if (hasRoutesOption && values.routes) {
-    return values.routes as string;
-  }
-
-  if (configRoutesDir) {
-    return configRoutesDir;
-  }
-
-  if (values.routes) {
-    return values.routes as string;
-  }
-
-  return './routes';
-}
-
-function resolvePort(configPort?: number): number {
-  if (hasPortOption) {
-    const parsedPort = Number.parseInt(values.port as string, 10);
-    if (!Number.isFinite(parsedPort)) {
-      throw new Error(`Invalid port value: ${values.port as string}`);
-    }
-    return parsedPort;
-  }
-
-  if (configPort !== undefined) {
-    return configPort;
-  }
-
-  return Number.parseInt(values.port as string, 10);
-}
-
-function resolveHost(configHost?: string): string {
-  if (hasHostOption) {
-    return values.host as string;
-  }
-
-  if (configHost !== undefined) {
-    return configHost;
-  }
-
-  return values.host as string;
-}
-
 async function runDev() {
   const isDev = command === 'dev';
 
@@ -116,9 +73,9 @@ async function runDev() {
 
       // Merge CLI options with loaded config.
       // Explicit --port/--host always override config values.
-      config.port = resolvePort(config.port);
-      config.hostname = resolveHost(config.hostname);
-      config.routesDir = resolveRoutesDir(config.routesDir);
+      config.port = resolvePort(config.port, hasPortOption, values.port as string);
+      config.hostname = resolveHost(config.hostname, hasHostOption, values.host as string);
+      config.routesDir = resolveRoutesDir(config.routesDir, hasRoutesOption, values.routes as string);
       config.development = config.development ?? isDev;
       config.autoDiscover = true; // Always auto-discover routes
 
