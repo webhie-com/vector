@@ -15,6 +15,7 @@ interface NormalizedOpenAPIConfig {
   docs: {
     enabled: boolean;
     path: string;
+    exposePaths?: string[];
   };
   info?: {
     title?: string;
@@ -24,6 +25,15 @@ interface NormalizedOpenAPIConfig {
 }
 
 const OPENAPI_TAILWIND_ASSET_PATH = '/_vector/openapi/tailwindcdn.js';
+const OPENAPI_LOGO_DARK_ASSET_PATH = '/_vector/openapi/logo_dark.svg';
+const OPENAPI_LOGO_WHITE_ASSET_PATH = '/_vector/openapi/logo_white.svg';
+const OPENAPI_APPLE_TOUCH_ICON_ASSET_PATH = '/_vector/openapi/favicon/apple-touch-icon.png';
+const OPENAPI_FAVICON_32_ASSET_PATH = '/_vector/openapi/favicon/favicon-32x32.png';
+const OPENAPI_FAVICON_16_ASSET_PATH = '/_vector/openapi/favicon/favicon-16x16.png';
+const OPENAPI_FAVICON_ICO_ASSET_PATH = '/_vector/openapi/favicon/favicon.ico';
+const OPENAPI_WEBMANIFEST_ASSET_PATH = '/_vector/openapi/favicon/site.webmanifest';
+const OPENAPI_ANDROID_192_ASSET_PATH = '/_vector/openapi/favicon/android-chrome-192x192.png';
+const OPENAPI_ANDROID_512_ASSET_PATH = '/_vector/openapi/favicon/android-chrome-512x512.png';
 const OPENAPI_TAILWIND_ASSET_RELATIVE_CANDIDATES = [
   // Source execution (src/core/server.ts -> src/openapi/assets/tailwindcdn.js)
   '../openapi/assets/tailwindcdn.js',
@@ -32,15 +42,58 @@ const OPENAPI_TAILWIND_ASSET_RELATIVE_CANDIDATES = [
   // Unbundled dist/core/server.js execution (dist/core -> src/openapi/assets/tailwindcdn.js)
   '../../src/openapi/assets/tailwindcdn.js',
 ] as const;
+const OPENAPI_LOGO_DARK_ASSET_RELATIVE_CANDIDATES = [
+  // Source execution (src/core/server.ts -> src/openapi/assets/logo_dark.svg)
+  '../openapi/assets/logo_dark.svg',
+  // Bundled dist entrypoints (dist/index.mjs|dist/cli.js -> src/openapi/assets/logo_dark.svg)
+  '../src/openapi/assets/logo_dark.svg',
+  // Unbundled dist/core/server.js execution (dist/core -> src/openapi/assets/logo_dark.svg)
+  '../../src/openapi/assets/logo_dark.svg',
+] as const;
+const OPENAPI_LOGO_WHITE_ASSET_RELATIVE_CANDIDATES = [
+  // Source execution (src/core/server.ts -> src/openapi/assets/logo_white.svg)
+  '../openapi/assets/logo_white.svg',
+  // Bundled dist entrypoints (dist/index.mjs|dist/cli.js -> src/openapi/assets/logo_white.svg)
+  '../src/openapi/assets/logo_white.svg',
+  // Unbundled dist/core/server.js execution (dist/core -> src/openapi/assets/logo_white.svg)
+  '../../src/openapi/assets/logo_white.svg',
+] as const;
 const OPENAPI_TAILWIND_ASSET_CWD_CANDIDATES = [
   'src/openapi/assets/tailwindcdn.js',
   'openapi/assets/tailwindcdn.js',
   'dist/openapi/assets/tailwindcdn.js',
 ] as const;
+const OPENAPI_LOGO_DARK_ASSET_CWD_CANDIDATES = [
+  'src/openapi/assets/logo_dark.svg',
+  'openapi/assets/logo_dark.svg',
+  'dist/openapi/assets/logo_dark.svg',
+] as const;
+const OPENAPI_LOGO_WHITE_ASSET_CWD_CANDIDATES = [
+  'src/openapi/assets/logo_white.svg',
+  'openapi/assets/logo_white.svg',
+  'dist/openapi/assets/logo_white.svg',
+] as const;
+const OPENAPI_FAVICON_ASSET_RELATIVE_BASE_CANDIDATES = [
+  '../openapi/assets/favicon',
+  '../src/openapi/assets/favicon',
+  '../../src/openapi/assets/favicon',
+] as const;
+const OPENAPI_FAVICON_ASSET_CWD_BASE_CANDIDATES = [
+  'src/openapi/assets/favicon',
+  'openapi/assets/favicon',
+  'dist/openapi/assets/favicon',
+] as const;
 const OPENAPI_TAILWIND_ASSET_INLINE_FALLBACK = '/* OpenAPI docs runtime asset missing: tailwind disabled */';
 
-function resolveOpenAPITailwindAssetFile(): ReturnType<typeof Bun.file> | null {
-  for (const relativePath of OPENAPI_TAILWIND_ASSET_RELATIVE_CANDIDATES) {
+function buildOpenAPIAssetCandidatePaths(bases: readonly string[], filename: string): string[] {
+  return bases.map((base) => `${base}/${filename}`);
+}
+
+function resolveOpenAPIAssetFile(
+  relativeCandidates: readonly string[],
+  cwdCandidates: readonly string[]
+): ReturnType<typeof Bun.file> | null {
+  for (const relativePath of relativeCandidates) {
     try {
       const fileUrl = new URL(relativePath, import.meta.url);
       if (existsSync(fileUrl)) {
@@ -52,7 +105,7 @@ function resolveOpenAPITailwindAssetFile(): ReturnType<typeof Bun.file> | null {
   }
 
   const cwd = process.cwd();
-  for (const relativePath of OPENAPI_TAILWIND_ASSET_CWD_CANDIDATES) {
+  for (const relativePath of cwdCandidates) {
     const absolutePath = join(cwd, relativePath);
     if (existsSync(absolutePath)) {
       return Bun.file(absolutePath);
@@ -62,7 +115,90 @@ function resolveOpenAPITailwindAssetFile(): ReturnType<typeof Bun.file> | null {
   return null;
 }
 
-const OPENAPI_TAILWIND_ASSET_FILE = resolveOpenAPITailwindAssetFile();
+const OPENAPI_TAILWIND_ASSET_FILE = resolveOpenAPIAssetFile(
+  OPENAPI_TAILWIND_ASSET_RELATIVE_CANDIDATES,
+  OPENAPI_TAILWIND_ASSET_CWD_CANDIDATES
+);
+const OPENAPI_LOGO_DARK_ASSET_FILE = resolveOpenAPIAssetFile(
+  OPENAPI_LOGO_DARK_ASSET_RELATIVE_CANDIDATES,
+  OPENAPI_LOGO_DARK_ASSET_CWD_CANDIDATES
+);
+const OPENAPI_LOGO_WHITE_ASSET_FILE = resolveOpenAPIAssetFile(
+  OPENAPI_LOGO_WHITE_ASSET_RELATIVE_CANDIDATES,
+  OPENAPI_LOGO_WHITE_ASSET_CWD_CANDIDATES
+);
+const OPENAPI_APPLE_TOUCH_ICON_ASSET_FILE = resolveOpenAPIAssetFile(
+  buildOpenAPIAssetCandidatePaths(OPENAPI_FAVICON_ASSET_RELATIVE_BASE_CANDIDATES, 'apple-touch-icon.png'),
+  buildOpenAPIAssetCandidatePaths(OPENAPI_FAVICON_ASSET_CWD_BASE_CANDIDATES, 'apple-touch-icon.png')
+);
+const OPENAPI_FAVICON_32_ASSET_FILE = resolveOpenAPIAssetFile(
+  buildOpenAPIAssetCandidatePaths(OPENAPI_FAVICON_ASSET_RELATIVE_BASE_CANDIDATES, 'favicon-32x32.png'),
+  buildOpenAPIAssetCandidatePaths(OPENAPI_FAVICON_ASSET_CWD_BASE_CANDIDATES, 'favicon-32x32.png')
+);
+const OPENAPI_FAVICON_16_ASSET_FILE = resolveOpenAPIAssetFile(
+  buildOpenAPIAssetCandidatePaths(OPENAPI_FAVICON_ASSET_RELATIVE_BASE_CANDIDATES, 'favicon-16x16.png'),
+  buildOpenAPIAssetCandidatePaths(OPENAPI_FAVICON_ASSET_CWD_BASE_CANDIDATES, 'favicon-16x16.png')
+);
+const OPENAPI_FAVICON_ICO_ASSET_FILE = resolveOpenAPIAssetFile(
+  buildOpenAPIAssetCandidatePaths(OPENAPI_FAVICON_ASSET_RELATIVE_BASE_CANDIDATES, 'favicon.ico'),
+  buildOpenAPIAssetCandidatePaths(OPENAPI_FAVICON_ASSET_CWD_BASE_CANDIDATES, 'favicon.ico')
+);
+const OPENAPI_WEBMANIFEST_ASSET_FILE = resolveOpenAPIAssetFile(
+  buildOpenAPIAssetCandidatePaths(OPENAPI_FAVICON_ASSET_RELATIVE_BASE_CANDIDATES, 'site.webmanifest'),
+  buildOpenAPIAssetCandidatePaths(OPENAPI_FAVICON_ASSET_CWD_BASE_CANDIDATES, 'site.webmanifest')
+);
+const OPENAPI_ANDROID_192_ASSET_FILE = resolveOpenAPIAssetFile(
+  buildOpenAPIAssetCandidatePaths(OPENAPI_FAVICON_ASSET_RELATIVE_BASE_CANDIDATES, 'android-chrome-192x192.png'),
+  buildOpenAPIAssetCandidatePaths(OPENAPI_FAVICON_ASSET_CWD_BASE_CANDIDATES, 'android-chrome-192x192.png')
+);
+const OPENAPI_ANDROID_512_ASSET_FILE = resolveOpenAPIAssetFile(
+  buildOpenAPIAssetCandidatePaths(OPENAPI_FAVICON_ASSET_RELATIVE_BASE_CANDIDATES, 'android-chrome-512x512.png'),
+  buildOpenAPIAssetCandidatePaths(OPENAPI_FAVICON_ASSET_CWD_BASE_CANDIDATES, 'android-chrome-512x512.png')
+);
+const OPENAPI_FAVICON_ASSETS = [
+  {
+    path: OPENAPI_APPLE_TOUCH_ICON_ASSET_PATH,
+    file: OPENAPI_APPLE_TOUCH_ICON_ASSET_FILE,
+    contentType: 'image/png',
+    filename: 'apple-touch-icon.png',
+  },
+  {
+    path: OPENAPI_FAVICON_32_ASSET_PATH,
+    file: OPENAPI_FAVICON_32_ASSET_FILE,
+    contentType: 'image/png',
+    filename: 'favicon-32x32.png',
+  },
+  {
+    path: OPENAPI_FAVICON_16_ASSET_PATH,
+    file: OPENAPI_FAVICON_16_ASSET_FILE,
+    contentType: 'image/png',
+    filename: 'favicon-16x16.png',
+  },
+  {
+    path: OPENAPI_FAVICON_ICO_ASSET_PATH,
+    file: OPENAPI_FAVICON_ICO_ASSET_FILE,
+    contentType: 'image/x-icon',
+    filename: 'favicon.ico',
+  },
+  {
+    path: OPENAPI_WEBMANIFEST_ASSET_PATH,
+    file: OPENAPI_WEBMANIFEST_ASSET_FILE,
+    contentType: 'application/manifest+json; charset=utf-8',
+    filename: 'site.webmanifest',
+  },
+  {
+    path: OPENAPI_ANDROID_192_ASSET_PATH,
+    file: OPENAPI_ANDROID_192_ASSET_FILE,
+    contentType: 'image/png',
+    filename: 'android-chrome-192x192.png',
+  },
+  {
+    path: OPENAPI_ANDROID_512_ASSET_PATH,
+    file: OPENAPI_ANDROID_512_ASSET_FILE,
+    contentType: 'image/png',
+    filename: 'android-chrome-512x512.png',
+  },
+] as const;
 const DOCS_HTML_CACHE_CONTROL = 'public, max-age=0, must-revalidate';
 const DOCS_ASSET_CACHE_CONTROL = 'public, max-age=31536000, immutable';
 
@@ -70,6 +206,30 @@ interface OpenAPIDocsHtmlCacheEntry {
   html: string;
   gzip: Uint8Array;
   etag: string;
+}
+
+function escapeRegex(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function wildcardPatternToRegex(pattern: string): RegExp {
+  let regexSource = '^';
+  for (const char of pattern) {
+    if (char === '*') {
+      regexSource += '.*';
+      continue;
+    }
+    regexSource += escapeRegex(char);
+  }
+  regexSource += '$';
+  return new RegExp(regexSource);
+}
+
+function matchesExposePath(path: string, exposePathPattern: string): boolean {
+  if (!exposePathPattern.includes('*')) {
+    return path === exposePathPattern;
+  }
+  return wildcardPatternToRegex(exposePathPattern).test(path);
 }
 
 export class VectorServer<TTypes extends VectorTypes = DefaultVectorTypes> {
@@ -81,6 +241,8 @@ export class VectorServer<TTypes extends VectorTypes = DefaultVectorTypes> {
   private openapiDocsHtmlCache: OpenAPIDocsHtmlCacheEntry | null = null;
   private openapiWarningsLogged = false;
   private openapiTailwindMissingLogged = false;
+  private openapiLogoDarkMissingLogged = false;
+  private openapiLogoWhiteMissingLogged = false;
   private corsHandler: {
     preflight: (request: Request) => Response;
     corsify: (response: Response, request: Request) => Response;
@@ -149,10 +311,15 @@ export class VectorServer<TTypes extends VectorTypes = DefaultVectorTypes> {
     const docsValue = openapiObject.docs;
     const docs =
       typeof docsValue === 'boolean'
-        ? { enabled: docsValue, path: '/docs' }
+        ? { enabled: docsValue, path: '/docs', exposePaths: undefined }
         : {
             enabled: docsValue?.enabled === true,
             path: docsValue?.path || '/docs',
+            exposePaths: Array.isArray(docsValue?.exposePaths)
+              ? docsValue.exposePaths
+                  .map((path) => (typeof path === 'string' ? path.trim() : ''))
+                  .filter((path) => path.length > 0)
+              : undefined,
           };
 
     return {
@@ -193,12 +360,48 @@ export class VectorServer<TTypes extends VectorTypes = DefaultVectorTypes> {
     return this.openapiDocCache;
   }
 
+  private getOpenAPIDocumentForDocs(): Record<string, unknown> {
+    const exposePaths = this.openapiConfig.docs.exposePaths;
+    const document = this.getOpenAPIDocument();
+
+    if (!Array.isArray(exposePaths) || exposePaths.length === 0) {
+      return document;
+    }
+
+    const existingPaths =
+      document.paths && typeof document.paths === 'object' && !Array.isArray(document.paths)
+        ? (document.paths as Record<string, unknown>)
+        : {};
+
+    const filteredPaths: Record<string, unknown> = {};
+    for (const [path, value] of Object.entries(existingPaths)) {
+      if (exposePaths.some((pattern) => matchesExposePath(path, pattern))) {
+        filteredPaths[path] = value;
+      }
+    }
+
+    return {
+      ...document,
+      paths: filteredPaths,
+    };
+  }
+
   private getOpenAPIDocsHtmlCacheEntry(): OpenAPIDocsHtmlCacheEntry {
     if (this.openapiDocsHtmlCache) {
       return this.openapiDocsHtmlCache;
     }
 
-    const html = renderOpenAPIDocsHtml(this.getOpenAPIDocument(), this.openapiConfig.path, OPENAPI_TAILWIND_ASSET_PATH);
+    const html = renderOpenAPIDocsHtml(
+      this.getOpenAPIDocumentForDocs(),
+      this.openapiConfig.path,
+      OPENAPI_TAILWIND_ASSET_PATH,
+      OPENAPI_LOGO_DARK_ASSET_PATH,
+      OPENAPI_LOGO_WHITE_ASSET_PATH,
+      OPENAPI_APPLE_TOUCH_ICON_ASSET_PATH,
+      OPENAPI_FAVICON_32_ASSET_PATH,
+      OPENAPI_FAVICON_16_ASSET_PATH,
+      OPENAPI_WEBMANIFEST_ASSET_PATH
+    );
     const gzip = Bun.gzipSync(html);
     const etag = `"${Bun.hash(html).toString(16)}"`;
 
@@ -220,6 +423,11 @@ export class VectorServer<TTypes extends VectorTypes = DefaultVectorTypes> {
     if (this.openapiConfig.docs.enabled) {
       reserved.add(this.openapiConfig.docs.path);
       reserved.add(OPENAPI_TAILWIND_ASSET_PATH);
+      reserved.add(OPENAPI_LOGO_DARK_ASSET_PATH);
+      reserved.add(OPENAPI_LOGO_WHITE_ASSET_PATH);
+      for (const asset of OPENAPI_FAVICON_ASSETS) {
+        reserved.add(asset.path);
+      }
     }
 
     const methodConflicts = this.router
@@ -314,6 +522,79 @@ export class VectorServer<TTypes extends VectorTypes = DefaultVectorTypes> {
           'cache-control': DOCS_ASSET_CACHE_CONTROL,
         },
       });
+    }
+
+    if (this.openapiConfig.docs.enabled && pathname === OPENAPI_LOGO_DARK_ASSET_PATH) {
+      if (!OPENAPI_LOGO_DARK_ASSET_FILE) {
+        if (!this.openapiLogoDarkMissingLogged) {
+          this.openapiLogoDarkMissingLogged = true;
+          console.warn('[OpenAPI] Missing docs runtime asset "logo_dark.svg".');
+        }
+
+        return new Response('OpenAPI docs runtime asset missing: logo_dark.svg', {
+          status: 404,
+          headers: {
+            'content-type': 'text/plain; charset=utf-8',
+            'cache-control': DOCS_ASSET_CACHE_CONTROL,
+          },
+        });
+      }
+
+      return new Response(OPENAPI_LOGO_DARK_ASSET_FILE, {
+        status: 200,
+        headers: {
+          'content-type': 'image/svg+xml; charset=utf-8',
+          'cache-control': DOCS_ASSET_CACHE_CONTROL,
+        },
+      });
+    }
+
+    if (this.openapiConfig.docs.enabled && pathname === OPENAPI_LOGO_WHITE_ASSET_PATH) {
+      if (!OPENAPI_LOGO_WHITE_ASSET_FILE) {
+        if (!this.openapiLogoWhiteMissingLogged) {
+          this.openapiLogoWhiteMissingLogged = true;
+          console.warn('[OpenAPI] Missing docs runtime asset "logo_white.svg".');
+        }
+
+        return new Response('OpenAPI docs runtime asset missing: logo_white.svg', {
+          status: 404,
+          headers: {
+            'content-type': 'text/plain; charset=utf-8',
+            'cache-control': DOCS_ASSET_CACHE_CONTROL,
+          },
+        });
+      }
+
+      return new Response(OPENAPI_LOGO_WHITE_ASSET_FILE, {
+        status: 200,
+        headers: {
+          'content-type': 'image/svg+xml; charset=utf-8',
+          'cache-control': DOCS_ASSET_CACHE_CONTROL,
+        },
+      });
+    }
+
+    if (this.openapiConfig.docs.enabled) {
+      const faviconAsset = OPENAPI_FAVICON_ASSETS.find((asset) => asset.path === pathname);
+      if (faviconAsset) {
+        if (!faviconAsset.file) {
+          return new Response(`OpenAPI docs runtime asset missing: ${faviconAsset.filename}`, {
+            status: 404,
+            headers: {
+              'content-type': 'text/plain; charset=utf-8',
+              'cache-control': DOCS_ASSET_CACHE_CONTROL,
+            },
+          });
+        }
+
+        return new Response(faviconAsset.file, {
+          status: 200,
+          headers: {
+            'content-type': faviconAsset.contentType,
+            'cache-control': DOCS_ASSET_CACHE_CONTROL,
+          },
+        });
+      }
     }
 
     return null;

@@ -76,9 +76,119 @@ describe('OpenAPI server endpoints', () => {
     const html = await docsResponse.text();
     expect(html).toContain('Vector API Documentation');
     expect(html).toContain('/_vector/openapi/tailwindcdn.js');
+    expect(html).toContain('/_vector/openapi/logo_dark.svg');
+    expect(html).toContain('/_vector/openapi/logo_white.svg');
+    expect(html).toContain('/_vector/openapi/favicon/apple-touch-icon.png');
+    expect(html).toContain('/_vector/openapi/favicon/favicon-32x32.png');
+    expect(html).toContain('/_vector/openapi/favicon/favicon-16x16.png');
+    expect(html).toContain('/_vector/openapi/favicon/site.webmanifest');
     expect(html).not.toContain('cdn.tailwindcss.com');
     expect(html).toContain('id="sidebar-nav"');
     expect(html).toContain('/openapi.json');
+  });
+
+  it('filters docs UI to configured docs.exposePaths while keeping openapi.json complete', async () => {
+    const router = makeRouter();
+    router.route({ method: 'GET', path: '/health', expose: true }, async () => ({ ok: true }));
+    router.route({ method: 'GET', path: '/users', expose: true }, async () => ({ users: [] }));
+
+    const server = new VectorServer(router, {
+      development: true,
+      openapi: {
+        enabled: true,
+        path: '/openapi.json',
+        docs: {
+          enabled: true,
+          path: '/docs',
+          exposePaths: ['/health'],
+        },
+      },
+    });
+
+    const docsResponse = (server as any).tryHandleOpenAPIRequest(new Request('http://localhost/docs')) as Response;
+    const html = await docsResponse.text();
+    expect(html).toContain('/health');
+    expect(html).not.toContain('/users');
+
+    const openapiResponse = (server as any).tryHandleOpenAPIRequest(
+      new Request('http://localhost/openapi.json')
+    ) as Response;
+    const spec = await openapiResponse.json();
+    expect(spec.paths['/health']).toBeDefined();
+    expect(spec.paths['/users']).toBeDefined();
+  });
+
+  it('shows all exposed paths when docs.exposePaths is not provided', async () => {
+    const router = makeRouter();
+    router.route({ method: 'GET', path: '/health', expose: true }, async () => ({ ok: true }));
+    router.route({ method: 'GET', path: '/users', expose: true }, async () => ({ users: [] }));
+
+    const server = new VectorServer(router, {
+      development: true,
+      openapi: {
+        enabled: true,
+        path: '/openapi.json',
+        docs: {
+          enabled: true,
+          path: '/docs',
+        },
+      },
+    });
+
+    const docsResponse = (server as any).tryHandleOpenAPIRequest(new Request('http://localhost/docs')) as Response;
+    const html = await docsResponse.text();
+    expect(html).toContain('/health');
+    expect(html).toContain('/users');
+  });
+
+  it('shows all exposed paths when docs.exposePaths is an empty array', async () => {
+    const router = makeRouter();
+    router.route({ method: 'GET', path: '/health', expose: true }, async () => ({ ok: true }));
+    router.route({ method: 'GET', path: '/users', expose: true }, async () => ({ users: [] }));
+
+    const server = new VectorServer(router, {
+      development: true,
+      openapi: {
+        enabled: true,
+        path: '/openapi.json',
+        docs: {
+          enabled: true,
+          path: '/docs',
+          exposePaths: [],
+        },
+      },
+    });
+
+    const docsResponse = (server as any).tryHandleOpenAPIRequest(new Request('http://localhost/docs')) as Response;
+    const html = await docsResponse.text();
+    expect(html).toContain('/health');
+    expect(html).toContain('/users');
+  });
+
+  it('supports wildcard patterns in docs.exposePaths', async () => {
+    const router = makeRouter();
+    router.route({ method: 'GET', path: '/users', expose: true }, async () => ({ users: [] }));
+    router.route({ method: 'GET', path: '/users/:id', expose: true }, async () => ({ id: '1' }));
+    router.route({ method: 'GET', path: '/health', expose: true }, async () => ({ ok: true }));
+
+    const server = new VectorServer(router, {
+      development: true,
+      openapi: {
+        enabled: true,
+        path: '/openapi.json',
+        docs: {
+          enabled: true,
+          path: '/docs',
+          exposePaths: ['/users*'],
+        },
+      },
+    });
+
+    const docsResponse = (server as any).tryHandleOpenAPIRequest(new Request('http://localhost/docs')) as Response;
+    const html = await docsResponse.text();
+    expect(html).toContain('/users');
+    expect(html).toContain('/users/{id}');
+    expect(html).not.toContain('/health');
   });
 
   it('serves gzip docs HTML when client accepts gzip', async () => {
@@ -164,6 +274,91 @@ describe('OpenAPI server endpoints', () => {
 
     const script = await scriptResponse.text();
     expect(script).toContain('cdn.tailwindcss.com should not be used in production');
+  });
+
+  it('serves local logo assets for docs UI', async () => {
+    const router = makeRouter();
+    router.route({ method: 'GET', path: '/health', expose: true }, async () => ({ ok: true }));
+
+    const server = new VectorServer(router, {
+      development: true,
+      openapi: {
+        enabled: true,
+        path: '/openapi.json',
+        docs: {
+          enabled: true,
+          path: '/docs',
+        },
+      },
+    });
+
+    const darkLogoResponse = (server as any).tryHandleOpenAPIRequest(
+      new Request('http://localhost/_vector/openapi/logo_dark.svg')
+    ) as Response;
+    const whiteLogoResponse = (server as any).tryHandleOpenAPIRequest(
+      new Request('http://localhost/_vector/openapi/logo_white.svg')
+    ) as Response;
+
+    expect(darkLogoResponse).toBeInstanceOf(Response);
+    expect(darkLogoResponse.status).toBe(200);
+    expect(darkLogoResponse.headers.get('content-type')).toContain('image/svg+xml');
+    expect(darkLogoResponse.headers.get('cache-control')).toBe('public, max-age=31536000, immutable');
+
+    expect(whiteLogoResponse).toBeInstanceOf(Response);
+    expect(whiteLogoResponse.status).toBe(200);
+    expect(whiteLogoResponse.headers.get('content-type')).toContain('image/svg+xml');
+    expect(whiteLogoResponse.headers.get('cache-control')).toBe('public, max-age=31536000, immutable');
+
+    const darkLogoSvg = await darkLogoResponse.text();
+    const whiteLogoSvg = await whiteLogoResponse.text();
+    expect(darkLogoSvg).toContain('fill="#111"');
+    expect(whiteLogoSvg).toContain('fill="#fff"');
+  });
+
+  it('serves favicon assets and manifest for docs UI', async () => {
+    const router = makeRouter();
+    router.route({ method: 'GET', path: '/health', expose: true }, async () => ({ ok: true }));
+
+    const server = new VectorServer(router, {
+      development: true,
+      openapi: {
+        enabled: true,
+        path: '/openapi.json',
+        docs: {
+          enabled: true,
+          path: '/docs',
+        },
+      },
+    });
+
+    const appleIconResponse = (server as any).tryHandleOpenAPIRequest(
+      new Request('http://localhost/_vector/openapi/favicon/apple-touch-icon.png')
+    ) as Response;
+    const faviconIcoResponse = (server as any).tryHandleOpenAPIRequest(
+      new Request('http://localhost/_vector/openapi/favicon/favicon.ico')
+    ) as Response;
+    const manifestResponse = (server as any).tryHandleOpenAPIRequest(
+      new Request('http://localhost/_vector/openapi/favicon/site.webmanifest')
+    ) as Response;
+
+    expect(appleIconResponse).toBeInstanceOf(Response);
+    expect(appleIconResponse.status).toBe(200);
+    expect(appleIconResponse.headers.get('content-type')).toContain('image/png');
+    expect(appleIconResponse.headers.get('cache-control')).toBe('public, max-age=31536000, immutable');
+
+    expect(faviconIcoResponse).toBeInstanceOf(Response);
+    expect(faviconIcoResponse.status).toBe(200);
+    expect(faviconIcoResponse.headers.get('content-type')).toContain('image/x-icon');
+    expect(faviconIcoResponse.headers.get('cache-control')).toBe('public, max-age=31536000, immutable');
+
+    expect(manifestResponse).toBeInstanceOf(Response);
+    expect(manifestResponse.status).toBe(200);
+    expect(manifestResponse.headers.get('content-type')).toContain('application/manifest+json');
+    expect(manifestResponse.headers.get('cache-control')).toBe('public, max-age=31536000, immutable');
+
+    const manifest = await manifestResponse.text();
+    expect(manifest).toContain('/_vector/openapi/favicon/android-chrome-192x192.png');
+    expect(manifest).toContain('/_vector/openapi/favicon/android-chrome-512x512.png');
   });
 
   it('keeps user /docs route in OpenAPI spec when docs UI is disabled', async () => {
@@ -269,6 +464,47 @@ describe('OpenAPI server endpoints', () => {
     expect(() => (server as any).validateReservedOpenAPIPaths()).toThrow(/reserved path conflict/i);
   });
 
+  it('rejects user route conflicts with reserved logo asset paths when docs are enabled', () => {
+    const router = makeRouter();
+    router.route({ method: 'GET', path: '/_vector/openapi/logo_dark.svg', expose: true }, async () => ({ ok: true }));
+    router.route({ method: 'GET', path: '/_vector/openapi/logo_white.svg', expose: true }, async () => ({ ok: true }));
+
+    const server = new VectorServer(router, {
+      development: true,
+      openapi: {
+        enabled: true,
+        path: '/openapi.json',
+        docs: {
+          enabled: true,
+          path: '/docs',
+        },
+      },
+    });
+
+    expect(() => (server as any).validateReservedOpenAPIPaths()).toThrow(/reserved path conflict/i);
+  });
+
+  it('rejects user route conflicts with reserved favicon asset paths when docs are enabled', () => {
+    const router = makeRouter();
+    router.route({ method: 'GET', path: '/_vector/openapi/favicon/site.webmanifest', expose: true }, async () => ({
+      ok: true,
+    }));
+
+    const server = new VectorServer(router, {
+      development: true,
+      openapi: {
+        enabled: true,
+        path: '/openapi.json',
+        docs: {
+          enabled: true,
+          path: '/docs',
+        },
+      },
+    });
+
+    expect(() => (server as any).validateReservedOpenAPIPaths()).toThrow(/reserved path conflict/i);
+  });
+
   it('rejects static route conflicts with reserved openapi path', () => {
     const router = makeRouter();
     router.addStaticRoute('/openapi.json', new Response('shadow'));
@@ -310,6 +546,45 @@ describe('OpenAPI server endpoints', () => {
   it('rejects static route conflicts with reserved docs asset path when docs are enabled', () => {
     const router = makeRouter();
     router.addStaticRoute('/_vector/openapi/tailwindcdn.js', new Response('shadow'));
+
+    const server = new VectorServer(router, {
+      development: true,
+      openapi: {
+        enabled: true,
+        path: '/openapi.json',
+        docs: {
+          enabled: true,
+          path: '/docs',
+        },
+      },
+    });
+
+    expect(() => (server as any).validateReservedOpenAPIPaths()).toThrow(/reserved path conflict/i);
+  });
+
+  it('rejects static route conflicts with reserved logo asset paths when docs are enabled', () => {
+    const router = makeRouter();
+    router.addStaticRoute('/_vector/openapi/logo_dark.svg', new Response('shadow'));
+    router.addStaticRoute('/_vector/openapi/logo_white.svg', new Response('shadow'));
+
+    const server = new VectorServer(router, {
+      development: true,
+      openapi: {
+        enabled: true,
+        path: '/openapi.json',
+        docs: {
+          enabled: true,
+          path: '/docs',
+        },
+      },
+    });
+
+    expect(() => (server as any).validateReservedOpenAPIPaths()).toThrow(/reserved path conflict/i);
+  });
+
+  it('rejects static route conflicts with reserved favicon asset paths when docs are enabled', () => {
+    const router = makeRouter();
+    router.addStaticRoute('/_vector/openapi/favicon/site.webmanifest', new Response('shadow'));
 
     const server = new VectorServer(router, {
       development: true,

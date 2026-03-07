@@ -194,6 +194,7 @@ export interface CorsOptions {
 export interface OpenAPIDocsOptions {
   enabled?: boolean;
   path?: string;
+  exposePaths?: string[];
 }
 
 export interface OpenAPIInfoOptions {
