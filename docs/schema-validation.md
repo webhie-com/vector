@@ -28,6 +28,7 @@ If `schema.input` is defined:
 
 - Validation runs before your route handler
 - On failure, Vector returns `422 Unprocessable Entity`
+- Set `validate: false` on the route to skip input validation
 - On success, validator output is assigned to `req.validatedInput`
 - If validator output contains `body`, `params`, `query`, or `cookies`, those request fields are updated
 - Validation payload includes `params`, `query`, `headers`, `cookies`, and `body`
@@ -41,7 +42,7 @@ If `rawRequest: true`:
 
 - Body parsing is skipped
 - Validation still runs by default when `schema.input` exists
-- Set `validateRawRequest: false` to skip validation in raw mode
+- `validate: false` also skips validation in raw mode
 
 ## Output Schemas
 

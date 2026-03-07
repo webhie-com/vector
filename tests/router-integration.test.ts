@@ -250,12 +250,18 @@ describe('Router — schema validation', () => {
     expect(body.message).toBe('Invalid route schema configuration');
   });
 
-  it('skips raw-request validation when validateRawRequest is explicitly false', async () => {
+  it('skips input validation when validate is explicitly false', async () => {
     const { router } = makeRouter();
-    let validateCalled = false;
+    let rawValidateCalled = false;
+    let parsedValidateCalled = false;
 
-    const input = standardSchema(async () => {
-      validateCalled = true;
+    const rawInput = standardSchema(async () => {
+      rawValidateCalled = true;
+      return { value: { body: { fromValidation: true } } };
+    });
+
+    const parsedInput = standardSchema(async () => {
+      parsedValidateCalled = true;
       return { value: { body: { fromValidation: true } } };
     });
 
@@ -265,15 +271,30 @@ describe('Router — schema validation', () => {
         path: '/raw-skip-validate',
         expose: true,
         rawRequest: true,
-        validateRawRequest: false,
-        schema: { input },
+        validate: false,
+        schema: { input: rawInput },
       },
       async () => ({ ok: true })
     );
 
-    const res = await router.handle(jsonRequest('http://localhost/raw-skip-validate', 'POST', { a: 1 }));
-    expect(res.status).toBe(200);
-    expect(validateCalled).toBe(false);
+    router.route(
+      {
+        method: 'POST',
+        path: '/parsed-skip-validate',
+        expose: true,
+        validate: false,
+        schema: { input: parsedInput },
+      },
+      async () => ({ ok: true })
+    );
+
+    const rawRes = await router.handle(jsonRequest('http://localhost/raw-skip-validate', 'POST', { a: 1 }));
+    const parsedRes = await router.handle(jsonRequest('http://localhost/parsed-skip-validate', 'POST', { a: 1 }));
+
+    expect(rawRes.status).toBe(200);
+    expect(parsedRes.status).toBe(200);
+    expect(rawValidateCalled).toBe(false);
+    expect(parsedValidateCalled).toBe(false);
   });
 
   it('validates raw requests by default when schema.input exists', async () => {

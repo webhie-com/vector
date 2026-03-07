@@ -116,7 +116,7 @@ export interface RouteOptions<TTypes extends VectorTypes = DefaultVectorTypes> {
   expose?: boolean; // defaults to true
   cache?: CacheOptions | number;
   rawRequest?: boolean;
-  validateRawRequest?: boolean; // when rawRequest is true, defaults to validating schema.input unless false
+  validate?: boolean; // defaults to validating schema.input unless false
   rawResponse?: boolean;
   responseContentType?: string;
   metadata?: GetMetadataType<TTypes>;
@@ -127,7 +127,7 @@ export interface RouteBooleanDefaults {
   auth?: boolean;
   expose?: boolean;
   rawRequest?: boolean;
-  validateRawRequest?: boolean;
+  validate?: boolean;
   rawResponse?: boolean;
 }
 
