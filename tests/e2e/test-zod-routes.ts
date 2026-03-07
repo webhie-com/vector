@@ -205,6 +205,12 @@ export const createOrder = route(
       throw APIError.badRequest('Missing validated order input');
     }
 
+    const normalizedItems: OrderLine[] = body.items.map((item) => ({
+      sku: String(item.sku),
+      qty: item.qty,
+      unitPriceCents: item.unitPriceCents,
+    }));
+
     const existingOrderId = idempotencyToOrder.get(requestId);
     if (existingOrderId !== undefined) {
       const existingOrder = await getOrder(existingOrderId);
@@ -218,7 +224,7 @@ export const createOrder = route(
       };
     }
 
-    const shortages = await collectInventoryShortages(body.items);
+    const shortages = await collectInventoryShortages(normalizedItems);
     if (shortages.length > 0) {
       return Response.json(
         {
@@ -231,7 +237,7 @@ export const createOrder = route(
       );
     }
 
-    const subtotalCents = computeSubtotal(body.items);
+    const subtotalCents = computeSubtotal(normalizedItems);
     const totalCents = subtotalCents + Math.round(subtotalCents * 0.07);
 
     if (dryRun) {
@@ -241,17 +247,17 @@ export const createOrder = route(
         persisted: false,
         subtotalCents,
         totalCents,
-        itemCount: body.items.length,
+        itemCount: normalizedItems.length,
       };
     }
 
-    reserveInventory(body.items);
+    reserveInventory(normalizedItems);
 
     const now = new Date().toISOString();
     const order: OrderRecord = {
       id: nextOrderId++,
       customerId: body.customerId,
-      items: body.items,
+      items: normalizedItems,
       subtotalCents,
       totalCents,
       couponCode: body.couponCode,

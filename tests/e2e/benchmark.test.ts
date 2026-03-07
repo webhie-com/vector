@@ -7,7 +7,7 @@ import type { WorkerResult } from './benchmark-worker';
 // Benchmark configuration
 const CONFIG = {
   port: 3004,
-  baseUrl: 'http://localhost:3004',
+  baseUrl: 'http://127.0.0.1:3004',
   warmupRequests: 100,
   benchmarkDuration: 30000, // 30 seconds per benchmark
   // Rate-limited runs: token bucket keeps actual ≈ target when server has capacity.
@@ -106,10 +106,11 @@ async function runBenchmark() {
     });
 
     // Wait until the server writes "READY"
-    if (!serverProcess.stdout) {
+    const stdout = serverProcess.stdout;
+    if (!stdout || typeof stdout === 'number') {
       throw new Error('Failed to start test server: stdout is not available on spawned process');
     }
-    const reader = serverProcess.stdout.getReader();
+    const reader = stdout.getReader();
     const decoder = new TextDecoder();
     let buf = '';
     try {
@@ -449,7 +450,7 @@ async function runBenchmark() {
     if (avgScaling > 0.8) {
       console.log('  ✓ Performance scales well with load');
     } else {
-      console.log('  ⚠ Performance degradation under high load');
+      console.log('  ! Performance degradation under high load');
     }
 
     // Check for memory leaks
@@ -459,7 +460,7 @@ async function runBenchmark() {
     if (avgGrowth < 5) {
       console.log('  ✓ No memory leaks detected');
     } else if (avgGrowth < 15) {
-      console.log('  ⚠ Minor memory growth detected');
+      console.log('  ! Minor memory growth detected');
     } else {
       console.log('  ✗ Significant memory growth detected');
     }

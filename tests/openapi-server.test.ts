@@ -268,4 +268,61 @@ describe('OpenAPI server endpoints', () => {
 
     expect(() => (server as any).validateReservedOpenAPIPaths()).toThrow(/reserved path conflict/i);
   });
+
+  it('rejects static route conflicts with reserved openapi path', () => {
+    const router = makeRouter();
+    router.addStaticRoute('/openapi.json', new Response('shadow'));
+
+    const server = new VectorServer(router, {
+      development: true,
+      openapi: {
+        enabled: true,
+        path: '/openapi.json',
+        docs: {
+          enabled: true,
+          path: '/docs',
+        },
+      },
+    });
+
+    expect(() => (server as any).validateReservedOpenAPIPaths()).toThrow(/reserved path conflict/i);
+  });
+
+  it('rejects static route conflicts with reserved docs path when docs are enabled', () => {
+    const router = makeRouter();
+    router.addStaticRoute('/docs', new Response('shadow'));
+
+    const server = new VectorServer(router, {
+      development: true,
+      openapi: {
+        enabled: true,
+        path: '/openapi.json',
+        docs: {
+          enabled: true,
+          path: '/docs',
+        },
+      },
+    });
+
+    expect(() => (server as any).validateReservedOpenAPIPaths()).toThrow(/reserved path conflict/i);
+  });
+
+  it('rejects static route conflicts with reserved docs asset path when docs are enabled', () => {
+    const router = makeRouter();
+    router.addStaticRoute('/_vector/openapi/tailwindcdn.js', new Response('shadow'));
+
+    const server = new VectorServer(router, {
+      development: true,
+      openapi: {
+        enabled: true,
+        path: '/openapi.json',
+        docs: {
+          enabled: true,
+          path: '/docs',
+        },
+      },
+    });
+
+    expect(() => (server as any).validateReservedOpenAPIPaths()).toThrow(/reserved path conflict/i);
+  });
 });

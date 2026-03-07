@@ -4,7 +4,7 @@ import testServer from './test-server';
 import { createClient, withRetry } from './utils/http-client';
 
 describe('E2E Tests', () => {
-  let server: Server;
+  let server: Server | null = null;
   let client: ReturnType<typeof createClient>;
   let port = 0;
 

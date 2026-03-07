@@ -89,6 +89,7 @@ export class Vector<TTypes extends VectorTypes = DefaultVectorTypes> {
     this.config = { ...this.config, ...config };
     const routeDefaults = { ...this.config.defaults?.route };
     this.router.setRouteBooleanDefaults(routeDefaults);
+    this.router.setDevelopmentMode(this.config.development);
 
     // Clear previous middleware to avoid accumulation across multiple starts
     this.middlewareManager.clear();

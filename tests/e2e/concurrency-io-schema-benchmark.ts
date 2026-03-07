@@ -5,7 +5,7 @@ import { nextIOSchemaRequestPlan } from './workloads/io-schema-workload';
 
 const CONFIG = {
   port: 3006,
-  baseUrl: 'http://localhost:3006',
+  baseUrl: 'http://127.0.0.1:3006',
   warmupRequests: 200,
   durationMs: 20000,
   concurrencySweep: [10, 25, 50, 100, 200, 300],

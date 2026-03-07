@@ -626,12 +626,18 @@ describe('Vector Config Defaults Wiring', () => {
     const vector = getVectorInstance();
     const router = vector.getRouter();
     const originalSetDefaults = router.setRouteBooleanDefaults.bind(router);
+    const originalSetDevelopmentMode = router.setDevelopmentMode.bind(router);
     const originalStart = VectorServer.prototype.start;
     let capturedDefaults: RouteBooleanDefaults | undefined;
+    let capturedDevelopmentMode: boolean | undefined;
 
     (router as any).setRouteBooleanDefaults = (defaults?: RouteBooleanDefaults) => {
       capturedDefaults = defaults;
       return originalSetDefaults(defaults);
+    };
+    (router as any).setDevelopmentMode = (mode?: boolean) => {
+      capturedDevelopmentMode = mode;
+      return originalSetDevelopmentMode(mode);
     };
 
     VectorServer.prototype.start = async function () {
@@ -645,6 +651,7 @@ describe('Vector Config Defaults Wiring', () => {
     try {
       await vector.startServer({
         autoDiscover: false,
+        development: false,
         defaults: {
           route: {
             auth: true,
@@ -663,9 +670,11 @@ describe('Vector Config Defaults Wiring', () => {
         validateRawRequest: false,
         rawResponse: true,
       });
+      expect(capturedDevelopmentMode).toBe(false);
     } finally {
       VectorServer.prototype.start = originalStart;
       (router as any).setRouteBooleanDefaults = originalSetDefaults;
+      (router as any).setDevelopmentMode = originalSetDevelopmentMode;
       vector.stop();
       Vector.resetInstance();
     }

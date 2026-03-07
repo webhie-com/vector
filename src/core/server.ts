@@ -1,4 +1,6 @@
 import type { Server } from 'bun';
+import { existsSync } from 'node:fs';
+import { join } from 'node:path';
 import { STATIC_RESPONSES } from '../constants';
 import { cors } from '../utils/cors';
 import { renderOpenAPIDocsHtml } from '../openapi/docs-ui';
@@ -22,7 +24,45 @@ interface NormalizedOpenAPIConfig {
 }
 
 const OPENAPI_TAILWIND_ASSET_PATH = '/_vector/openapi/tailwindcdn.js';
-const OPENAPI_TAILWIND_ASSET_FILE = Bun.file(new URL('../openapi/assets/tailwindcdn.js', import.meta.url));
+const OPENAPI_TAILWIND_ASSET_RELATIVE_CANDIDATES = [
+  // Source execution (src/core/server.ts -> src/openapi/assets/tailwindcdn.js)
+  '../openapi/assets/tailwindcdn.js',
+  // Bundled dist entrypoints (dist/index.mjs|dist/cli.js -> src/openapi/assets/tailwindcdn.js)
+  '../src/openapi/assets/tailwindcdn.js',
+  // Unbundled dist/core/server.js execution (dist/core -> src/openapi/assets/tailwindcdn.js)
+  '../../src/openapi/assets/tailwindcdn.js',
+] as const;
+const OPENAPI_TAILWIND_ASSET_CWD_CANDIDATES = [
+  'src/openapi/assets/tailwindcdn.js',
+  'openapi/assets/tailwindcdn.js',
+  'dist/openapi/assets/tailwindcdn.js',
+] as const;
+const OPENAPI_TAILWIND_ASSET_INLINE_FALLBACK = '/* OpenAPI docs runtime asset missing: tailwind disabled */';
+
+function resolveOpenAPITailwindAssetFile(): ReturnType<typeof Bun.file> | null {
+  for (const relativePath of OPENAPI_TAILWIND_ASSET_RELATIVE_CANDIDATES) {
+    try {
+      const fileUrl = new URL(relativePath, import.meta.url);
+      if (existsSync(fileUrl)) {
+        return Bun.file(fileUrl);
+      }
+    } catch {
+      // Ignore resolution failures and try the next candidate.
+    }
+  }
+
+  const cwd = process.cwd();
+  for (const relativePath of OPENAPI_TAILWIND_ASSET_CWD_CANDIDATES) {
+    const absolutePath = join(cwd, relativePath);
+    if (existsSync(absolutePath)) {
+      return Bun.file(absolutePath);
+    }
+  }
+
+  return null;
+}
+
+const OPENAPI_TAILWIND_ASSET_FILE = resolveOpenAPITailwindAssetFile();
 const DOCS_HTML_CACHE_CONTROL = 'public, max-age=0, must-revalidate';
 const DOCS_ASSET_CACHE_CONTROL = 'public, max-age=31536000, immutable';
 
@@ -40,6 +80,7 @@ export class VectorServer<TTypes extends VectorTypes = DefaultVectorTypes> {
   private openapiDocCache: Record<string, unknown> | null = null;
   private openapiDocsHtmlCache: OpenAPIDocsHtmlCacheEntry | null = null;
   private openapiWarningsLogged = false;
+  private openapiTailwindMissingLogged = false;
   private corsHandler: {
     preflight: (request: Request) => Response;
     corsify: (response: Response, request: Request) => Response;
@@ -181,10 +222,16 @@ export class VectorServer<TTypes extends VectorTypes = DefaultVectorTypes> {
       reserved.add(OPENAPI_TAILWIND_ASSET_PATH);
     }
 
-    const conflicts = this.router
+    const methodConflicts = this.router
       .getRouteDefinitions()
       .filter((route) => reserved.has(route.path))
       .map((route) => `${route.method} ${route.path}`);
+
+    const staticConflicts = Object.entries(this.router.getRouteTable())
+      .filter(([path, value]) => reserved.has(path) && value instanceof Response)
+      .map(([path]) => `STATIC ${path}`);
+
+    const conflicts = [...methodConflicts, ...staticConflicts];
 
     if (conflicts.length > 0) {
       throw new Error(
@@ -243,6 +290,23 @@ export class VectorServer<TTypes extends VectorTypes = DefaultVectorTypes> {
     }
 
     if (this.openapiConfig.docs.enabled && pathname === OPENAPI_TAILWIND_ASSET_PATH) {
+      if (!OPENAPI_TAILWIND_ASSET_FILE) {
+        if (!this.openapiTailwindMissingLogged) {
+          this.openapiTailwindMissingLogged = true;
+          console.warn(
+            '[OpenAPI] Missing docs runtime asset "tailwindcdn.js". Serving inline fallback script instead.'
+          );
+        }
+
+        return new Response(OPENAPI_TAILWIND_ASSET_INLINE_FALLBACK, {
+          status: 200,
+          headers: {
+            'content-type': 'application/javascript; charset=utf-8',
+            'cache-control': DOCS_ASSET_CACHE_CONTROL,
+          },
+        });
+      }
+
       return new Response(OPENAPI_TAILWIND_ASSET_FILE, {
         status: 200,
         headers: {

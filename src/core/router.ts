@@ -42,6 +42,7 @@ export class VectorRouter<TTypes extends VectorTypes = DefaultVectorTypes> {
   private authManager: AuthManager<TTypes>;
   private cacheManager: CacheManager<TTypes>;
   private routeBooleanDefaults: RouteBooleanDefaults = {};
+  private developmentMode: boolean | undefined = undefined;
   private routeDefinitions: RegisteredRouteDefinition<TTypes>[] = [];
   private routeTable: BunRouteTable = Object.create(null) as BunRouteTable;
   private routeMatchers: RouteMatcher[] = [];
@@ -68,6 +69,10 @@ export class VectorRouter<TTypes extends VectorTypes = DefaultVectorTypes> {
 
   setRouteBooleanDefaults(defaults?: RouteBooleanDefaults): void {
     this.routeBooleanDefaults = { ...defaults };
+  }
+
+  setDevelopmentMode(mode?: boolean): void {
+    this.developmentMode = mode;
   }
 
   private applyRouteBooleanDefaults(options: RouteOptions<TTypes>): RouteOptions<TTypes> {
@@ -483,6 +488,10 @@ export class VectorRouter<TTypes extends VectorTypes = DefaultVectorTypes> {
   }
 
   private isDevelopmentMode(): boolean {
+    if (this.developmentMode !== undefined) {
+      return this.developmentMode;
+    }
+
     const nodeEnv = typeof Bun !== 'undefined' ? Bun.env.NODE_ENV : process.env.NODE_ENV;
     return nodeEnv !== 'production';
   }
@@ -592,7 +601,7 @@ export class VectorRouter<TTypes extends VectorTypes = DefaultVectorTypes> {
 
     try {
       const validation = await runStandardValidation(inputSchema, payload);
-      if (!validation.success) {
+      if (validation.success === false) {
         const issues = normalizeValidationIssues(validation.issues, includeRawIssues);
         return createResponse(422, createValidationErrorPayload('input', issues), options.responseContentType);
       }
