@@ -1,11 +1,23 @@
 export function renderOpenAPIDocsHtml(
   spec: Record<string, unknown>,
   openapiPath: string,
-  tailwindScriptPath: string
+  tailwindScriptPath: string,
+  logoDarkPath: string,
+  logoWhitePath: string,
+  appleTouchIconPath: string,
+  favicon32Path: string,
+  favicon16Path: string,
+  webManifestPath: string
 ): string {
   const specJson = JSON.stringify(spec).replace(/<\/script/gi, '<\\/script');
   const openapiPathJson = JSON.stringify(openapiPath);
   const tailwindScriptPathJson = JSON.stringify(tailwindScriptPath);
+  const logoDarkPathJson = JSON.stringify(logoDarkPath);
+  const logoWhitePathJson = JSON.stringify(logoWhitePath);
+  const appleTouchIconPathJson = JSON.stringify(appleTouchIconPath);
+  const favicon32PathJson = JSON.stringify(favicon32Path);
+  const favicon16PathJson = JSON.stringify(favicon16Path);
+  const webManifestPathJson = JSON.stringify(webManifestPath);
 
   return `<!DOCTYPE html>
 <html lang="en">
@@ -13,6 +25,10 @@ export function renderOpenAPIDocsHtml(
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Vector API Documentation</title>
+  <link rel="apple-touch-icon" sizes="180x180" href=${appleTouchIconPathJson}>
+  <link rel="icon" type="image/png" sizes="32x32" href=${favicon32PathJson}>
+  <link rel="icon" type="image/png" sizes="16x16" href=${favicon16PathJson}>
+  <link rel="manifest" href=${webManifestPathJson}>
   <script>
     if (localStorage.getItem('theme') === 'dark' || (!('theme' in localStorage) && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
       document.documentElement.classList.add('dark');
@@ -28,7 +44,12 @@ export function renderOpenAPIDocsHtml(
       theme: {
         extend: {
           colors: {
-            brand: '#6366F1',
+            brand: {
+              DEFAULT: '#00A1FF',
+              mint: '#00FF8F',
+              soft: '#E4F5FF',
+              deep: '#007BC5',
+            },
             dark: { bg: '#0A0A0A', surface: '#111111', border: '#1F1F1F', text: '#EDEDED' },
             light: { bg: '#FFFFFF', surface: '#F9F9F9', border: '#E5E5E5', text: '#111111' }
           },
@@ -95,32 +116,44 @@ export function renderOpenAPIDocsHtml(
       from { opacity: 0; transform: translateX(-6px); }
       to { opacity: 1; transform: translateX(0); }
     }
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+    .button-spinner {
+      display: inline-block;
+      width: 0.875rem;
+      height: 0.875rem;
+      border: 2px solid currentColor;
+      border-right-color: transparent;
+      border-radius: 9999px;
+      animation: spin 700ms linear infinite;
+    }
     @media (prefers-reduced-motion: reduce) {
       *, *::before, *::after {
         animation: none !important;
         transition: none !important;
       }
     }
-    .json-key { color: #0f766e; }
-    .json-string { color: #0369a1; }
-    .json-number { color: #7c3aed; }
-    .json-boolean { color: #b45309; }
-    .json-null { color: #be123c; }
-    .dark .json-key { color: #5eead4; }
-    .dark .json-string { color: #7dd3fc; }
-    .dark .json-number { color: #c4b5fd; }
-    .dark .json-boolean { color: #fcd34d; }
-    .dark .json-null { color: #fda4af; }
+    .json-key { color: #007bc5; }
+    .json-string { color: #334155; }
+    .json-number { color: #00a1ff; }
+    .json-boolean { color: #475569; }
+    .json-null { color: #64748b; }
+    .dark .json-key { color: #7dc9ff; }
+    .dark .json-string { color: #d1d9e6; }
+    .dark .json-number { color: #7dc9ff; }
+    .dark .json-boolean { color: #93a4bf; }
+    .dark .json-null { color: #7c8ba3; }
   </style>
 </head>
 <body class="bg-light-bg text-light-text dark:bg-dark-bg dark:text-dark-text font-sans antialiased flex h-screen overflow-hidden">
   <div id="mobile-backdrop" class="fixed inset-0 z-30 bg-black/40 opacity-0 pointer-events-none transition-opacity duration-300 md:hidden"></div>
   <aside id="docs-sidebar" class="fixed inset-y-0 left-0 z-40 w-72 md:w-64 border-r border-light-border dark:border-dark-border bg-light-surface dark:bg-dark-surface flex flex-col flex-shrink-0 transition-transform duration-300 ease-out -translate-x-full md:translate-x-0 md:static md:z-auto transition-colors duration-150">
     <div class="h-14 flex items-center px-5 border-b border-light-border dark:border-dark-border">
-      <svg class="w-5 h-5 text-brand" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-        <polygon points="3 21 12 2 21 21 12 15 3 21"></polygon>
-      </svg>
-      <span class="ml-2.5 font-bold tracking-tight text-lg">Vector</span>
+      <div class="flex items-center">
+        <img src=${logoDarkPathJson} alt="Vector" class="h-6 w-auto block dark:hidden" />
+        <img src=${logoWhitePathJson} alt="Vector" class="h-6 w-auto hidden dark:block" />
+      </div>
       <button id="sidebar-close" class="ml-auto p-1.5 rounded-full border border-light-border dark:border-dark-border bg-light-bg/90 dark:bg-dark-bg/90 opacity-90 hover:opacity-100 transition md:hidden" aria-label="Close Menu" title="Close Menu">
         <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
@@ -151,8 +184,8 @@ export function renderOpenAPIDocsHtml(
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"></path>
           </svg>
         </button>
-        <svg class="w-5 h-5 text-brand" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="3 21 12 2 21 21 12 15 3 21"></polygon></svg>
-        <span class="font-bold tracking-tight">Vector</span>
+        <img src=${logoDarkPathJson} alt="Vector" class="h-5 w-auto block dark:hidden" />
+        <img src=${logoWhitePathJson} alt="Vector" class="h-5 w-auto hidden dark:block" />
       </div>
       <div class="flex-1"></div>
       <button id="theme-toggle" class="p-2 rounded-md hover:bg-black/5 dark:hover:bg-white/5 transition-colors" aria-label="Toggle Dark Mode">
@@ -177,17 +210,22 @@ export function renderOpenAPIDocsHtml(
           <div class="grid grid-cols-1 lg:grid-cols-12 gap-10">
             <div class="lg:col-span-5 space-y-8" id="params-column"></div>
             <div class="lg:col-span-7">
-              <div class="rounded-lg border border-light-border dark:border-[#1F1F1F] bg-light-bg dark:bg-[#111111] overflow-hidden group">
-                <div class="flex items-center justify-between px-4 py-2 border-b border-light-border dark:border-[#1F1F1F] bg-light-surface dark:bg-[#0A0A0A]">
-                   <span class="text-xs font-mono text-light-text/70 dark:text-[#EDEDED]/70">cURL</span>
-                   <button class="text-xs text-light-text/50 hover:text-light-text dark:text-[#EDEDED]/50 dark:hover:text-[#EDEDED] transition-colors" id="copy-curl">Copy</button>
+              <div class="rounded-lg border border-light-border dark:border-dark-border bg-light-bg dark:bg-dark-bg overflow-hidden group">
+                <div class="flex items-center justify-between px-4 py-2 border-b border-light-border dark:border-dark-border bg-light-surface dark:bg-dark-surface">
+                   <span class="text-xs font-mono text-light-text/70 dark:text-dark-text/70">cURL</span>
+                   <button class="text-xs text-light-text/50 hover:text-light-text dark:text-dark-text/50 dark:hover:text-dark-text transition-colors" id="copy-curl">Copy</button>
                 </div>
-                <pre class="p-4 text-sm font-mono text-light-text dark:text-[#EDEDED] overflow-x-auto leading-relaxed"><code id="curl-code"></code></pre>
+                <pre class="p-4 text-sm font-mono text-light-text dark:text-dark-text overflow-x-auto leading-relaxed"><code id="curl-code"></code></pre>
               </div>
               <div class="mt-4 p-4 rounded-lg border border-light-border dark:border-dark-border bg-light-surface dark:bg-dark-surface">
                 <div class="flex items-center justify-between mb-3">
                   <h4 class="text-sm font-medium">Try it out</h4>
-                  <button id="send-btn" class="px-4 py-1.5 bg-teal-600 text-white text-sm font-semibold rounded hover:bg-teal-500 transition-colors">Submit</button>
+                  <button id="send-btn" class="px-4 py-1.5 bg-brand text-white text-sm font-semibold rounded hover:bg-brand-deep transition-colors">
+                    <span class="inline-flex items-center gap-2">
+                      <span id="send-btn-spinner" class="button-spinner hidden" aria-hidden="true"></span>
+                      <span id="send-btn-label">Submit</span>
+                    </span>
+                  </button>
                 </div>
                 <div class="space-y-4">
                   <div>
@@ -221,7 +259,7 @@ export function renderOpenAPIDocsHtml(
                     </div>
                   </div>
 
-                  <div>
+                  <div id="response-section">
                     <div class="flex items-center justify-between mb-2">
                       <p class="text-xs font-semibold uppercase tracking-wider opacity-60">Response</p>
                     </div>
@@ -248,7 +286,7 @@ export function renderOpenAPIDocsHtml(
       <div class="flex items-center justify-between mb-3">
         <h3 id="expand-modal-title" class="text-sm font-semibold">Expanded View</h3>
         <div class="flex items-center gap-2">
-          <button id="expand-apply" class="hidden text-sm px-3 py-1.5 rounded bg-teal-600 text-white font-semibold hover:bg-teal-500 transition-colors">Apply</button>
+          <button id="expand-apply" class="hidden text-sm px-3 py-1.5 rounded bg-brand text-white font-semibold hover:bg-brand-deep transition-colors">Apply</button>
           <button id="expand-close" class="p-1.5 rounded-full border border-light-border dark:border-dark-border bg-light-bg/90 dark:bg-dark-bg/90 opacity-90 hover:opacity-100 hover:border-brand/60 transition-colors" aria-label="Close Modal" title="Close Modal">
             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
@@ -267,12 +305,13 @@ export function renderOpenAPIDocsHtml(
   <script>
     const spec = ${specJson};
     const openapiPath = ${openapiPathJson};
+    const methodBadgeDefault = "bg-black/5 text-light-text/80 dark:bg-white/10 dark:text-dark-text/80";
     const methodBadge = {
-      GET: "bg-green-100 text-green-700 dark:bg-green-500/10 dark:text-green-400",
-      POST: "bg-blue-100 text-blue-700 dark:bg-blue-500/10 dark:text-blue-400",
-      PUT: "bg-amber-100 text-amber-700 dark:bg-amber-500/10 dark:text-amber-400",
-      PATCH: "bg-amber-100 text-amber-700 dark:bg-amber-500/10 dark:text-amber-400",
-      DELETE: "bg-red-100 text-red-700 dark:bg-red-500/10 dark:text-red-400",
+      GET: "bg-brand-soft text-brand-deep dark:bg-brand/20 dark:text-brand",
+      POST: "bg-brand-soft text-brand-deep dark:bg-brand/20 dark:text-brand",
+      PUT: "bg-brand-soft text-brand-deep dark:bg-brand/20 dark:text-brand",
+      PATCH: "bg-brand-soft text-brand-deep dark:bg-brand/20 dark:text-brand",
+      DELETE: "bg-brand-soft text-brand-deep dark:bg-brand/20 dark:text-brand",
     };
 
     function getOperations() {
@@ -526,6 +565,16 @@ export function renderOpenAPIDocsHtml(
         return;
       }
       for (const [tag, ops] of groups.entries()) {
+        ops.sort((a, b) => {
+          const byName = a.name.localeCompare(b.name, undefined, { sensitivity: "base" });
+          if (byName !== 0) return byName;
+
+          const byPath = a.path.localeCompare(b.path, undefined, { sensitivity: "base" });
+          if (byPath !== 0) return byPath;
+
+          return a.method.localeCompare(b.method, undefined, { sensitivity: "base" });
+        });
+
         const block = document.createElement("div");
         block.innerHTML = '<h3 class="px-2 mb-2 font-semibold text-xs uppercase tracking-wider opacity-50"></h3><ul class="space-y-0.5"></ul>';
         block.querySelector("h3").textContent = tag;
@@ -537,14 +586,14 @@ export function renderOpenAPIDocsHtml(
           const a = document.createElement("a");
           a.href = "#";
           a.className = op === selected
-            ? "block px-2 py-1.5 rounded-md bg-black/5 dark:bg-white/5 text-brand font-medium transition-colors"
+            ? "block px-2 py-1.5 rounded-md bg-brand-soft/70 dark:bg-brand/20 text-brand-deep dark:text-brand font-medium transition-colors"
             : "block px-2 py-1.5 rounded-md hover:bg-black/5 dark:hover:bg-white/5 transition-colors";
 
           const row = document.createElement("span");
           row.className = "flex items-center gap-2";
 
           const method = document.createElement("span");
-          method.className = "px-1.5 py-0.5 rounded text-[10px] font-mono font-semibold " + (methodBadge[op.method] || "bg-zinc-100 text-zinc-700 dark:bg-zinc-500/10 dark:text-zinc-400");
+          method.className = "px-1.5 py-0.5 rounded text-[10px] font-mono font-semibold " + (methodBadge[op.method] || methodBadgeDefault);
           method.textContent = op.method;
 
           const name = document.createElement("span");
@@ -966,6 +1015,19 @@ export function renderOpenAPIDocsHtml(
       }
     }
 
+    function setSubmitLoading(isLoading) {
+      const sendButton = document.getElementById("send-btn");
+      const spinner = document.getElementById("send-btn-spinner");
+      const label = document.getElementById("send-btn-label");
+      if (!sendButton) return;
+
+      sendButton.disabled = isLoading;
+      sendButton.classList.toggle("opacity-80", isLoading);
+      sendButton.classList.toggle("cursor-wait", isLoading);
+      if (spinner) spinner.classList.toggle("hidden", !isLoading);
+      if (label) label.textContent = isLoading ? "Sending..." : "Submit";
+    }
+
     function updateRequestPreview() {
       if (!selected) return;
 
@@ -1029,7 +1091,7 @@ export function renderOpenAPIDocsHtml(
       document.getElementById("tag-description").textContent = op.description || "Interactive API documentation.";
       const methodNode = document.getElementById("endpoint-method");
       methodNode.textContent = selected.method;
-      methodNode.className = "px-2.5 py-0.5 rounded-full text-xs font-mono font-medium " + (methodBadge[selected.method] || "bg-zinc-100 text-zinc-700 dark:bg-zinc-500/10 dark:text-zinc-400");
+      methodNode.className = "px-2.5 py-0.5 rounded-full text-xs font-mono font-medium " + (methodBadge[selected.method] || methodBadgeDefault);
       document.getElementById("endpoint-title").textContent = selected.name;
       document.getElementById("endpoint-path").textContent = selected.path;
 
@@ -1092,14 +1154,18 @@ export function renderOpenAPIDocsHtml(
         headers["Content-Type"] = "application/json";
       }
 
+      setSubmitLoading(true);
       try {
+        const requestStart = performance.now();
         const response = await fetch(requestPath, { method: selected.method, headers, body: body || undefined });
         const text = await response.text();
+        const responseTimeMs = Math.round(performance.now() - requestStart);
         const contentType = response.headers.get("content-type") || "unknown";
         const formattedResponse = formatResponseText(text);
         const headerText =
           "Status: " + response.status + " " + response.statusText + "\\n" +
-          "Content-Type: " + contentType + "\\n\\n";
+          "Content-Type: " + contentType + "\\n" +
+          "Response Time: " + responseTimeMs + " ms\\n\\n";
         setResponseContent(
           headerText,
           formattedResponse.text,
@@ -1107,6 +1173,8 @@ export function renderOpenAPIDocsHtml(
         );
       } catch (error) {
         setResponseContent("", "Request failed: " + String(error), false);
+      } finally {
+        setSubmitLoading(false);
       }
     });
 

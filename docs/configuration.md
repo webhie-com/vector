@@ -48,6 +48,7 @@ interface VectorConfigSchema {
           | {
               enabled?: boolean;
               path?: string;
+              exposePaths?: string[];
             };
         info?: {
           title?: string;
@@ -123,7 +124,11 @@ const config: VectorConfigSchema = {
   openapi: {
     enabled: process.env.NODE_ENV !== "production",
     path: "/openapi.json",
-    docs: false,
+    docs: {
+      enabled: true,
+      path: "/docs",
+      exposePaths: ["/health", "/users*"],
+    },
     info: {
       title: "My API",
       version: "1.0.0",
