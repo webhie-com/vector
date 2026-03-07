@@ -57,6 +57,10 @@ interface VectorConfigSchema {
         };
       };
 
+  // Startup lifecycle
+  startup?: () => Promise<void> | void;
+  shutdown?: () => Promise<void> | void;
+
   // Handlers
   auth?: (request: Request) => Promise<unknown> | unknown;
   cache?: (
@@ -81,6 +85,9 @@ interface VectorConfigSchema {
 
 - `start` uses production mode (`NODE_ENV=production`).
 - Function-based handlers and middleware (`auth`, `cache`, `before`, `after`, function `cors.origin`) are available in both modes.
+- `startup` runs before route discovery and before the server begins listening.
+- In `dev` with file watching, `startup` runs again on each restart triggered by code changes.
+- `shutdown` runs when the process receives `SIGINT` or `SIGTERM`, after the server stops accepting new requests and before exit.
 
 ## Route Defaults
 
@@ -133,6 +140,13 @@ const config: VectorConfigSchema = {
       title: "My API",
       version: "1.0.0",
     },
+  },
+
+  startup: async () => {
+    await loadOramaDatastore();
+  },
+  shutdown: async () => {
+    await closeOramaDatastore();
   },
 
   auth: async (request) => {

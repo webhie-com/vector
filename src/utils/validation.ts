@@ -13,6 +13,8 @@ export function validateConfig(config: VectorConfig): VectorConfig {
     cors: config.cors ? validateCorsOptions(config.cors) : undefined,
     before: config.before || [],
     finally: config.finally || [],
+    startup: config.startup,
+    shutdown: config.shutdown,
   };
 
   return validatedConfig;

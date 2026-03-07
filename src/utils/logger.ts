@@ -17,7 +17,7 @@ export class Logger {
   constructor(config: Partial<LoggerConfig> = {}) {
     this.config = {
       level: config.level ?? LogLevel.INFO,
-      prefix: config.prefix ?? '[Vector]',
+      prefix: config.prefix ?? '[vector]',
       timestamp: config.timestamp ?? true,
     };
   }

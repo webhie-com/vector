@@ -16,6 +16,11 @@ bun vector start
 - `dev` enables file watching by default.
 - `start` does not watch files.
 
+Graceful shutdown:
+
+- `vector dev` and `vector start` listen for `SIGINT` and `SIGTERM`.
+- On shutdown signal, Vector stops accepting requests and then runs config `shutdown` (if provided).
+
 Common options:
 
 ```bash

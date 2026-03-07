@@ -39,6 +39,7 @@ export class Vector<TTypes extends VectorTypes = DefaultVectorTypes> {
   private routeGenerator: RouteGenerator | null = null;
   private _protectedHandler: ProtectedHandler<TTypes> | null = null;
   private _cacheHandler: CacheHandler | null = null;
+  private shutdownPromise: Promise<void> | null = null;
 
   private constructor() {
     this.middlewareManager = new MiddlewareManager<TTypes>();
@@ -105,6 +106,10 @@ export class Vector<TTypes extends VectorTypes = DefaultVectorTypes> {
 
     if (config?.finally) {
       this.middlewareManager.addFinally(...config.finally);
+    }
+
+    if (typeof this.config.startup === 'function') {
+      await this.config.startup();
     }
 
     if (this.config.autoDiscover !== false) {
@@ -226,6 +231,27 @@ export class Vector<TTypes extends VectorTypes = DefaultVectorTypes> {
     }
     // Don't reset managers or routes - they persist for the singleton
     // Routes will be cleared on next startServer() call
+  }
+
+  async shutdown(): Promise<void> {
+    if (this.shutdownPromise) {
+      return this.shutdownPromise;
+    }
+
+    this.shutdownPromise = (async () => {
+      // Stop accepting new traffic first.
+      this.stop();
+
+      if (typeof this.config.shutdown === 'function') {
+        await this.config.shutdown();
+      }
+    })();
+
+    try {
+      await this.shutdownPromise;
+    } finally {
+      this.shutdownPromise = null;
+    }
   }
 
   getServer(): VectorServer<TTypes> | null {
