@@ -7,7 +7,7 @@ import { Reporter } from './utils/reporter';
 // Soak test configuration
 const CONFIG = {
   port: 3003,
-  baseUrl: 'http://localhost:3003',
+  baseUrl: 'http://127.0.0.1:3003',
   duration: 5 * 60 * 1000, // 5 minutes
   requestsPerSecond: 20,
   memorySampleInterval: 5000, // 5 seconds
@@ -23,13 +23,28 @@ interface Checkpoint {
   memory: number;
 }
 
+async function waitForServer(url: string, timeoutMs = 15000): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    try {
+      const response = await fetch(`${url}/health`);
+      if (response.ok) {
+        return;
+      }
+    } catch {}
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  }
+
+  throw new Error(`Server at ${url} did not become ready within ${timeoutMs}ms`);
+}
+
 async function runSoakTest() {
   Reporter.printTestHeader(
     'Soak Testing Suite',
     `Testing server stability over ${CONFIG.duration / 1000 / 60} minutes with ${CONFIG.requestsPerSecond} req/s`
   );
 
-  let server: Server;
+  let server: Server | null = null;
   const client = createClient(CONFIG.baseUrl);
   const checkpoints: Checkpoint[] = [];
 
@@ -38,12 +53,12 @@ async function runSoakTest() {
     console.log('🚀 Starting test server...');
     server = await testServer.serve({
       port: CONFIG.port,
-      hostname: '0.0.0.0',
+      hostname: '127.0.0.1',
       development: false,
     });
 
-    // Wait for server to be ready
-    await new Promise((resolve) => setTimeout(resolve, 1000));
+    // Wait for server to be reachable before sending load
+    await waitForServer(CONFIG.baseUrl);
 
     // Initialize monitoring
     const metrics = new MetricsCollector();
@@ -120,8 +135,7 @@ async function runSoakTest() {
       const currentMetrics = metrics.getMetrics();
 
       // Show progress
-      const progressBar =
-        '█'.repeat(Math.floor(progress / 2)) + '░'.repeat(50 - Math.floor(progress / 2));
+      const progressBar = '█'.repeat(Math.floor(progress / 2)) + '░'.repeat(50 - Math.floor(progress / 2));
       process.stdout.write(
         `\r[${progressBar}] ${progress.toFixed(1)}% | ` +
           `Requests: ${totalRequests} | ` +
@@ -244,9 +258,7 @@ async function runSoakTest() {
       const lastCheckpoint = checkpoints[checkpoints.length - 1];
 
       const rtDegradation =
-        ((lastCheckpoint.avgResponseTime - firstCheckpoint.avgResponseTime) /
-          firstCheckpoint.avgResponseTime) *
-        100;
+        ((lastCheckpoint.avgResponseTime - firstCheckpoint.avgResponseTime) / firstCheckpoint.avgResponseTime) * 100;
 
       console.log('\n📉 Performance Degradation:');
       console.log(`  Response Time: ${rtDegradation > 0 ? '+' : ''}${rtDegradation.toFixed(2)}%`);

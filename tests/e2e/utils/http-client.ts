@@ -156,11 +156,7 @@ export async function concurrentRequests<T = any>(
 }
 
 // Retry helper
-export async function withRetry<T = any>(
-  fn: () => Promise<T>,
-  maxRetries = 3,
-  delay = 1000
-): Promise<T> {
+export async function withRetry<T = any>(fn: () => Promise<T>, maxRetries = 3, delay = 1000): Promise<T> {
   let lastError: Error | undefined;
 
   for (let i = 0; i < maxRetries; i++) {

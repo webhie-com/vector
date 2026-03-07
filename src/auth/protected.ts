@@ -1,10 +1,4 @@
-import type {
-  DefaultVectorTypes,
-  GetAuthType,
-  ProtectedHandler,
-  VectorRequest,
-  VectorTypes,
-} from '../types';
+import type { DefaultVectorTypes, GetAuthType, ProtectedHandler, VectorRequest, VectorTypes } from '../types';
 
 export class AuthManager<TTypes extends VectorTypes = DefaultVectorTypes> {
   private protectedHandler: ProtectedHandler<TTypes> | null = null;
@@ -15,9 +9,7 @@ export class AuthManager<TTypes extends VectorTypes = DefaultVectorTypes> {
 
   async authenticate(request: VectorRequest<TTypes>): Promise<GetAuthType<TTypes> | null> {
     if (!this.protectedHandler) {
-      throw new Error(
-        'Protected handler not configured. Use vector.protected() to set authentication handler.'
-      );
+      throw new Error('Protected handler not configured. Use vector.protected() to set authentication handler.');
     }
 
     try {
@@ -25,9 +17,7 @@ export class AuthManager<TTypes extends VectorTypes = DefaultVectorTypes> {
       request.authUser = authUser;
       return authUser;
     } catch (error) {
-      throw new Error(
-        `Authentication failed: ${error instanceof Error ? error.message : String(error)}`
-      );
+      throw new Error(`Authentication failed: ${error instanceof Error ? error.message : String(error)}`);
     }
   }
 

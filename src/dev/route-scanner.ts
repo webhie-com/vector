@@ -95,8 +95,7 @@ export class RouteScanner {
 
         try {
           // Convert Windows paths to URLs for import
-          const importPath =
-            process.platform === 'win32' ? `file:///${fullPath.replace(/\\/g, '/')}` : fullPath;
+          const importPath = process.platform === 'win32' ? `file:///${fullPath.replace(/\\/g, '/')}` : fullPath;
 
           const module = await import(importPath);
 
@@ -117,13 +116,7 @@ export class RouteScanner {
             if (name === 'default') continue;
 
             // Check for new RouteDefinition format
-            if (
-              value &&
-              typeof value === 'object' &&
-              'entry' in value &&
-              'options' in value &&
-              'handler' in value
-            ) {
+            if (value && typeof value === 'object' && 'entry' in value && 'options' in value && 'handler' in value) {
               const routeDef = value as any;
               routes.push({
                 name,

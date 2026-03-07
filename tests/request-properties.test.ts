@@ -75,11 +75,7 @@ describe('VectorRequest Properties', () => {
 
             // Check type is string | string[] | undefined
             const queryValue = capturedRequest!.query[key];
-            expect(
-              typeof queryValue === 'string' ||
-                Array.isArray(queryValue) ||
-                queryValue === undefined
-            ).toBe(true);
+            expect(typeof queryValue === 'string' || Array.isArray(queryValue) || queryValue === undefined).toBe(true);
           }
         }
       }
@@ -309,13 +305,10 @@ describe('VectorRequest Properties', () => {
     it('should handle greedy parameters', async () => {
       let capturedRequest: VectorRequest | null = null;
 
-      router.route(
-        { method: 'GET', path: '/files/:path+', expose: true },
-        async (req: VectorRequest) => {
-          capturedRequest = req;
-          return new Response('ok');
-        }
-      );
+      router.route({ method: 'GET', path: '/files/:path+', expose: true }, async (req: VectorRequest) => {
+        capturedRequest = req;
+        return new Response('ok');
+      });
 
       const request = new Request('http://localhost/files/folder/subfolder/file.txt');
       await router.handle(request);
@@ -400,13 +393,10 @@ describe('VectorRequest Properties', () => {
     it('should access all standard request properties', async () => {
       let capturedRequest: VectorRequest | null = null;
 
-      router.route(
-        { method: 'POST', path: '/api/test', expose: true },
-        async (req: VectorRequest) => {
-          capturedRequest = req;
-          return new Response('ok');
-        }
-      );
+      router.route({ method: 'POST', path: '/api/test', expose: true }, async (req: VectorRequest) => {
+        capturedRequest = req;
+        return new Response('ok');
+      });
 
       const request = new Request('http://localhost/api/test?key=value', {
         method: 'POST',

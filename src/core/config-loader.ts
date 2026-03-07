@@ -36,9 +36,7 @@ export class ConfigLoader<TTypes extends VectorTypes = DefaultVectorTypes> {
       } catch (error: any) {
         const msg = error instanceof Error ? error.message : String(error);
         console.error(`[Vector] Failed to load config from ${this.configPath}: ${msg}`);
-        console.error(
-          '[Vector] Server is using default configuration. Fix your config file and restart.'
-        );
+        console.error('[Vector] Server is using default configuration. Fix your config file and restart.');
         this.config = {};
       }
     } else {
@@ -65,6 +63,8 @@ export class ConfigLoader<TTypes extends VectorTypes = DefaultVectorTypes> {
       config.development = this.config.development;
       config.routesDir = this.config.routesDir || './routes';
       config.idleTimeout = this.config.idleTimeout;
+      config.defaults = this.config.defaults;
+      config.openapi = this.config.openapi;
     }
 
     // Always auto-discover routes

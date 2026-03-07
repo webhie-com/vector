@@ -9,6 +9,7 @@ export function validateConfig(config: VectorConfig): VectorConfig {
     development: config.development || false,
     routesDir: config.routesDir || DEFAULT_CONFIG.ROUTES_DIR,
     autoDiscover: config.autoDiscover !== false,
+    defaults: config.defaults,
     cors: config.cors ? validateCorsOptions(config.cors) : undefined,
     before: config.before || [],
     finally: config.finally || [],

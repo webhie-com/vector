@@ -1,13 +1,86 @@
 import type { Server } from 'bun';
+import { existsSync } from 'node:fs';
+import { join } from 'node:path';
 import { STATIC_RESPONSES } from '../constants';
 import { cors } from '../utils/cors';
-import type { CorsOptions, DefaultVectorTypes, VectorConfig, VectorTypes } from '../types';
+import { renderOpenAPIDocsHtml } from '../openapi/docs-ui';
+import { generateOpenAPIDocument } from '../openapi/generator';
+import type { CorsOptions, DefaultVectorTypes, OpenAPIOptions, VectorConfig, VectorTypes } from '../types';
 import type { VectorRouter } from './router';
+
+interface NormalizedOpenAPIConfig {
+  enabled: boolean;
+  path: string;
+  target: string;
+  docs: {
+    enabled: boolean;
+    path: string;
+  };
+  info?: {
+    title?: string;
+    version?: string;
+    description?: string;
+  };
+}
+
+const OPENAPI_TAILWIND_ASSET_PATH = '/_vector/openapi/tailwindcdn.js';
+const OPENAPI_TAILWIND_ASSET_RELATIVE_CANDIDATES = [
+  // Source execution (src/core/server.ts -> src/openapi/assets/tailwindcdn.js)
+  '../openapi/assets/tailwindcdn.js',
+  // Bundled dist entrypoints (dist/index.mjs|dist/cli.js -> src/openapi/assets/tailwindcdn.js)
+  '../src/openapi/assets/tailwindcdn.js',
+  // Unbundled dist/core/server.js execution (dist/core -> src/openapi/assets/tailwindcdn.js)
+  '../../src/openapi/assets/tailwindcdn.js',
+] as const;
+const OPENAPI_TAILWIND_ASSET_CWD_CANDIDATES = [
+  'src/openapi/assets/tailwindcdn.js',
+  'openapi/assets/tailwindcdn.js',
+  'dist/openapi/assets/tailwindcdn.js',
+] as const;
+const OPENAPI_TAILWIND_ASSET_INLINE_FALLBACK = '/* OpenAPI docs runtime asset missing: tailwind disabled */';
+
+function resolveOpenAPITailwindAssetFile(): ReturnType<typeof Bun.file> | null {
+  for (const relativePath of OPENAPI_TAILWIND_ASSET_RELATIVE_CANDIDATES) {
+    try {
+      const fileUrl = new URL(relativePath, import.meta.url);
+      if (existsSync(fileUrl)) {
+        return Bun.file(fileUrl);
+      }
+    } catch {
+      // Ignore resolution failures and try the next candidate.
+    }
+  }
+
+  const cwd = process.cwd();
+  for (const relativePath of OPENAPI_TAILWIND_ASSET_CWD_CANDIDATES) {
+    const absolutePath = join(cwd, relativePath);
+    if (existsSync(absolutePath)) {
+      return Bun.file(absolutePath);
+    }
+  }
+
+  return null;
+}
+
+const OPENAPI_TAILWIND_ASSET_FILE = resolveOpenAPITailwindAssetFile();
+const DOCS_HTML_CACHE_CONTROL = 'public, max-age=0, must-revalidate';
+const DOCS_ASSET_CACHE_CONTROL = 'public, max-age=31536000, immutable';
+
+interface OpenAPIDocsHtmlCacheEntry {
+  html: string;
+  gzip: Uint8Array;
+  etag: string;
+}
 
 export class VectorServer<TTypes extends VectorTypes = DefaultVectorTypes> {
   private server: Server | null = null;
   private router: VectorRouter<TTypes>;
   private config: VectorConfig<TTypes>;
+  private openapiConfig: NormalizedOpenAPIConfig;
+  private openapiDocCache: Record<string, unknown> | null = null;
+  private openapiDocsHtmlCache: OpenAPIDocsHtmlCacheEntry | null = null;
+  private openapiWarningsLogged = false;
+  private openapiTailwindMissingLogged = false;
   private corsHandler: {
     preflight: (request: Request) => Response;
     corsify: (response: Response, request: Request) => Response;
@@ -17,6 +90,7 @@ export class VectorServer<TTypes extends VectorTypes = DefaultVectorTypes> {
   constructor(router: VectorRouter<TTypes>, config: VectorConfig<TTypes>) {
     this.router = router;
     this.config = config;
+    this.openapiConfig = this.normalizeOpenAPIConfig(config.openapi, config.development);
 
     if (config.cors) {
       const opts = this.normalizeCorsOptions(config.cors);
@@ -24,8 +98,7 @@ export class VectorServer<TTypes extends VectorTypes = DefaultVectorTypes> {
       this.corsHandler = { preflight, corsify };
 
       // Pre-build static CORS headers when origin does not require per-request reflection.
-      const canUseStaticCorsHeaders =
-        typeof opts.origin === 'string' && (opts.origin !== '*' || !opts.credentials);
+      const canUseStaticCorsHeaders = typeof opts.origin === 'string' && (opts.origin !== '*' || !opts.credentials);
 
       if (canUseStaticCorsHeaders) {
         const corsHeaders: Record<string, string> = {
@@ -45,6 +118,205 @@ export class VectorServer<TTypes extends VectorTypes = DefaultVectorTypes> {
       this.router.setCorsHeaders(this.corsHeadersEntries);
       this.router.setCorsHandler(this.corsHeadersEntries ? null : this.corsHandler.corsify);
     }
+  }
+
+  private normalizeOpenAPIConfig(
+    openapi: OpenAPIOptions | boolean | undefined,
+    development: boolean | undefined
+  ): NormalizedOpenAPIConfig {
+    const isDev = development !== false && process.env.NODE_ENV !== 'production';
+    const defaultEnabled = isDev;
+
+    if (openapi === false) {
+      return {
+        enabled: false,
+        path: '/openapi.json',
+        target: 'openapi-3.0',
+        docs: { enabled: false, path: '/docs' },
+      };
+    }
+
+    if (openapi === true) {
+      return {
+        enabled: true,
+        path: '/openapi.json',
+        target: 'openapi-3.0',
+        docs: { enabled: false, path: '/docs' },
+      };
+    }
+
+    const openapiObject = openapi || {};
+    const docsValue = openapiObject.docs;
+    const docs =
+      typeof docsValue === 'boolean'
+        ? { enabled: docsValue, path: '/docs' }
+        : {
+            enabled: docsValue?.enabled === true,
+            path: docsValue?.path || '/docs',
+          };
+
+    return {
+      enabled: openapiObject.enabled ?? defaultEnabled,
+      path: openapiObject.path || '/openapi.json',
+      target: openapiObject.target || 'openapi-3.0',
+      docs,
+      info: openapiObject.info,
+    };
+  }
+
+  private isDocsReservedPath(path: string): boolean {
+    return (
+      path === this.openapiConfig.path || (this.openapiConfig.docs.enabled && path === this.openapiConfig.docs.path)
+    );
+  }
+
+  private getOpenAPIDocument(): Record<string, unknown> {
+    if (this.openapiDocCache) {
+      return this.openapiDocCache;
+    }
+
+    const routes = this.router.getRouteDefinitions().filter((route) => !this.isDocsReservedPath(route.path));
+
+    const result = generateOpenAPIDocument(routes as any, {
+      target: this.openapiConfig.target,
+      info: this.openapiConfig.info,
+    });
+
+    if (!this.openapiWarningsLogged && result.warnings.length > 0) {
+      for (const warning of result.warnings) {
+        console.warn(warning);
+      }
+      this.openapiWarningsLogged = true;
+    }
+
+    this.openapiDocCache = result.document;
+    return this.openapiDocCache;
+  }
+
+  private getOpenAPIDocsHtmlCacheEntry(): OpenAPIDocsHtmlCacheEntry {
+    if (this.openapiDocsHtmlCache) {
+      return this.openapiDocsHtmlCache;
+    }
+
+    const html = renderOpenAPIDocsHtml(this.getOpenAPIDocument(), this.openapiConfig.path, OPENAPI_TAILWIND_ASSET_PATH);
+    const gzip = Bun.gzipSync(html);
+    const etag = `"${Bun.hash(html).toString(16)}"`;
+
+    this.openapiDocsHtmlCache = { html, gzip, etag };
+    return this.openapiDocsHtmlCache;
+  }
+
+  private requestAcceptsGzip(request: Request): boolean {
+    const acceptEncoding = request.headers.get('accept-encoding');
+    return Boolean(acceptEncoding && /\bgzip\b/i.test(acceptEncoding));
+  }
+
+  private validateReservedOpenAPIPaths(): void {
+    if (!this.openapiConfig.enabled) {
+      return;
+    }
+
+    const reserved = new Set<string>([this.openapiConfig.path]);
+    if (this.openapiConfig.docs.enabled) {
+      reserved.add(this.openapiConfig.docs.path);
+      reserved.add(OPENAPI_TAILWIND_ASSET_PATH);
+    }
+
+    const methodConflicts = this.router
+      .getRouteDefinitions()
+      .filter((route) => reserved.has(route.path))
+      .map((route) => `${route.method} ${route.path}`);
+
+    const staticConflicts = Object.entries(this.router.getRouteTable())
+      .filter(([path, value]) => reserved.has(path) && value instanceof Response)
+      .map(([path]) => `STATIC ${path}`);
+
+    const conflicts = [...methodConflicts, ...staticConflicts];
+
+    if (conflicts.length > 0) {
+      throw new Error(
+        `OpenAPI reserved path conflict: ${conflicts.join(
+          ', '
+        )}. Change your route path(s) or reconfigure openapi.path/docs.path.`
+      );
+    }
+  }
+
+  private tryHandleOpenAPIRequest(request: Request): Response | null {
+    if (!this.openapiConfig.enabled || request.method !== 'GET') {
+      return null;
+    }
+
+    const pathname = new URL(request.url).pathname;
+    if (pathname === this.openapiConfig.path) {
+      return Response.json(this.getOpenAPIDocument());
+    }
+
+    if (this.openapiConfig.docs.enabled && pathname === this.openapiConfig.docs.path) {
+      const { html, gzip, etag } = this.getOpenAPIDocsHtmlCacheEntry();
+      if (request.headers.get('if-none-match') === etag) {
+        return new Response(null, {
+          status: 304,
+          headers: {
+            etag,
+            'cache-control': DOCS_HTML_CACHE_CONTROL,
+            vary: 'accept-encoding',
+          },
+        });
+      }
+
+      if (this.requestAcceptsGzip(request)) {
+        return new Response(gzip, {
+          status: 200,
+          headers: {
+            'content-type': 'text/html; charset=utf-8',
+            'content-encoding': 'gzip',
+            etag,
+            'cache-control': DOCS_HTML_CACHE_CONTROL,
+            vary: 'accept-encoding',
+          },
+        });
+      }
+
+      return new Response(html, {
+        status: 200,
+        headers: {
+          'content-type': 'text/html; charset=utf-8',
+          etag,
+          'cache-control': DOCS_HTML_CACHE_CONTROL,
+          vary: 'accept-encoding',
+        },
+      });
+    }
+
+    if (this.openapiConfig.docs.enabled && pathname === OPENAPI_TAILWIND_ASSET_PATH) {
+      if (!OPENAPI_TAILWIND_ASSET_FILE) {
+        if (!this.openapiTailwindMissingLogged) {
+          this.openapiTailwindMissingLogged = true;
+          console.warn(
+            '[OpenAPI] Missing docs runtime asset "tailwindcdn.js". Serving inline fallback script instead.'
+          );
+        }
+
+        return new Response(OPENAPI_TAILWIND_ASSET_INLINE_FALLBACK, {
+          status: 200,
+          headers: {
+            'content-type': 'application/javascript; charset=utf-8',
+            'cache-control': DOCS_ASSET_CACHE_CONTROL,
+          },
+        });
+      }
+
+      return new Response(OPENAPI_TAILWIND_ASSET_FILE, {
+        status: 200,
+        headers: {
+          'content-type': 'application/javascript; charset=utf-8',
+          'cache-control': DOCS_ASSET_CACHE_CONTROL,
+        },
+      });
+    }
+
+    return null;
   }
 
   private normalizeCorsOptions(options: CorsOptions): any {
@@ -83,11 +355,19 @@ export class VectorServer<TTypes extends VectorTypes = DefaultVectorTypes> {
     const port = this.config.port ?? 3000;
     const hostname = this.config.hostname || 'localhost';
 
+    this.validateReservedOpenAPIPaths();
+
     const fallbackFetch = async (request: Request): Promise<Response> => {
       try {
         // Handle CORS preflight for any path
         if (this.corsHandler && request.method === 'OPTIONS') {
           return this.corsHandler.preflight(request);
+        }
+
+        // Handle built-in docs endpoints for requests that fell through the Bun route table.
+        const openapiResponse = this.tryHandleOpenAPIRequest(request);
+        if (openapiResponse) {
+          return this.applyCors(openapiResponse, request);
         }
 
         // No route matched — return 404
@@ -137,6 +417,9 @@ export class VectorServer<TTypes extends VectorTypes = DefaultVectorTypes> {
     if (this.server) {
       this.server.stop();
       this.server = null;
+      this.openapiDocCache = null;
+      this.openapiDocsHtmlCache = null;
+      this.openapiWarningsLogged = false;
       console.log('Server stopped');
     }
   }

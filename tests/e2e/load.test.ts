@@ -7,7 +7,7 @@ import { Reporter } from './utils/reporter';
 // Load test configuration
 const CONFIG = {
   port: 3002,
-  baseUrl: 'http://localhost:3002',
+  baseUrl: 'http://127.0.0.1:3002',
   warmupRequests: 10,
   testScenarios: [
     { name: 'Light Load', concurrent: 10, total: 100 },
@@ -17,13 +17,25 @@ const CONFIG = {
   ],
 };
 
-async function runLoadTest() {
-  Reporter.printTestHeader(
-    'Load Testing Suite',
-    'Testing server performance under various load conditions'
-  );
+async function waitForServer(url: string, timeoutMs = 15000): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    try {
+      const response = await fetch(`${url}/health`);
+      if (response.ok) {
+        return;
+      }
+    } catch {}
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  }
 
-  let server: Server;
+  throw new Error(`Server at ${url} did not become ready within ${timeoutMs}ms`);
+}
+
+async function runLoadTest() {
+  Reporter.printTestHeader('Load Testing Suite', 'Testing server performance under various load conditions');
+
+  let server: Server | null = null;
   const client = createClient(CONFIG.baseUrl);
 
   try {
@@ -31,12 +43,12 @@ async function runLoadTest() {
     console.log('Starting test server...');
     server = await testServer.serve({
       port: CONFIG.port,
-      hostname: '0.0.0.0',
+      hostname: '127.0.0.1',
       development: false,
     });
 
-    // Wait for server to be ready
-    await new Promise((resolve) => setTimeout(resolve, 1000));
+    // Wait for server to be reachable before warmup
+    await waitForServer(CONFIG.baseUrl);
 
     // Warmup
     console.log('\nRunning warmup requests...');
@@ -46,10 +58,7 @@ async function runLoadTest() {
 
     // Run test scenarios
     for (const scenario of CONFIG.testScenarios) {
-      Reporter.printTestHeader(
-        scenario.name,
-        `${scenario.concurrent} concurrent, ${scenario.total} total requests`
-      );
+      Reporter.printTestHeader(scenario.name, `${scenario.concurrent} concurrent, ${scenario.total} total requests`);
 
       const metrics = new MetricsCollector();
       const memoryMonitor = new MemoryMonitor();
@@ -88,9 +97,7 @@ async function runLoadTest() {
       memoryMonitor.start(500);
 
       // Execute concurrent requests
-      console.log(
-        `\nExecuting ${scenario.total} requests with ${scenario.concurrent} concurrent connections...`
-      );
+      console.log(`\nExecuting ${scenario.total} requests with ${scenario.concurrent} concurrent connections...`);
 
       let completed = 0;
       const batchSize = scenario.concurrent;

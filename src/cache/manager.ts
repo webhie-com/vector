@@ -32,11 +32,7 @@ export class CacheManager<TTypes extends VectorTypes = DefaultVectorTypes> {
     return this.getFromMemoryCache(key, factory, ttl);
   }
 
-  private async getFromMemoryCache<T>(
-    key: string,
-    factory: () => Promise<T>,
-    ttl: number
-  ): Promise<T> {
+  private async getFromMemoryCache<T>(key: string, factory: () => Promise<T>, ttl: number): Promise<T> {
     const now = Date.now();
     const cached = this.memoryCache.get(key);
 
@@ -104,11 +100,7 @@ export class CacheManager<TTypes extends VectorTypes = DefaultVectorTypes> {
     }
   }
 
-  async set<T = GetCacheType<TTypes>>(
-    key: string,
-    value: T,
-    ttl: number = DEFAULT_CONFIG.CACHE_TTL
-  ): Promise<void> {
+  async set<T = GetCacheType<TTypes>>(key: string, value: T, ttl: number = DEFAULT_CONFIG.CACHE_TTL): Promise<void> {
     if (ttl <= 0) {
       return;
     }

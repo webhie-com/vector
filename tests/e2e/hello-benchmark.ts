@@ -6,7 +6,7 @@ async function benchmarkHelloWorld() {
   console.log('🚀 Hello World Benchmark');
   console.log('Testing raw throughput of simple GET /health endpoint\n');
 
-  let server: Server;
+  let server: Server | null = null;
   const client = createClient('http://localhost:3005');
 
   try {

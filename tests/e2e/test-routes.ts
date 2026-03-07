@@ -92,7 +92,7 @@ export const createData = route(
   },
   async (req: VectorRequest) => {
     trackRequest();
-    const body = req.content as any;
+    const body = req.content as { name?: string; value?: number } | undefined;
 
     if (!body || !body.name) {
       throw APIError.badRequest('Name is required');
