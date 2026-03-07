@@ -201,6 +201,7 @@ const OPENAPI_FAVICON_ASSETS = [
 ] as const;
 const DOCS_HTML_CACHE_CONTROL = 'public, max-age=0, must-revalidate';
 const DOCS_ASSET_CACHE_CONTROL = 'public, max-age=31536000, immutable';
+const DOCS_ASSET_ERROR_CACHE_CONTROL = 'no-store';
 
 interface OpenAPIDocsHtmlCacheEntry {
   html: string;
@@ -535,7 +536,7 @@ export class VectorServer<TTypes extends VectorTypes = DefaultVectorTypes> {
           status: 404,
           headers: {
             'content-type': 'text/plain; charset=utf-8',
-            'cache-control': DOCS_ASSET_CACHE_CONTROL,
+            'cache-control': DOCS_ASSET_ERROR_CACHE_CONTROL,
           },
         });
       }
@@ -560,7 +561,7 @@ export class VectorServer<TTypes extends VectorTypes = DefaultVectorTypes> {
           status: 404,
           headers: {
             'content-type': 'text/plain; charset=utf-8',
-            'cache-control': DOCS_ASSET_CACHE_CONTROL,
+            'cache-control': DOCS_ASSET_ERROR_CACHE_CONTROL,
           },
         });
       }
@@ -582,7 +583,7 @@ export class VectorServer<TTypes extends VectorTypes = DefaultVectorTypes> {
             status: 404,
             headers: {
               'content-type': 'text/plain; charset=utf-8',
-              'cache-control': DOCS_ASSET_CACHE_CONTROL,
+              'cache-control': DOCS_ASSET_ERROR_CACHE_CONTROL,
             },
           });
         }
