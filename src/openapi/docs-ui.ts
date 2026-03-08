@@ -732,6 +732,55 @@ export function renderOpenAPIDocsHtml(
       );
     }
 
+    function renderResponseSchemasSection(responses) {
+      if (!responses || typeof responses !== "object") return "";
+
+      const statusCodes = Object.keys(responses).sort((a, b) => {
+        const aNum = Number(a);
+        const bNum = Number(b);
+        if (Number.isInteger(aNum) && Number.isInteger(bNum)) return aNum - bNum;
+        if (Number.isInteger(aNum)) return -1;
+        if (Number.isInteger(bNum)) return 1;
+        return a.localeCompare(b);
+      });
+
+      let sections = "";
+      for (const statusCode of statusCodes) {
+        const responseDef = responses[statusCode];
+        if (!responseDef || typeof responseDef !== "object") continue;
+
+        const jsonSchema =
+          responseDef.content &&
+          responseDef.content["application/json"] &&
+          responseDef.content["application/json"].schema;
+
+        if (!jsonSchema || typeof jsonSchema !== "object") continue;
+
+        const rootChildren = buildSchemaChildren(jsonSchema);
+        if (!rootChildren.length) continue;
+
+        let rows = "";
+        for (const child of rootChildren) {
+          rows += renderSchemaFieldNode(child, 0);
+        }
+
+        sections +=
+          '<div class="mb-4"><h4 class="text-xs font-mono uppercase tracking-wider opacity-70 mb-2">Status ' +
+          escapeHtml(statusCode) +
+          "</h4>" +
+          rows +
+          "</div>";
+      }
+
+      if (!sections) return "";
+
+      return (
+        '<div><h3 class="text-sm font-semibold mb-3 flex items-center border-b border-light-border dark:border-dark-border pb-2">Response Schemas</h3>' +
+        sections +
+        "</div>"
+      );
+    }
+
     function renderTryItParameterInputs(pathParams, queryParams) {
       const container = document.getElementById("request-param-inputs");
       if (!container || !selected) return;
@@ -1104,6 +1153,7 @@ export function renderOpenAPIDocsHtml(
       html += renderParamSection("Header Parameters", headers);
 
       html += renderRequestBodySchemaSection(reqSchema);
+      html += renderResponseSchemasSection(op.responses);
       document.getElementById("params-column").innerHTML = html || '<div class="text-sm opacity-70">No parameters</div>';
       renderTryItParameterInputs(path, query);
       renderHeaderInputs();

@@ -7,6 +7,10 @@ export class AuthManager<TTypes extends VectorTypes = DefaultVectorTypes> {
     this.protectedHandler = handler;
   }
 
+  clearProtectedHandler() {
+    this.protectedHandler = null;
+  }
+
   async authenticate(request: VectorRequest<TTypes>): Promise<GetAuthType<TTypes> | null> {
     if (!this.protectedHandler) {
       throw new Error('Protected handler not configured. Use vector.protected() to set authentication handler.');

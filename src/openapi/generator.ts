@@ -140,9 +140,10 @@ function convertInputSchema(
     warnings.push(
       `[OpenAPI] Failed input schema conversion for ${routePath}: ${
         error instanceof Error ? error.message : String(error)
-      }`
+      }. Falling back to a permissive JSON Schema.`
     );
-    return null;
+    const fallback = buildFallbackJSONSchema(inputSchema);
+    return isEmptyObjectSchema(fallback) ? null : fallback;
   }
 }
 
@@ -163,14 +164,240 @@ function convertOutputSchema(
     warnings.push(
       `[OpenAPI] Failed output schema conversion for ${routePath} (${statusCode}): ${
         error instanceof Error ? error.message : String(error)
-      }`
+      }. Falling back to a permissive JSON Schema.`
     );
-    return null;
+    return buildFallbackJSONSchema(outputSchema);
   }
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return !!value && typeof value === 'object' && !Array.isArray(value);
+}
+
+function isEmptyObjectSchema(value: unknown): value is Record<string, never> {
+  return isRecord(value) && Object.keys(value).length === 0;
+}
+
+// Best-effort extraction of internal schema definition metadata from common
+// standards-compatible validators. If unavailable, callers should fall back to {}.
+function getValidatorSchemaDef(schema: unknown): Record<string, unknown> | null {
+  if (!schema || typeof schema !== 'object') return null;
+  const value = schema as Record<string, any>;
+  if (isRecord(value._def)) return value._def as Record<string, unknown>;
+  if (isRecord(value._zod) && isRecord((value._zod as Record<string, any>).def)) {
+    return (value._zod as Record<string, any>).def as Record<string, unknown>;
+  }
+  return null;
+}
+
+function getSchemaKind(def: Record<string, unknown> | null): string | null {
+  if (!def) return null;
+  const typeName = def.typeName;
+  if (typeof typeName === 'string') return typeName;
+  const type = def.type;
+  if (typeof type === 'string') return type;
+  return null;
+}
+
+function pickSchemaChild(def: Record<string, unknown>): unknown {
+  const candidates = ['innerType', 'schema', 'type', 'out', 'in', 'left', 'right'];
+  for (const key of candidates) {
+    if (key in def) return (def as Record<string, unknown>)[key];
+  }
+  return undefined;
+}
+
+function pickSchemaObjectCandidate(def: Record<string, unknown>, keys: string[]): unknown {
+  for (const key of keys) {
+    const value = (def as Record<string, unknown>)[key];
+    if (value && typeof value === 'object' && !Array.isArray(value)) {
+      return value;
+    }
+  }
+  return undefined;
+}
+
+function isOptionalWrapperKind(kind: string | null): boolean {
+  if (!kind) return false;
+  const lower = kind.toLowerCase();
+  return lower.includes('optional') || lower.includes('default') || lower.includes('catch');
+}
+
+function unwrapOptionalForRequired(schema: unknown): { schema: unknown; optional: boolean } {
+  let current = schema;
+  let optional = false;
+  let guard = 0;
+  while (guard < 8) {
+    guard += 1;
+    const def = getValidatorSchemaDef(current);
+    const kind = getSchemaKind(def);
+    if (!def || !isOptionalWrapperKind(kind)) break;
+    optional = true;
+    const inner = pickSchemaChild(def);
+    if (!inner) break;
+    current = inner;
+  }
+  return { schema: current, optional };
+}
+
+function getObjectShape(def: Record<string, unknown>): Record<string, unknown> {
+  const rawShape = (def as Record<string, any>).shape;
+  if (typeof rawShape === 'function') {
+    try {
+      const resolved = rawShape();
+      return isRecord(resolved) ? (resolved as Record<string, unknown>) : {};
+    } catch {
+      return {};
+    }
+  }
+  return isRecord(rawShape) ? (rawShape as Record<string, unknown>) : {};
+}
+
+function mapPrimitiveKind(kind: string): JsonSchema | null {
+  const lower = kind.toLowerCase();
+  if (lower.includes('string')) return { type: 'string' };
+  if (lower.includes('number')) return { type: 'number' };
+  if (lower.includes('boolean')) return { type: 'boolean' };
+  if (lower.includes('bigint')) return { type: 'string' };
+  if (lower.includes('null')) return { type: 'null' };
+  if (lower.includes('any') || lower.includes('unknown') || lower.includes('never')) return {};
+  if (lower.includes('date')) return { type: 'string', format: 'date-time' };
+  if (lower.includes('custom')) return { type: 'object', additionalProperties: true };
+  return null;
+}
+
+// Universal fallback schema builder used when converter functions throw.
+// This keeps docs generation resilient and preserves routes in OpenAPI output.
+function buildIntrospectedFallbackJSONSchema(schema: unknown, seen: WeakSet<object> = new WeakSet()): JsonSchema {
+  if (!schema || typeof schema !== 'object') return {};
+  if (seen.has(schema as object)) return {};
+  seen.add(schema as object);
+
+  const def = getValidatorSchemaDef(schema);
+  const kind = getSchemaKind(def);
+  if (!def || !kind) return {};
+
+  const primitive = mapPrimitiveKind(kind);
+  if (primitive) return primitive;
+
+  const lower = kind.toLowerCase();
+
+  if (lower.includes('object')) {
+    const shape = getObjectShape(def);
+    const properties: Record<string, unknown> = {};
+    const required: string[] = [];
+
+    for (const [key, child] of Object.entries(shape)) {
+      const unwrapped = unwrapOptionalForRequired(child);
+      properties[key] = buildIntrospectedFallbackJSONSchema(unwrapped.schema, seen);
+      if (!unwrapped.optional) required.push(key);
+    }
+
+    const out: JsonSchema = {
+      type: 'object',
+      properties,
+      additionalProperties: true,
+    };
+
+    if (required.length > 0) {
+      out.required = required;
+    }
+
+    return out;
+  }
+
+  if (lower.includes('array')) {
+    const itemSchema = pickSchemaObjectCandidate(def, ['element', 'items', 'innerType', 'type']) ?? {};
+    return {
+      type: 'array',
+      items: buildIntrospectedFallbackJSONSchema(itemSchema, seen),
+    };
+  }
+
+  if (lower.includes('record')) {
+    const valueType = (def as Record<string, any>).valueType ?? (def as Record<string, any>).valueSchema;
+    return {
+      type: 'object',
+      additionalProperties: valueType ? buildIntrospectedFallbackJSONSchema(valueType, seen) : true,
+    };
+  }
+
+  if (lower.includes('tuple')) {
+    const items = Array.isArray((def as Record<string, any>).items)
+      ? ((def as Record<string, any>).items as unknown[])
+      : [];
+    const prefixItems = items.map((item) => buildIntrospectedFallbackJSONSchema(item, seen));
+    return {
+      type: 'array',
+      prefixItems,
+      minItems: prefixItems.length,
+      maxItems: prefixItems.length,
+    };
+  }
+
+  if (lower.includes('union')) {
+    const options =
+      ((def as Record<string, any>).options as unknown[]) ?? ((def as Record<string, any>).schemas as unknown[]) ?? [];
+    if (!Array.isArray(options) || options.length === 0) return {};
+    return {
+      anyOf: options.map((option) => buildIntrospectedFallbackJSONSchema(option, seen)),
+    };
+  }
+
+  if (lower.includes('intersection')) {
+    const left = (def as Record<string, any>).left;
+    const right = (def as Record<string, any>).right;
+    if (!left || !right) return {};
+    return {
+      allOf: [buildIntrospectedFallbackJSONSchema(left, seen), buildIntrospectedFallbackJSONSchema(right, seen)],
+    };
+  }
+
+  if (lower.includes('enum')) {
+    const values = (def as Record<string, any>).values;
+    if (Array.isArray(values)) return { enum: values };
+    if (values && typeof values === 'object') return { enum: Object.values(values as Record<string, unknown>) };
+    return {};
+  }
+
+  if (lower.includes('literal')) {
+    const value = (def as Record<string, any>).value;
+    if (value === undefined) return {};
+    const valueType = value === null ? 'null' : typeof value;
+    if (valueType === 'string' || valueType === 'number' || valueType === 'boolean' || valueType === 'null') {
+      return { type: valueType, const: value };
+    }
+    return { const: value };
+  }
+
+  if (lower.includes('nullable')) {
+    const inner = pickSchemaChild(def);
+    if (!inner) return {};
+    return {
+      anyOf: [buildIntrospectedFallbackJSONSchema(inner, seen), { type: 'null' }],
+    };
+  }
+
+  if (lower.includes('lazy')) {
+    const getter = (def as Record<string, any>).getter;
+    if (typeof getter !== 'function') return {};
+    try {
+      return buildIntrospectedFallbackJSONSchema(getter(), seen);
+    } catch {
+      return {};
+    }
+  }
+
+  const child = pickSchemaChild(def);
+  if (child) return buildIntrospectedFallbackJSONSchema(child, seen);
+
+  return {};
+}
+
+function buildFallbackJSONSchema(schema: unknown): JsonSchema {
+  const def = getValidatorSchemaDef(schema);
+  if (!def) return {};
+  return buildIntrospectedFallbackJSONSchema(schema);
 }
 
 function addStructuredInputToOperation(operation: Record<string, any>, inputJSONSchema: JsonSchema): void {

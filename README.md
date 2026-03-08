@@ -1,4 +1,5 @@
 # vector
+
 <img width="1640" height="664" alt="vector-bw-banner" src="https://github.com/user-attachments/assets/afeb8c6e-0729-4fea-9054-7972f8af9365" />
 
 Blazing fast, secure, and developer-friendly API framework for Bun.
@@ -76,6 +77,24 @@ Notes:
 - `start` uses the same config and route options as `dev`.
 - `start` sets `NODE_ENV=production`.
 - File watching is only enabled for `dev`.
+
+## Programmatic Start
+
+```ts
+import { startVector } from "vector-framework";
+
+const app = await startVector({
+  configPath: "./vector.config.ts",
+});
+
+console.log(`Listening on ${app.server.hostname}:${app.server.port}`);
+```
+
+Notes:
+
+- `startVector()` does not enable file watching.
+- `app.stop()` stops immediately (used for dev reload flows).
+- `await app.shutdown()` performs graceful shutdown and runs config `shutdown` hook.
 
 ## Optional: Validation + OpenAPI
 

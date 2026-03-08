@@ -82,10 +82,12 @@ interface VectorConfigSchema {
 ## Runtime Note
 
 `dev` and `start` both load your config file (`vector.config.ts` by default, or `--config <path>`).
+`startVector()` also loads the same config file by default (or `configPath` override).
 
 - `start` uses production mode (`NODE_ENV=production`).
 - Function-based handlers and middleware (`auth`, `cache`, `before`, `after`, function `cors.origin`) are available in both modes.
-- `startup` runs before route discovery and before the server begins listening.
+- `startup` runs before route discovery (if enabled) and before the server begins listening.
+- Lifecycle order is: load config -> set auth/cache handlers -> run `startup` -> discover routes (if enabled) -> listen.
 - In `dev` with file watching, `startup` runs again on each restart triggered by code changes.
 - `shutdown` runs when the process receives `SIGINT` or `SIGTERM`, after the server stops accepting new requests and before exit.
 

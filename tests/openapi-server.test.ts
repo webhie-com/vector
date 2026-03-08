@@ -4,6 +4,7 @@ import { CacheManager } from '../src/cache/manager';
 import { VectorRouter } from '../src/core/router';
 import { VectorServer } from '../src/core/server';
 import { MiddlewareManager } from '../src/middleware/manager';
+import { z } from 'zod';
 
 function makeRouter() {
   const middleware = new MiddlewareManager();
@@ -85,6 +86,46 @@ describe('OpenAPI server endpoints', () => {
     expect(html).not.toContain('cdn.tailwindcss.com');
     expect(html).toContain('id="sidebar-nav"');
     expect(html).toContain('/openapi.json');
+  });
+
+  it('renders response schemas in docs UI for routes with schema.output', async () => {
+    const router = makeRouter();
+    const outputSchema = z.object({
+      id: z.string(),
+      email: z.string().email(),
+    });
+
+    router.route(
+      {
+        method: 'POST',
+        path: '/users',
+        expose: true,
+        schema: {
+          output: {
+            201: outputSchema,
+          },
+        },
+      },
+      async () => ({ id: 'u_1', email: 'dev@example.com' })
+    );
+
+    const server = new VectorServer(router, {
+      development: true,
+      openapi: {
+        enabled: true,
+        path: '/openapi.json',
+        docs: {
+          enabled: true,
+          path: '/docs',
+        },
+      },
+    });
+
+    const docsResponse = (server as any).tryHandleOpenAPIRequest(new Request('http://localhost/docs')) as Response;
+    const html = await docsResponse.text();
+    expect(html).toContain('Response Schemas');
+    expect(html).toContain('renderResponseSchemasSection(op.responses)');
+    expect(html).toContain('"responses":{"201"');
   });
 
   it('filters docs UI to configured docs.exposePaths while keeping openapi.json complete', async () => {
