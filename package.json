@@ -81,7 +81,7 @@
     "build:lib": "bun run build:clean && bun run build:ts && bun run build:bundle && bun run build:cli",
     "build:clean": "rm -rf dist",
     "build:ts": "tsc",
-    "build:bundle": "bun build src/index.ts --format esm --minify --outfile dist/index.mjs && bun build src/index.ts --format cjs --minify --outfile dist/index.js",
+    "build:bundle": "bun build src/index.ts --target bun --format esm --minify --outfile dist/index.mjs && bun build src/index.ts --target bun --format cjs --minify --outfile dist/index.js",
     "build:cli": "bun build src/cli/index.ts --target bun --outfile dist/cli.js",
     "local:cli:build": "bun run build:lib",
     "local:cli:dev": "bun run dist/cli.js dev --config ./vector.config.ts",

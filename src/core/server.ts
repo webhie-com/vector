@@ -338,6 +338,17 @@ export class VectorServer<TTypes extends VectorTypes = DefaultVectorTypes> {
     );
   }
 
+  private shouldLogOpenAPIConversionWarnings(): boolean {
+    const nodeEnv = typeof Bun !== 'undefined' ? Bun.env.NODE_ENV : process.env.NODE_ENV;
+    const isDevelopment = this.config.development !== false && nodeEnv !== 'production';
+    if (!isDevelopment) {
+      return false;
+    }
+
+    const logLevel = typeof Bun !== 'undefined' ? Bun.env.LOG_LEVEL : process.env.LOG_LEVEL;
+    return typeof logLevel === 'string' && logLevel.toLowerCase() === 'debug';
+  }
+
   private getOpenAPIDocument(): Record<string, unknown> {
     if (this.openapiDocCache) {
       return this.openapiDocCache;
@@ -351,8 +362,10 @@ export class VectorServer<TTypes extends VectorTypes = DefaultVectorTypes> {
     });
 
     if (!this.openapiWarningsLogged && result.warnings.length > 0) {
-      for (const warning of result.warnings) {
-        console.warn(warning);
+      if (this.shouldLogOpenAPIConversionWarnings()) {
+        for (const warning of result.warnings) {
+          console.warn(warning);
+        }
       }
       this.openapiWarningsLogged = true;
     }

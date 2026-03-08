@@ -36,10 +36,10 @@ describe('OpenAPI schema matrix', () => {
     expect(responseSchema.properties.metadata.additionalProperties).toBe(true);
   });
 
-  it('arktype: falls back to {} on jsonSchema conversion failures', () => {
+  it('arktype: uses draft-07 converter fallback when openapi-3.0 target is unsupported', () => {
     const schema = arktype({
-      createdAt: 'Date',
-      metadata: 'unknown',
+      status: '"NEW"|"ACTIVE"',
+      maybe: 'string|null',
     });
 
     const routes: RegisteredRouteDefinition[] = [
@@ -60,14 +60,21 @@ describe('OpenAPI schema matrix', () => {
       'application/json'
     ].schema;
 
-    expect(responseSchema).toEqual({});
-    expect(result.warnings.length).toBeGreaterThan(0);
+    expect(responseSchema.properties.status.enum).toEqual(expect.arrayContaining(['NEW', 'ACTIVE']));
+    expect(responseSchema.properties.maybe.anyOf).toBeDefined();
+    expect(result.warnings.some((warning) => warning.includes('using draft-07 conversion output'))).toBe(true);
+    expect(result.document.openapi).toBe('3.0.3');
   });
 
-  it('valibot: keeps route docs even when jsonSchema converters are unavailable', () => {
-    const schema = v.object({
+  it('valibot: builds fallback schemas when jsonSchema converters are unavailable', () => {
+    const outputSchema = v.object({
       createdAt: v.date(),
+      status: v.picklist(['NEW', 'ACTIVE']),
+      maybe: v.nullable(v.string()),
       metadata: v.custom(() => true),
+    });
+    const inputSchema = v.object({
+      body: outputSchema,
     });
 
     const routes: RegisteredRouteDefinition[] = [
@@ -79,8 +86,8 @@ describe('OpenAPI schema matrix', () => {
           path: '/matrix-valibot',
           expose: true,
           schema: {
-            input: schema as any,
-            output: { 200: schema as any },
+            input: inputSchema as any,
+            output: { 200: outputSchema as any },
           },
         },
       },
@@ -90,6 +97,72 @@ describe('OpenAPI schema matrix', () => {
     const operation = (result.document.paths as any)['/matrix-valibot'].post;
 
     expect(operation).toBeDefined();
-    expect(operation.responses['200']).toEqual({ description: 'OK' });
+    expect(operation.requestBody.content['application/json'].schema.properties.createdAt.format).toBe('date-time');
+    expect(operation.requestBody.content['application/json'].schema.properties.status.enum).toEqual(
+      expect.arrayContaining(['NEW', 'ACTIVE'])
+    );
+    expect(operation.requestBody.content['application/json'].schema.properties.maybe.anyOf).toBeDefined();
+    expect(operation.responses['200'].content['application/json'].schema.properties.metadata.type).toBe('object');
+  });
+
+  it('zod: preserves enum values in fallback path', () => {
+    const schema = z.object({
+      createdAt: z.date(),
+      status: z.enum(['NEW', 'ACTIVE']),
+    });
+
+    const routes: RegisteredRouteDefinition[] = [
+      {
+        method: 'GET',
+        path: '/matrix-zod-enum',
+        options: {
+          method: 'GET',
+          path: '/matrix-zod-enum',
+          expose: true,
+          schema: { output: { 200: schema as any } },
+        },
+      },
+    ];
+
+    const result = generateOpenAPIDocument(routes, { target: 'openapi-3.0' });
+    const responseSchema = (result.document.paths as any)['/matrix-zod-enum'].get.responses['200'].content[
+      'application/json'
+    ].schema;
+
+    expect(responseSchema.properties.status.type).toBe('string');
+    expect(responseSchema.properties.status.enum).toEqual(expect.arrayContaining(['NEW', 'ACTIVE']));
+  });
+
+  it('arktype: keeps equivalent schema shape between openapi-3.0 fallback and draft-07 target', () => {
+    const schema = arktype({
+      status: '"NEW"|"ACTIVE"',
+      maybe: 'string|null',
+    });
+
+    const routes: RegisteredRouteDefinition[] = [
+      {
+        method: 'GET',
+        path: '/matrix-ark-equivalence',
+        options: {
+          method: 'GET',
+          path: '/matrix-ark-equivalence',
+          expose: true,
+          schema: { output: { 200: schema as any } },
+        },
+      },
+    ];
+
+    const openapiResult = generateOpenAPIDocument(routes, { target: 'openapi-3.0' });
+    const draftResult = generateOpenAPIDocument(routes, { target: 'draft-07' });
+
+    const openapiSchema = (openapiResult.document.paths as any)['/matrix-ark-equivalence'].get.responses['200'].content[
+      'application/json'
+    ].schema;
+    const draftSchema = (draftResult.document.paths as any)['/matrix-ark-equivalence'].get.responses['200'].content[
+      'application/json'
+    ].schema;
+
+    expect(openapiSchema.properties.status.enum).toEqual(draftSchema.properties.status.enum);
+    expect(openapiSchema.properties.maybe.anyOf).toEqual(draftSchema.properties.maybe.anyOf);
   });
 });
