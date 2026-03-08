@@ -86,8 +86,8 @@ interface VectorConfigSchema {
 
 - `start` uses production mode (`NODE_ENV=production`).
 - Function-based handlers and middleware (`auth`, `cache`, `before`, `after`, function `cors.origin`) are available in both modes.
-- `startup` runs before route discovery and before the server begins listening.
-- Lifecycle order is: load config -> set auth/cache handlers -> run `startup` -> discover routes -> listen.
+- `startup` runs before route discovery (if enabled) and before the server begins listening.
+- Lifecycle order is: load config -> set auth/cache handlers -> run `startup` -> discover routes (if enabled) -> listen.
 - In `dev` with file watching, `startup` runs again on each restart triggered by code changes.
 - `shutdown` runs when the process receives `SIGINT` or `SIGTERM`, after the server stops accepting new requests and before exit.
 

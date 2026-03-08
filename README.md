@@ -87,7 +87,7 @@ const app = await startVector({
   configPath: "./vector.config.ts",
 });
 
-console.log(`Listening on ${app.config.hostname}:${app.config.port}`);
+console.log(`Listening on ${app.server.hostname}:${app.server.port}`);
 ```
 
 Notes:

@@ -1,4 +1,5 @@
 import { ConfigLoader } from './core/config-loader';
+import { DEFAULT_CONFIG } from './constants';
 import { getVectorInstance } from './core/vector';
 import type { DefaultVectorTypes, StartVectorOptions, StartedVectorApp, VectorTypes } from './types';
 
@@ -32,10 +33,17 @@ export async function startVector<TTypes extends VectorTypes = DefaultVectorType
   vector.setCacheHandler(resolvedCacheHandler ?? null);
 
   const server = await vector.startServer(config);
+  const effectiveConfig = {
+    ...config,
+    port: server.port ?? config.port ?? DEFAULT_CONFIG.PORT,
+    hostname: server.hostname || config.hostname || DEFAULT_CONFIG.HOSTNAME,
+    reusePort: config.reusePort !== false,
+    idleTimeout: config.idleTimeout || 60,
+  };
 
   return {
     server,
-    config,
+    config: effectiveConfig,
     stop: () => vector.stop(),
     shutdown: () => vector.shutdown(),
   };

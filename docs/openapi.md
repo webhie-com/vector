@@ -74,6 +74,49 @@ openapi: {
 - `GET /openapi.json`: returns generated document when enabled
 - `GET /docs`: optional built-in docs UI when `openapi.docs.enabled` is `true`
 
+## Simple Output Schema Example
+
+```ts
+import { route } from "vector-framework";
+import { z } from "zod";
+
+const CreateUserInput = z.object({
+  body: z.object({
+    email: z.string().email(),
+  }),
+});
+
+const CreateUserOutput = z.object({
+  id: z.string(),
+  email: z.string().email(),
+});
+
+export const createUser = route(
+  {
+    method: "POST",
+    path: "/users",
+    expose: true,
+    schema: {
+      input: CreateUserInput,
+      output: {
+        201: CreateUserOutput,
+      },
+    },
+  },
+  async (req) => {
+    return {
+      id: "u_1",
+      email: req.content.email,
+    };
+  },
+);
+```
+
+Expected result:
+
+- `/openapi.json` includes `paths./users.post.responses.201.content.application/json.schema`
+- `/docs` shows a **Response Schemas** section for that endpoint
+
 ## Notes
 
 - Routes matching the OpenAPI JSON path are excluded from generated route docs.
@@ -82,3 +125,7 @@ openapi: {
 - If a user route conflicts with a reserved path, server startup throws a clear error.
 - No-body response statuses (e.g. `204`) are emitted without response content.
 - Greedy route params and wildcards are normalized for OpenAPI templates.
+- If a schema converter throws for unsupported types, Vector now falls back instead of dropping the route:
+  - `z.date()` is mapped to `{ type: "string", format: "date-time" }`
+  - `z.custom()` is mapped to `{ type: "object", additionalProperties: true }`
+  - unknown converter failures fall back to `{}` with a warning

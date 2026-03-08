@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'bun:test';
 import { generateOpenAPIDocument } from '../src/openapi/generator';
 import type { RegisteredRouteDefinition } from '../src/core/router';
+import { z } from 'zod';
 
 function schemaWithJson(input: Record<string, unknown>, output?: Record<string, unknown>) {
   return {
@@ -224,6 +225,221 @@ describe('OpenAPI generator', () => {
     const paths = result.document.paths as Record<string, any>;
     expect(paths['/broken']).toBeDefined();
     expect(paths['/broken'].post.tags).toEqual(['broken']);
+  });
+
+  it('falls back z.date() fields to string date-time when converter throws', () => {
+    const outputSchema = z.object({
+      createdAt: z.date(),
+      id: z.string(),
+    });
+
+    const routes: RegisteredRouteDefinition[] = [
+      {
+        method: 'GET',
+        path: '/with-date',
+        options: {
+          method: 'GET',
+          path: '/with-date',
+          expose: true,
+          schema: {
+            output: {
+              200: outputSchema as any,
+            },
+          },
+        },
+      },
+    ];
+
+    const result = generateOpenAPIDocument(routes, {
+      target: 'openapi-3.0',
+    });
+
+    const paths = result.document.paths as Record<string, any>;
+    const responseSchema = paths['/with-date'].get.responses['200'].content['application/json'].schema;
+    expect(responseSchema.properties.createdAt.type).toBe('string');
+    expect(responseSchema.properties.createdAt.format).toBe('date-time');
+  });
+
+  it('falls back z.custom() fields to permissive object when converter throws', () => {
+    const outputSchema = z.object({
+      metadata: z.custom<unknown>(),
+    });
+
+    const routes: RegisteredRouteDefinition[] = [
+      {
+        method: 'GET',
+        path: '/with-custom',
+        options: {
+          method: 'GET',
+          path: '/with-custom',
+          expose: true,
+          schema: {
+            output: {
+              200: outputSchema as any,
+            },
+          },
+        },
+      },
+    ];
+
+    const result = generateOpenAPIDocument(routes, {
+      target: 'openapi-3.0',
+    });
+
+    const paths = result.document.paths as Record<string, any>;
+    const responseSchema = paths['/with-custom'].get.responses['200'].content['application/json'].schema;
+    expect(responseSchema.properties.metadata.type).toBe('object');
+    expect(responseSchema.properties.metadata.additionalProperties).toBe(true);
+  });
+
+  it('falls back to {} for unknown non-zod converter failures', () => {
+    const unknownSchema = {
+      '~standard': {
+        version: 1 as const,
+        vendor: 'custom-lib',
+        validate: async (value: unknown) => ({ value }),
+        jsonSchema: {
+          input: () => {
+            throw new Error('unsupported type in custom lib');
+          },
+          output: () => {
+            throw new Error('unsupported type in custom lib');
+          },
+        },
+      },
+    };
+
+    const routes: RegisteredRouteDefinition[] = [
+      {
+        method: 'POST',
+        path: '/unknown-fallback',
+        options: {
+          method: 'POST',
+          path: '/unknown-fallback',
+          expose: true,
+          schema: {
+            input: unknownSchema as any,
+            output: {
+              200: unknownSchema as any,
+            },
+          },
+        },
+      },
+    ];
+
+    const result = generateOpenAPIDocument(routes, {
+      target: 'openapi-3.0',
+    });
+
+    const paths = result.document.paths as Record<string, any>;
+    expect(paths['/unknown-fallback'].post.requestBody.content['application/json'].schema).toEqual({});
+    expect(paths['/unknown-fallback'].post.responses['200'].content['application/json'].schema).toEqual({});
+    expect(result.warnings.length).toBeGreaterThan(0);
+  });
+
+  it('maps nested date/custom fields inside arrays and objects during fallback', () => {
+    const outputSchema = z.object({
+      events: z.array(
+        z.object({
+          at: z.date(),
+          payload: z.custom<unknown>(),
+        })
+      ),
+    });
+
+    const routes: RegisteredRouteDefinition[] = [
+      {
+        method: 'GET',
+        path: '/nested-fallback',
+        options: {
+          method: 'GET',
+          path: '/nested-fallback',
+          expose: true,
+          schema: {
+            output: { 200: outputSchema as any },
+          },
+        },
+      },
+    ];
+
+    const result = generateOpenAPIDocument(routes, {
+      target: 'openapi-3.0',
+    });
+
+    const paths = result.document.paths as Record<string, any>;
+    const schema = paths['/nested-fallback'].get.responses['200'].content['application/json'].schema;
+    const eventItem = schema.properties.events.items;
+    expect(eventItem.properties.at.type).toBe('string');
+    expect(eventItem.properties.at.format).toBe('date-time');
+    expect(eventItem.properties.payload.type).toBe('object');
+    expect(eventItem.properties.payload.additionalProperties).toBe(true);
+  });
+
+  it('preserves required vs optional fields in fallback object schemas', () => {
+    const outputSchema = z.object({
+      id: z.string(),
+      createdAt: z.date(),
+      note: z.string().optional(),
+    });
+
+    const routes: RegisteredRouteDefinition[] = [
+      {
+        method: 'GET',
+        path: '/required-optional',
+        options: {
+          method: 'GET',
+          path: '/required-optional',
+          expose: true,
+          schema: {
+            output: { 200: outputSchema as any },
+          },
+        },
+      },
+    ];
+
+    const result = generateOpenAPIDocument(routes, {
+      target: 'openapi-3.0',
+    });
+
+    const paths = result.document.paths as Record<string, any>;
+    const schema = paths['/required-optional'].get.responses['200'].content['application/json'].schema;
+    expect(schema.required).toEqual(expect.arrayContaining(['id', 'createdAt']));
+    expect(schema.required).not.toContain('note');
+  });
+
+  it('falls back for input schema and still emits requestBody', () => {
+    const inputSchema = z.object({
+      body: z.object({
+        createdAt: z.date(),
+        metadata: z.custom<unknown>().optional(),
+      }),
+    });
+
+    const routes: RegisteredRouteDefinition[] = [
+      {
+        method: 'POST',
+        path: '/input-fallback',
+        options: {
+          method: 'POST',
+          path: '/input-fallback',
+          expose: true,
+          schema: {
+            input: inputSchema as any,
+          },
+        },
+      },
+    ];
+
+    const result = generateOpenAPIDocument(routes, {
+      target: 'openapi-3.0',
+    });
+
+    const paths = result.document.paths as Record<string, any>;
+    const reqSchema = paths['/input-fallback'].post.requestBody.content['application/json'].schema;
+    expect(reqSchema.properties.createdAt.type).toBe('string');
+    expect(reqSchema.properties.createdAt.format).toBe('date-time');
+    expect(reqSchema.properties.metadata.type).toBe('object');
+    expect(reqSchema.properties.metadata.additionalProperties).toBe(true);
   });
 
   it('uses explicit schema.tag when provided', () => {

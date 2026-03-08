@@ -14,7 +14,10 @@ describe('startVector', () => {
     Vector.resetInstance();
     originalStart = VectorServer.prototype.start;
     (VectorServer.prototype as any).start = async function () {
-      return { port: 3000 } as any;
+      return {
+        port: (this as any).config?.port ?? 3000,
+        hostname: (this as any).config?.hostname ?? 'localhost',
+      } as any;
     };
   });
 
@@ -46,6 +49,10 @@ describe('startVector', () => {
     const vector = getVectorInstance();
 
     expect(app.server.port).toBe(3000);
+    expect(app.config.port).toBe(3000);
+    expect(app.config.hostname).toBe('localhost');
+    expect(app.config.reusePort).toBe(true);
+    expect(app.config.idleTimeout).toBe(60);
     expect(typeof app.stop).toBe('function');
     expect(typeof app.shutdown).toBe('function');
     expect(vector.getProtectedHandler()).not.toBeNull();
@@ -80,6 +87,9 @@ describe('startVector', () => {
     });
 
     expect(app.config.port).toBe(3333);
+    expect(app.config.hostname).toBe('localhost');
+    expect(app.config.reusePort).toBe(true);
+    expect(app.config.idleTimeout).toBe(60);
     app.stop();
   });
 

@@ -1,4 +1,4 @@
-// Public exports for route definitions only
+// Public exports for route definitions and Vector startup API
 import { route } from './http';
 import { startVector } from './start-vector';
 
