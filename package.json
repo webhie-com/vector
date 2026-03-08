@@ -6,7 +6,7 @@
     "type": "git",
     "url": "https://github.com/webhie-com/vector.git"
   },
-  "main": "./dist/index.js",
+  "main": "./dist/index.cjs",
   "module": "./dist/index.mjs",
   "dependencies": {},
   "devDependencies": {
@@ -26,22 +26,16 @@
     ".": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.mjs",
-      "require": "./dist/index.js"
-    },
-    "./middleware": {
-      "types": "./dist/middleware/index.d.ts",
-      "import": "./dist/middleware/index.mjs",
-      "require": "./dist/middleware/index.js"
+      "require": "./dist/index.cjs"
     },
     "./types": {
       "types": "./dist/types/index.d.ts",
-      "import": "./dist/types/index.mjs",
-      "require": "./dist/types/index.js"
+      "default": "./dist/types/index.js"
     },
     "./errors": {
       "types": "./dist/errors/index.d.ts",
-      "import": "./dist/errors/index.mjs",
-      "require": "./dist/errors/index.js"
+      "import": "./dist/errors/index.js",
+      "require": "./dist/errors/index.cjs"
     }
   },
   "bin": {
@@ -81,7 +75,7 @@
     "build:lib": "bun run build:clean && bun run build:ts && bun run build:bundle && bun run build:cli",
     "build:clean": "rm -rf dist",
     "build:ts": "tsc",
-    "build:bundle": "bun build src/index.ts --format esm --minify --outfile dist/index.mjs && bun build src/index.ts --format cjs --minify --outfile dist/index.js",
+    "build:bundle": "bun build src/index.ts --target bun --format esm --minify --outfile dist/index.mjs && bun build src/index.ts --target bun --format cjs --minify --outfile dist/index.cjs && bun build src/errors/index.ts --target bun --format cjs --minify --outfile dist/errors/index.cjs",
     "build:cli": "bun build src/cli/index.ts --target bun --outfile dist/cli.js",
     "local:cli:build": "bun run build:lib",
     "local:cli:dev": "bun run dist/cli.js dev --config ./vector.config.ts",
@@ -90,7 +84,7 @@
     "test:unit": "bun test tests/*.test.ts",
     "test:watch": "bun test --watch tests/*.test.ts",
     "test:coverage": "bun test --coverage tests/*.test.ts",
-    "test:e2e": "bun test --max-concurrency 1 tests/e2e/e2e.test.ts tests/e2e/zod-io.e2e.test.ts",
+    "test:e2e": "bun test --max-concurrency 1 tests/e2e/e2e.test.ts tests/e2e/zod-io.e2e.test.ts tests/e2e/package-exports.test.ts",
     "test:load": "bun run tests/e2e/load.test.ts",
     "test:soak": "bun run tests/e2e/soak.test.ts",
     "test:benchmark": "bun run tests/e2e/benchmark.test.ts",

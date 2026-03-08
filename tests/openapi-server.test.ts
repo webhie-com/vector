@@ -36,6 +36,142 @@ describe('OpenAPI server endpoints', () => {
     expect(docsResponse).toBeNull();
   });
 
+  it('suppresses openapi conversion warnings when not in debug logging mode', async () => {
+    const previousNodeEnv = process.env.NODE_ENV;
+    const previousLogLevel = process.env.LOG_LEVEL;
+    process.env.NODE_ENV = 'development';
+    delete process.env.LOG_LEVEL;
+
+    const originalWarn = console.warn;
+    const warnCalls: string[] = [];
+    console.warn = (...args: any[]) => {
+      warnCalls.push(args.map((arg) => String(arg)).join(' '));
+    };
+
+    try {
+      const router = makeRouter();
+      const throwingOutputSchema = {
+        '~standard': {
+          version: 1 as const,
+          vendor: 'test',
+          validate: async (value: unknown) => ({ value }),
+          jsonSchema: {
+            input: () => ({ type: 'object' }),
+            output: () => {
+              throw new Error('not supported');
+            },
+          },
+        },
+      };
+
+      router.route(
+        {
+          method: 'GET',
+          path: '/warn',
+          expose: true,
+          schema: {
+            output: {
+              200: throwingOutputSchema as any,
+            },
+          },
+        },
+        async () => ({ ok: true })
+      );
+
+      const server = new VectorServer(router, {
+        development: true,
+        openapi: {
+          enabled: true,
+          path: '/openapi.json',
+        },
+      });
+
+      const response = (server as any).tryHandleOpenAPIRequest(new Request('http://localhost/openapi.json'));
+      expect(response).toBeInstanceOf(Response);
+      expect(warnCalls.length).toBe(0);
+    } finally {
+      console.warn = originalWarn;
+      if (previousNodeEnv === undefined) {
+        delete process.env.NODE_ENV;
+      } else {
+        process.env.NODE_ENV = previousNodeEnv;
+      }
+      if (previousLogLevel === undefined) {
+        delete process.env.LOG_LEVEL;
+      } else {
+        process.env.LOG_LEVEL = previousLogLevel;
+      }
+    }
+  });
+
+  it('logs openapi conversion warnings in development when LOG_LEVEL=DEBUG', async () => {
+    const previousNodeEnv = process.env.NODE_ENV;
+    const previousLogLevel = process.env.LOG_LEVEL;
+    process.env.NODE_ENV = 'development';
+    process.env.LOG_LEVEL = 'DEBUG';
+
+    const originalWarn = console.warn;
+    const warnCalls: string[] = [];
+    console.warn = (...args: any[]) => {
+      warnCalls.push(args.map((arg) => String(arg)).join(' '));
+    };
+
+    try {
+      const router = makeRouter();
+      const throwingOutputSchema = {
+        '~standard': {
+          version: 1 as const,
+          vendor: 'test',
+          validate: async (value: unknown) => ({ value }),
+          jsonSchema: {
+            input: () => ({ type: 'object' }),
+            output: () => {
+              throw new Error('not supported');
+            },
+          },
+        },
+      };
+
+      router.route(
+        {
+          method: 'GET',
+          path: '/warn-debug',
+          expose: true,
+          schema: {
+            output: {
+              200: throwingOutputSchema as any,
+            },
+          },
+        },
+        async () => ({ ok: true })
+      );
+
+      const server = new VectorServer(router, {
+        development: true,
+        openapi: {
+          enabled: true,
+          path: '/openapi.json',
+        },
+      });
+
+      const response = (server as any).tryHandleOpenAPIRequest(new Request('http://localhost/openapi.json'));
+      expect(response).toBeInstanceOf(Response);
+      expect(warnCalls.some((msg) => msg.includes('Failed output schema conversion for /warn-debug (200)'))).toBe(true);
+    } finally {
+      console.warn = originalWarn;
+      if (previousNodeEnv === undefined) {
+        delete process.env.NODE_ENV;
+      } else {
+        process.env.NODE_ENV = previousNodeEnv;
+      }
+      if (previousLogLevel === undefined) {
+        delete process.env.LOG_LEVEL;
+      } else {
+        process.env.LOG_LEVEL = previousLogLevel;
+      }
+    }
+  });
+
   it('disables /openapi.json by default in production', () => {
     const router = makeRouter();
     router.route({ method: 'GET', path: '/health', expose: true }, async () => ({ ok: true }));

@@ -131,12 +131,18 @@ function convertInputSchema(
   warnings: string[]
 ): JsonSchema | null {
   if (!isJSONSchemaCapable(inputSchema)) {
-    return null;
+    const fallback = buildFallbackJSONSchema(inputSchema);
+    return isEmptyObjectSchema(fallback) ? null : fallback;
   }
 
   try {
     return inputSchema['~standard'].jsonSchema.input({ target });
   } catch (error) {
+    const alternate = tryAlternateTargetConversion(inputSchema, 'input', target, error, routePath, undefined, warnings);
+    if (alternate) {
+      return alternate;
+    }
+
     warnings.push(
       `[OpenAPI] Failed input schema conversion for ${routePath}: ${
         error instanceof Error ? error.message : String(error)
@@ -155,12 +161,26 @@ function convertOutputSchema(
   warnings: string[]
 ): JsonSchema | null {
   if (!isJSONSchemaCapable(outputSchema)) {
-    return null;
+    const fallback = buildFallbackJSONSchema(outputSchema);
+    return isEmptyObjectSchema(fallback) ? null : fallback;
   }
 
   try {
     return outputSchema['~standard'].jsonSchema.output({ target });
   } catch (error) {
+    const alternate = tryAlternateTargetConversion(
+      outputSchema,
+      'output',
+      target,
+      error,
+      routePath,
+      statusCode,
+      warnings
+    );
+    if (alternate) {
+      return alternate;
+    }
+
     warnings.push(
       `[OpenAPI] Failed output schema conversion for ${routePath} (${statusCode}): ${
         error instanceof Error ? error.message : String(error)
@@ -178,6 +198,43 @@ function isEmptyObjectSchema(value: unknown): value is Record<string, never> {
   return isRecord(value) && Object.keys(value).length === 0;
 }
 
+function tryAlternateTargetConversion(
+  schema: unknown,
+  kind: 'input' | 'output',
+  target: string,
+  originalError: unknown,
+  routePath: string,
+  statusCode: string | undefined,
+  warnings: string[]
+): JsonSchema | null {
+  if (!isJSONSchemaCapable(schema)) {
+    return null;
+  }
+
+  const message = originalError instanceof Error ? originalError.message : String(originalError);
+  const unsupportedOpenAPITarget =
+    target === 'openapi-3.0' &&
+    message.includes("target 'openapi-3.0' is not supported") &&
+    message.includes('draft-2020-12') &&
+    message.includes('draft-07');
+
+  if (!unsupportedOpenAPITarget) {
+    return null;
+  }
+
+  try {
+    const converted = schema['~standard'].jsonSchema[kind]({ target: 'draft-07' });
+    warnings.push(
+      kind === 'input'
+        ? `[OpenAPI] ${routePath} converter does not support openapi-3.0 target; using draft-07 conversion output.`
+        : `[OpenAPI] ${routePath} (${statusCode}) converter does not support openapi-3.0 target; using draft-07 conversion output.`
+    );
+    return converted;
+  } catch {
+    return null;
+  }
+}
+
 // Best-effort extraction of internal schema definition metadata from common
 // standards-compatible validators. If unavailable, callers should fall back to {}.
 function getValidatorSchemaDef(schema: unknown): Record<string, unknown> | null {
@@ -186,6 +243,9 @@ function getValidatorSchemaDef(schema: unknown): Record<string, unknown> | null 
   if (isRecord(value._def)) return value._def as Record<string, unknown>;
   if (isRecord(value._zod) && isRecord((value._zod as Record<string, any>).def)) {
     return (value._zod as Record<string, any>).def as Record<string, unknown>;
+  }
+  if (value.kind === 'schema' && typeof value.type === 'string') {
+    return value as Record<string, unknown>;
   }
   return null;
 }
@@ -200,7 +260,7 @@ function getSchemaKind(def: Record<string, unknown> | null): string | null {
 }
 
 function pickSchemaChild(def: Record<string, unknown>): unknown {
-  const candidates = ['innerType', 'schema', 'type', 'out', 'in', 'left', 'right'];
+  const candidates = ['innerType', 'schema', 'type', 'out', 'in', 'left', 'right', 'wrapped', 'element'];
   for (const key of candidates) {
     if (key in def) return (def as Record<string, unknown>)[key];
   }
@@ -241,6 +301,11 @@ function unwrapOptionalForRequired(schema: unknown): { schema: unknown; optional
 }
 
 function getObjectShape(def: Record<string, unknown>): Record<string, unknown> {
+  const entries = (def as Record<string, any>).entries;
+  if (isRecord(entries)) {
+    return entries as Record<string, unknown>;
+  }
+
   const rawShape = (def as Record<string, any>).shape;
   if (typeof rawShape === 'function') {
     try {
@@ -253,13 +318,39 @@ function getObjectShape(def: Record<string, unknown>): Record<string, unknown> {
   return isRecord(rawShape) ? (rawShape as Record<string, unknown>) : {};
 }
 
+function extractEnumValues(def: Record<string, unknown>): unknown[] {
+  const values = (def as Record<string, any>).values;
+  if (Array.isArray(values)) return values;
+  if (values && typeof values === 'object') return Object.values(values as Record<string, unknown>);
+
+  const entries = (def as Record<string, any>).entries;
+  if (entries && typeof entries === 'object') return Object.values(entries as Record<string, unknown>);
+
+  const enumObject = (def as Record<string, any>).enum;
+  if (enumObject && typeof enumObject === 'object') return Object.values(enumObject as Record<string, unknown>);
+
+  const options = (def as Record<string, any>).options;
+  if (Array.isArray(options)) {
+    return options
+      .map((item) => {
+        if (item && typeof item === 'object' && 'unit' in (item as Record<string, unknown>)) {
+          return (item as Record<string, unknown>).unit;
+        }
+        return item;
+      })
+      .filter((item) => item !== undefined);
+  }
+
+  return [];
+}
+
 function mapPrimitiveKind(kind: string): JsonSchema | null {
   const lower = kind.toLowerCase();
   if (lower.includes('string')) return { type: 'string' };
   if (lower.includes('number')) return { type: 'number' };
   if (lower.includes('boolean')) return { type: 'boolean' };
   if (lower.includes('bigint')) return { type: 'string' };
-  if (lower.includes('null')) return { type: 'null' };
+  if (lower === 'null' || lower.includes('zodnull')) return { type: 'null' };
   if (lower.includes('any') || lower.includes('unknown') || lower.includes('never')) return {};
   if (lower.includes('date')) return { type: 'string', format: 'date-time' };
   if (lower.includes('custom')) return { type: 'object', additionalProperties: true };
@@ -354,9 +445,26 @@ function buildIntrospectedFallbackJSONSchema(schema: unknown, seen: WeakSet<obje
   }
 
   if (lower.includes('enum')) {
-    const values = (def as Record<string, any>).values;
-    if (Array.isArray(values)) return { enum: values };
-    if (values && typeof values === 'object') return { enum: Object.values(values as Record<string, unknown>) };
+    const enumValues = extractEnumValues(def);
+    if (enumValues.length > 0) {
+      const allString = enumValues.every((v) => typeof v === 'string');
+      const allNumber = enumValues.every((v) => typeof v === 'number');
+      const allBoolean = enumValues.every((v) => typeof v === 'boolean');
+      if (allString) return { type: 'string', enum: enumValues };
+      if (allNumber) return { type: 'number', enum: enumValues };
+      if (allBoolean) return { type: 'boolean', enum: enumValues };
+      return { enum: enumValues };
+    }
+    return {};
+  }
+
+  if (lower.includes('picklist')) {
+    const enumValues = extractEnumValues(def);
+    if (enumValues.length > 0) {
+      const allString = enumValues.every((v) => typeof v === 'string');
+      if (allString) return { type: 'string', enum: enumValues };
+      return { enum: enumValues };
+    }
     return {};
   }
 
