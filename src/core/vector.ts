@@ -57,9 +57,13 @@ export class Vector<TTypes extends VectorTypes = DefaultVectorTypes> {
   }
 
   // Internal method to set protected handler
-  setProtectedHandler(handler: ProtectedHandler<TTypes>) {
+  setProtectedHandler(handler: ProtectedHandler<TTypes> | null) {
     this._protectedHandler = handler;
-    this.authManager.setProtectedHandler(handler);
+    if (handler) {
+      this.authManager.setProtectedHandler(handler);
+      return;
+    }
+    this.authManager.clearProtectedHandler();
   }
 
   getProtectedHandler(): ProtectedHandler<TTypes> | null {
@@ -67,9 +71,13 @@ export class Vector<TTypes extends VectorTypes = DefaultVectorTypes> {
   }
 
   // Internal method to set cache handler
-  setCacheHandler(handler: CacheHandler) {
+  setCacheHandler(handler: CacheHandler | null) {
     this._cacheHandler = handler;
-    this.cacheManager.setCacheHandler(handler);
+    if (handler) {
+      this.cacheManager.setCacheHandler(handler);
+      return;
+    }
+    this.cacheManager.clearCacheHandler();
   }
 
   getCacheHandler(): CacheHandler | null {

@@ -21,6 +21,28 @@ Graceful shutdown:
 - `vector dev` and `vector start` listen for `SIGINT` and `SIGTERM`.
 - On shutdown signal, Vector stops accepting requests and then runs config `shutdown` (if provided).
 
+## Programmatic Startup
+
+For `bun run index.ts` style entrypoints, use `startVector()`:
+
+```ts
+import { startVector } from "vector-framework";
+
+const app = await startVector({
+  configPath: "./vector.config.ts",
+});
+
+// Graceful exit example
+process.on("SIGTERM", async () => {
+  await app.shutdown();
+  process.exit(0);
+});
+```
+
+- `startVector()` uses the same config loader behavior as CLI.
+- It intentionally does not include file watching or hot reload.
+- Use `app.stop()` for immediate stop (for your own reload tooling).
+
 Common options:
 
 ```bash

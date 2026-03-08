@@ -2,10 +2,10 @@
 
 import { watch } from 'node:fs';
 import { parseArgs } from 'node:util';
-import { getVectorInstance } from '../core/vector';
-import { ConfigLoader } from '../core/config-loader';
 import { resolveHost, resolvePort, resolveRoutesDir } from './option-resolution';
 import { installGracefulShutdownHandlers } from './graceful-shutdown';
+import { startVector } from '../start-vector';
+import type { StartedVectorApp } from '../types';
 
 // Compatibility layer for both Node and Bun
 const args = typeof Bun !== 'undefined' ? Bun.argv.slice(2) : process.argv.slice(2);
@@ -55,10 +55,10 @@ async function runDev() {
   const isDev = command === 'dev';
 
   let server: any = null;
-  let vector: any = null;
+  let app: StartedVectorApp<any> | null = null;
   let removeShutdownHandlers: (() => void) | null = null;
 
-  async function startServer(): Promise<{ server: any; vector: any; config: any }> {
+  async function startServer(): Promise<{ server: any; app: StartedVectorApp<any>; config: any }> {
     // Create a timeout promise that rejects after 10 seconds
     const timeoutPromise = new Promise<never>((_, reject) => {
       setTimeout(() => {
@@ -67,50 +67,35 @@ async function runDev() {
     });
 
     // Create the actual server start promise
-    const serverStartPromise = (async (): Promise<{ server: any; vector: any; config: any }> => {
+    const serverStartPromise = (async (): Promise<{ server: any; app: StartedVectorApp<any>; config: any }> => {
       const explicitConfigPath = values.config as string | undefined;
-      const configLoader = new ConfigLoader(explicitConfigPath);
-      const loadedConfig = await configLoader.load();
-      const config = { ...loadedConfig } as Record<string, any>;
+      app = await startVector({
+        configPath: explicitConfigPath,
+        mutateConfig: (loadedConfig) => {
+          const config = { ...loadedConfig } as Record<string, any>;
+          config.port = resolvePort(config.port, hasPortOption, values.port as string);
+          config.hostname = resolveHost(config.hostname, hasHostOption, values.host as string);
+          config.routesDir = resolveRoutesDir(config.routesDir, hasRoutesOption, values.routes as string);
+          config.development = config.development ?? isDev;
+          config.autoDiscover = true; // Always auto-discover routes
 
-      // Merge CLI options with loaded config.
-      // Explicit --port/--host always override config values.
-      config.port = resolvePort(config.port, hasPortOption, values.port as string);
-      config.hostname = resolveHost(config.hostname, hasHostOption, values.host as string);
-      config.routesDir = resolveRoutesDir(config.routesDir, hasRoutesOption, values.routes as string);
-      config.development = config.development ?? isDev;
-      config.autoDiscover = true; // Always auto-discover routes
+          if (config.cors === undefined && values.cors) {
+            config.cors = {
+              origin: '*',
+              credentials: true,
+              allowHeaders: 'Content-Type, Authorization',
+              allowMethods: 'GET, POST, PUT, PATCH, DELETE, OPTIONS',
+              exposeHeaders: 'Authorization',
+              maxAge: 86400,
+            };
+          }
 
-      // Apply CLI CORS option if not explicitly set in config
-      // Only apply default CORS if config.cors is undefined (not set)
-      if (config.cors === undefined && values.cors) {
-        config.cors = {
-          origin: '*',
-          credentials: true,
-          allowHeaders: 'Content-Type, Authorization',
-          allowMethods: 'GET, POST, PUT, PATCH, DELETE, OPTIONS',
-          exposeHeaders: 'Authorization',
-          maxAge: 86400,
-        };
-      }
+          return config;
+        },
+      });
 
-      // Get Vector instance and configure handlers
-      vector = getVectorInstance();
-
-      // Load and set auth handler if configured
-      const authHandler = await configLoader.loadAuthHandler();
-      if (authHandler) {
-        vector.setProtectedHandler(authHandler);
-      }
-
-      // Load and set cache handler if configured
-      const cacheHandler = await configLoader.loadCacheHandler();
-      if (cacheHandler) {
-        vector.setCacheHandler(cacheHandler);
-      }
-
-      // Start the server
-      server = await vector.startServer(config);
+      server = app.server;
+      const config = app.config as Record<string, any>;
 
       // Verify the server is actually running
       if (!server || !server.port) {
@@ -122,7 +107,7 @@ async function runDev() {
 
       console.log(`\nListening on ${cyan}http://${config.hostname}:${config.port}${reset}\n`);
 
-      return { server, vector, config };
+      return { server, app, config };
     })();
 
     // Race between server startup and timeout
@@ -136,7 +121,7 @@ async function runDev() {
 
     if (!removeShutdownHandlers) {
       removeShutdownHandlers = installGracefulShutdownHandlers({
-        getTarget: () => vector,
+        getTarget: () => app,
       });
     }
 
@@ -181,8 +166,8 @@ async function runDev() {
               changedFiles.clear();
 
               // Stop the current server
-              if (vector) {
-                vector.stop();
+              if (app) {
+                app.stop();
               }
 
               // Small delay to ensure file system operations complete
@@ -192,7 +177,7 @@ async function runDev() {
               try {
                 const result = await startServer();
                 server = result.server;
-                vector = result.vector;
+                app = result.app;
               } catch (error: any) {
                 console.error('\n[Reload Error]', error.message || error);
                 // Don't exit the process on reload failures, just continue watching
