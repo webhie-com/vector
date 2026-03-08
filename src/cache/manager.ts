@@ -16,6 +16,10 @@ export class CacheManager<TTypes extends VectorTypes = DefaultVectorTypes> {
     this.cacheHandler = handler;
   }
 
+  clearCacheHandler() {
+    this.cacheHandler = null;
+  }
+
   async get<T = GetCacheType<TTypes>>(
     key: string,
     factory: () => Promise<T>,

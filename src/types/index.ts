@@ -1,4 +1,5 @@
 import type { StandardJSONSchemaV1, StandardSchemaV1, StandardTypedV1 } from './standard-schema';
+import type { Server } from 'bun';
 
 // Default AuthUser type - users can override this with their own type
 export interface DefaultAuthUser {
@@ -152,6 +153,29 @@ export interface VectorConfig<TTypes extends VectorTypes = DefaultVectorTypes> {
   openapi?: OpenAPIOptions | boolean;
   startup?: StartupHandler;
   shutdown?: ShutdownHandler;
+}
+
+export interface StartVectorContext {
+  configSource: 'user' | 'default';
+}
+
+export interface StartVectorOptions<TTypes extends VectorTypes = DefaultVectorTypes> {
+  configPath?: string;
+  config?: Partial<VectorConfig<TTypes>>;
+  autoDiscover?: boolean;
+  protectedHandler?: ProtectedHandler<TTypes> | null;
+  cacheHandler?: CacheHandler | null;
+  mutateConfig?: (
+    config: VectorConfig<TTypes>,
+    context: StartVectorContext
+  ) => VectorConfig<TTypes> | Promise<VectorConfig<TTypes>>;
+}
+
+export interface StartedVectorApp<TTypes extends VectorTypes = DefaultVectorTypes> {
+  server: Server;
+  config: VectorConfig<TTypes>;
+  stop: () => void;
+  shutdown: () => Promise<void>;
 }
 
 // New config-driven schema - flat structure
