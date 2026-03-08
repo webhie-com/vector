@@ -667,7 +667,7 @@ export class VectorServer<TTypes extends VectorTypes = DefaultVectorTypes> {
         reusePort: this.config.reusePort !== false,
         routes: this.router.getRouteTable(),
         fetch: fallbackFetch,
-        idleTimeout: this.config.idleTimeout || 60,
+        idleTimeout: this.config.idleTimeout ?? 60,
         error: (error, request?: Request) => {
           console.error('[ERROR] Server error:', error);
           return this.applyCors(new Response('Internal Server Error', { status: 500 }), request);

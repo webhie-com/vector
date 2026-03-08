@@ -38,7 +38,7 @@ export async function startVector<TTypes extends VectorTypes = DefaultVectorType
     port: server.port ?? config.port ?? DEFAULT_CONFIG.PORT,
     hostname: server.hostname || config.hostname || DEFAULT_CONFIG.HOSTNAME,
     reusePort: config.reusePort !== false,
-    idleTimeout: config.idleTimeout || 60,
+    idleTimeout: config.idleTimeout ?? 60,
   };
 
   return {

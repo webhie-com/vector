@@ -135,4 +135,22 @@ describe('startVector', () => {
     expect(vector.getCacheHandler()).toBeNull();
     secondApp.stop();
   });
+
+  it('preserves idleTimeout when explicitly set to 0', async () => {
+    const tempPath = join(process.cwd(), `.tmp.vector.start.idle-timeout.${Date.now()}.mjs`);
+    tempFiles.push(tempPath);
+
+    await Bun.write(
+      tempPath,
+      `
+      export default {
+        idleTimeout: 0
+      };
+    `
+    );
+
+    const app = await startVector({ configPath: tempPath, autoDiscover: false });
+    expect(app.config.idleTimeout).toBe(0);
+    app.stop();
+  });
 });

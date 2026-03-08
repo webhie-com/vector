@@ -332,7 +332,7 @@ describe('OpenAPI generator', () => {
     });
 
     const paths = result.document.paths as Record<string, any>;
-    expect(paths['/unknown-fallback'].post.requestBody.content['application/json'].schema).toEqual({});
+    expect(paths['/unknown-fallback'].post.requestBody).toBeUndefined();
     expect(paths['/unknown-fallback'].post.responses['200'].content['application/json'].schema).toEqual({});
     expect(result.warnings.length).toBeGreaterThan(0);
   });

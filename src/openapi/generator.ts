@@ -142,7 +142,8 @@ function convertInputSchema(
         error instanceof Error ? error.message : String(error)
       }. Falling back to a permissive JSON Schema.`
     );
-    return buildFallbackJSONSchema(inputSchema);
+    const fallback = buildFallbackJSONSchema(inputSchema);
+    return isEmptyObjectSchema(fallback) ? null : fallback;
   }
 }
 
@@ -171,6 +172,10 @@ function convertOutputSchema(
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return !!value && typeof value === 'object' && !Array.isArray(value);
+}
+
+function isEmptyObjectSchema(value: unknown): value is Record<string, never> {
+  return isRecord(value) && Object.keys(value).length === 0;
 }
 
 // Best-effort extraction of internal schema definition metadata from common
