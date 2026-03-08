@@ -154,7 +154,7 @@ export class Vector<TTypes extends VectorTypes = DefaultVectorTypes> {
           try {
             const importPath = toFileUrl(route.path);
 
-            const module = await import(importPath);
+            const module = await import(`${importPath}?t=${Date.now()}`);
             const exported = route.name === 'default' ? module.default : module[route.name];
 
             if (exported) {

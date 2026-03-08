@@ -157,6 +157,9 @@ jobs:
           test -f dist/index.cjs
           test -f dist/index.mjs
           test -f dist/index.d.ts
+          test -f dist/errors/index.cjs
+          test -f dist/errors/index.d.ts
+          test -f dist/cli.js
 
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4

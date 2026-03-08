@@ -29,8 +29,9 @@ export class ConfigLoader<TTypes extends VectorTypes = DefaultVectorTypes> {
     if (existsSync(this.configPath)) {
       try {
         // Use explicit file:// URL to ensure correct resolution
+        // Append cache-busting query to force re-import on dev reload
         const userConfigPath = toFileUrl(this.configPath);
-        const userConfig = await import(userConfigPath);
+        const userConfig = await import(`${userConfigPath}?t=${Date.now()}`);
         this.config = userConfig.default || userConfig;
         this.configSource = 'user';
       } catch (error: any) {
