@@ -1,11 +1,13 @@
 import { describe, expect, it, beforeAll } from 'bun:test';
-import { mkdtemp, rm, writeFile, mkdir } from 'fs/promises';
+import { mkdtemp, writeFile, mkdir } from 'fs/promises';
+import { existsSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
 
 const PACKAGE_ROOT = join(import.meta.dir, '..', '..');
+const DIST_EXISTS = existsSync(join(PACKAGE_ROOT, 'dist'));
 
-describe('Package exports', () => {
+describe.skipIf(!DIST_EXISTS)('Package exports', () => {
   let tempDir: string;
 
   beforeAll(async () => {
