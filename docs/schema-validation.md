@@ -29,8 +29,8 @@ If `schema.input` is defined:
 - Validation runs before your route handler
 - On failure, Vector returns `422 Unprocessable Entity`
 - Set `validate: false` on the route to skip input validation
-- On success, validator output is assigned to `req.validatedInput`
-- If validator output contains `body`, `params`, `query`, or `cookies`, those request fields are updated
+- On success, validator output is assigned to `ctx.validatedInput`
+- Access normalized values from `ctx.validatedInput.body|params|query|cookies`
 - Validation payload includes `params`, `query`, `headers`, `cookies`, and `body`
 
 Only define the fields you want to validate.
@@ -88,8 +88,11 @@ const UpdateUserSchema = { input: Input };
 
 export const updateUser = route(
   { method: "PUT", path: "/users/:id", schema: UpdateUserSchema },
-  async (req) => {
-    return { id: req.params.id, name: req.content.name };
+  async (ctx) => {
+    return {
+      id: ctx.validatedInput.params.id,
+      name: ctx.validatedInput.body.name,
+    };
   },
 );
 ```

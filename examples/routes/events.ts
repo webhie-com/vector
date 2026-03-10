@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { route } from '../../src/index';
+import { depRoute, route } from '../../src/index';
 
 const eventListSchema = {
   input: z.object({
@@ -9,17 +9,18 @@ const eventListSchema = {
       includeSoldOut: z.coerce.boolean().default(false),
     }),
   }),
+  output: z.object({ success: z.boolean() }),
 };
 
-export const listEvents = route(
+export const listEvents = depRoute(
   { method: 'GET', path: '/events', expose: true, schema: eventListSchema },
-  async (req) => {
-    const query = req.query;
+  async (ctx) => {
+    const query = ctx.validatedInput?.query;
 
     return {
-      city: query.city,
-      page: query.page,
-      includeSoldOut: query.includeSoldOut,
+      city: query?.city,
+      page: query?.page,
+      includeSoldOut: query?.includeSoldOut,
       events: [
         {
           id: 'evt_jazz_night',
@@ -49,9 +50,9 @@ const eventDetailsSchema = {
 
 export const getEventById = route(
   { method: 'GET', path: '/events/:eventId', expose: true, schema: eventDetailsSchema },
-  async (req) => {
-    const eventId = req.params?.eventId ?? 'evt_unknown';
-    const timezone = req.query.timezone;
+  async (ctx) => {
+    const eventId = ctx.validatedInput?.params.eventId;
+    const timezone = ctx.validatedInput?.query.timezone;
 
     return {
       id: eventId,
@@ -79,8 +80,8 @@ const reservationSchema = {
 
 export const createReservation = route(
   { method: 'POST', path: '/reservations', expose: true, schema: reservationSchema },
-  async (req) => {
-    const body = req.content;
+  async (ctx) => {
+    const body = ctx.validatedInput;
 
     return {
       reservationId: 'rsv_' + crypto.randomUUID().slice(0, 8),

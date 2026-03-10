@@ -269,6 +269,28 @@ describe('CacheManager', () => {
       const result = await cacheManager.get('after-clear', async () => 'factory', 60);
       expect(result).toBe('new-value');
     });
+
+    it('unrefs cleanup interval so cache timers do not pin the event loop', async () => {
+      const originalSetInterval = globalThis.setInterval;
+      let unrefCalled = false;
+
+      try {
+        (globalThis as any).setInterval = (_handler: TimerHandler, _timeout?: number, ..._args: any[]) => {
+          return {
+            unref: () => {
+              unrefCalled = true;
+            },
+          } as any;
+        };
+
+        const manager = new CacheManager();
+        await manager.set('unref-key', 'value', 60);
+
+        expect(unrefCalled).toBe(true);
+      } finally {
+        (globalThis as any).setInterval = originalSetInterval;
+      }
+    });
   });
 
   describe('Typed Cache Operations', () => {

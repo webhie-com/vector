@@ -1,9 +1,9 @@
 // Public exports for route definitions and Vector startup API
-import { route } from './http';
+import { depRoute, route } from './http';
 import { startVector } from './start-vector';
 
 // Export route function for defining routes
-export { route };
+export { depRoute, route };
 export { startVector };
 
 // Export utilities for route handlers

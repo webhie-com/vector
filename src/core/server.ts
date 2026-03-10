@@ -1,17 +1,25 @@
 import type { Server } from 'bun';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
-import { STATIC_RESPONSES } from '../constants';
 import { cors } from '../utils/cors';
 import { renderOpenAPIDocsHtml } from '../openapi/docs-ui';
 import { generateOpenAPIDocument } from '../openapi/generator';
-import type { CorsOptions, DefaultVectorTypes, OpenAPIOptions, VectorConfig, VectorTypes } from '../types';
+import type {
+  CorsOptions,
+  DefaultVectorTypes,
+  OpenAPIAuthOptions,
+  OpenAPIOptions,
+  VectorConfig,
+  VectorTypes,
+} from '../types';
+import type { CheckpointGateway } from '../checkpoint/gateway';
 import type { VectorRouter } from './router';
 
 interface NormalizedOpenAPIConfig {
   enabled: boolean;
   path: string;
   target: string;
+  auth?: OpenAPIAuthOptions;
   docs: {
     enabled: boolean;
     path: string;
@@ -283,6 +291,10 @@ export class VectorServer<TTypes extends VectorTypes = DefaultVectorTypes> {
     }
   }
 
+  setCheckpointGateway(gateway: CheckpointGateway): void {
+    this.router.setCheckpointGateway(gateway);
+  }
+
   private normalizeOpenAPIConfig(
     openapi: OpenAPIOptions | boolean | undefined,
     development: boolean | undefined
@@ -329,6 +341,7 @@ export class VectorServer<TTypes extends VectorTypes = DefaultVectorTypes> {
       target: openapiObject.target || 'openapi-3.0',
       docs,
       info: openapiObject.info,
+      auth: openapiObject.auth,
     };
   }
 
@@ -359,6 +372,7 @@ export class VectorServer<TTypes extends VectorTypes = DefaultVectorTypes> {
     const result = generateOpenAPIDocument(routes as any, {
       target: this.openapiConfig.target,
       info: this.openapiConfig.info,
+      auth: this.openapiConfig.auth,
     });
 
     if (!this.openapiWarningsLogged && result.warnings.length > 0) {
@@ -652,7 +666,7 @@ export class VectorServer<TTypes extends VectorTypes = DefaultVectorTypes> {
 
     this.validateReservedOpenAPIPaths();
 
-    const fallbackFetch = async (request: Request): Promise<Response> => {
+    const appFetch = async (request: Request): Promise<Response> => {
       try {
         // Handle CORS preflight for any path
         if (this.corsHandler && request.method === 'OPTIONS') {
@@ -665,8 +679,8 @@ export class VectorServer<TTypes extends VectorTypes = DefaultVectorTypes> {
           return this.applyCors(openapiResponse, request);
         }
 
-        // No route matched — return 404
-        return this.applyCors(STATIC_RESPONSES.NOT_FOUND.clone() as unknown as Response, request);
+        // Route through Vector router (includes middleware/auth/validation + CORS).
+        return await this.router.handle(request);
       } catch (error) {
         console.error('Server error:', error);
         return this.applyCors(new Response('Internal Server Error', { status: 500 }), request);
@@ -678,8 +692,7 @@ export class VectorServer<TTypes extends VectorTypes = DefaultVectorTypes> {
         port,
         hostname,
         reusePort: this.config.reusePort !== false,
-        routes: this.router.getRouteTable(),
-        fetch: fallbackFetch,
+        fetch: appFetch,
         idleTimeout: this.config.idleTimeout ?? 60,
         error: (error, request?: Request) => {
           console.error('[ERROR] Server error:', error);

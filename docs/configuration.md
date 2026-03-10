@@ -16,7 +16,15 @@ interface VectorConfigSchema {
   idleTimeout?: number;
   defaults?: {
     route?: {
-      auth?: boolean;
+      auth?:
+        | boolean
+        | "ApiKey"
+        | "HttpBasic"
+        | "HttpBearer"
+        | "HttpDigest"
+        | "OAuth2"
+        | "OpenIdConnect"
+        | "MutualTls";
       expose?: boolean;
       rawRequest?: boolean;
       validate?: boolean;
@@ -55,14 +63,53 @@ interface VectorConfigSchema {
           version?: string;
           description?: string;
         };
+        auth?: {
+          securitySchemeNames?: Partial<
+            Record<
+              | "ApiKey"
+              | "HttpBasic"
+              | "HttpBearer"
+              | "HttpDigest"
+              | "OAuth2"
+              | "OpenIdConnect"
+              | "MutualTls",
+              string
+            >
+          >;
+          securitySchemes?: Partial<
+            Record<
+              | "ApiKey"
+              | "HttpBasic"
+              | "HttpBearer"
+              | "HttpDigest"
+              | "OAuth2"
+              | "OpenIdConnect"
+              | "MutualTls",
+              {
+                type: string;
+                [key: string]: unknown;
+              }
+            >
+          >;
+        };
       };
 
   // Startup lifecycle
   startup?: () => Promise<void> | void;
   shutdown?: () => Promise<void> | void;
 
+  // Checkpoints
+  checkpoint?: {
+    enabled?: boolean; // default: true when checkpoint config is present
+    storageDir?: string;
+    maxCheckpoints?: number;
+    versionHeader?: string; // default: x-vector-checkpoint-version
+    idleTimeoutMs?: number; // default: 600000 (10 minutes)
+    cacheKeyOverride?: boolean; // default: false
+  };
+
   // Handlers
-  auth?: (request: Request) => Promise<unknown> | unknown;
+  auth?: (context: VectorContext) => Promise<unknown> | unknown;
   cache?: (
     key: string,
     factory: () => Promise<unknown>,
@@ -71,10 +118,10 @@ interface VectorConfigSchema {
 
   // Middleware
   before?: Array<
-    (request: Request) => Promise<Request | Response> | Request | Response
+    (context: VectorContext) => Promise<void | Response> | void | Response
   >;
   after?: Array<
-    (response: Response, request: Request) => Promise<Response> | Response
+    (response: Response, context: VectorContext) => Promise<Response> | Response
   >;
 }
 ```
@@ -101,62 +148,130 @@ Example precedence:
 - route has `auth: false`
 - effective value is `false` (route override wins)
 
+## Request/Context Notes
+
+- Route handlers, `before`, `after`, and `auth` all receive `context` (not a mutable request object).
+- Use `context.request` for the native `Request`.
+- Use `context.params`, `context.query`, and `context.cookies` for baseline route/query/cookie access.
+- Use `context.content`, `context.validatedInput`, `context.authUser`, and `context.metadata` for framework values (`metadata` always exists and defaults to `{}`).
+- Do not mutate `context.request`; put custom per-request data on `context` itself (for example, `context.startTime`).
+
 ## Example Configuration
 
 ```ts
 import type { VectorConfigSchema } from "vector-framework";
 
 const config: VectorConfigSchema = {
+  // number: TCP port for Bun.serve
   port: Number(process.env.PORT ?? 3000),
+  // string: host/interface to bind
   hostname: "0.0.0.0",
+  // boolean: toggles development-mode defaults
   development: process.env.NODE_ENV !== "production",
+  // string: directory scanned for route files
   routesDir: "./routes",
+  // string[]: glob patterns skipped by route discovery
   routeExcludePatterns: ["*.test.ts", "*.spec.ts", "**/__tests__/**"],
+  // number (seconds): keep-alive timeout for idle connections
   idleTimeout: 60,
+  // boolean: enables SO_REUSEPORT when supported
+  reusePort: true,
 
   defaults: {
     route: {
+      // boolean: route is externally reachable unless overridden
       expose: true,
+      // boolean | AuthKind: auth required by default unless overridden
       auth: false,
+      // boolean: validate schema.input by default
       validate: true,
+      // boolean: skip body parsing when true
+      rawRequest: false,
+      // boolean: return handler output as-is when true
       rawResponse: false,
     },
   },
 
   cors: {
+    // string | string[] | (origin) => boolean
     origin: ["https://app.example.com"],
+    // boolean: include Access-Control-Allow-Credentials
     credentials: true,
+    // string | string[]
     allowHeaders: ["Content-Type", "Authorization"],
+    // string | string[]
     allowMethods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    // string | string[]
+    exposeHeaders: ["x-request-id"],
+    // number (seconds)
+    maxAge: 86400,
   },
 
   openapi: {
+    // boolean: turn OpenAPI generation on/off
     enabled: process.env.NODE_ENV !== "production",
+    // string: OpenAPI JSON endpoint
     path: "/openapi.json",
+    // string: output dialect
+    target: "openapi-3.0",
     docs: {
+      // boolean: built-in docs UI
       enabled: true,
+      // string: docs UI endpoint
       path: "/docs",
+      // string[]: optional path filters for docs UI only
       exposePaths: ["/health", "/users*"],
     },
     info: {
+      // string: OpenAPI info.title
       title: "My API",
+      // string: OpenAPI info.version
       version: "1.0.0",
+      // string: OpenAPI info.description
+      description: "Internal API",
+    },
+    auth: {
+      // Partial<Record<AuthKind, string>>
+      securitySchemeNames: {
+        HttpBearer: "BearerAuth",
+      },
     },
   },
 
+  checkpoint: {
+    // boolean: enable checkpoint gateway
+    enabled: true,
+    // string: root directory for checkpoint artifacts
+    storageDir: "./.vector/checkpoints",
+    // number: prune older versions above this count
+    maxCheckpoints: 10,
+    // string: request header used to select checkpoint version
+    versionHeader: "x-vector-checkpoint-version",
+    // number (ms): stop idle checkpoint child processes after timeout
+    idleTimeoutMs: 600000,
+    // boolean: replace explicit route cache keys for version-tagged requests
+    cacheKeyOverride: true,
+  },
+
+  // () => Promise<void> | void
   startup: async () => {
     await loadOramaDatastore();
   },
+  // () => Promise<void> | void
   shutdown: async () => {
     await closeOramaDatastore();
   },
 
-  auth: async (request) => {
-    const token = request.headers.get("Authorization")?.replace("Bearer ", "");
+  // (context) => Promise<AuthUser> | AuthUser
+  auth: async (context) => {
+    const token = context.request.headers
+      .get("Authorization")
+      ?.replace("Bearer ", "");
     if (!token) throw new Error("Unauthorized");
     return { id: "user-1", email: "user@example.com" };
   },
 
+  // (key, factory, ttlSeconds) => Promise<unknown>
   cache: async (key, factory, ttl) => {
     const cached = await redis.get(key);
     if (cached) return JSON.parse(cached);
@@ -167,14 +282,15 @@ const config: VectorConfigSchema = {
   },
 
   before: [
-    async (request) => {
-      (request as any).startTime = Date.now();
-      return request;
+    // (context) => void | Response
+    async (context) => {
+      context.startTime = Date.now();
     },
   ],
   after: [
-    async (response, request) => {
-      const start = (request as any).startTime ?? Date.now();
+    // (response, context) => Response
+    async (response, context) => {
+      const start = context.startTime ?? Date.now();
       response.headers.set("x-response-time", `${Date.now() - start}ms`);
       return response;
     },

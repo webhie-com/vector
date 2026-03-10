@@ -1,4 +1,4 @@
-import type { DefaultVectorTypes, GetAuthType, ProtectedHandler, VectorRequest, VectorTypes } from '../types';
+import type { DefaultVectorTypes, GetAuthType, ProtectedHandler, VectorContext, VectorTypes } from '../types';
 
 export class AuthManager<TTypes extends VectorTypes = DefaultVectorTypes> {
   private protectedHandler: ProtectedHandler<TTypes> | null = null;
@@ -11,25 +11,28 @@ export class AuthManager<TTypes extends VectorTypes = DefaultVectorTypes> {
     this.protectedHandler = null;
   }
 
-  async authenticate(request: VectorRequest<TTypes>): Promise<GetAuthType<TTypes> | null> {
+  async authenticate(context: VectorContext<TTypes>): Promise<GetAuthType<TTypes> | null> {
     if (!this.protectedHandler) {
       throw new Error('Protected handler not configured. Use vector.protected() to set authentication handler.');
     }
+    if (!context || typeof context !== 'object' || !(context as any).request) {
+      throw new Error('Authentication context is invalid: missing request');
+    }
 
     try {
-      const authUser = await this.protectedHandler(request);
-      request.authUser = authUser;
+      const authUser = await this.protectedHandler(context);
+      context.authUser = authUser;
       return authUser;
     } catch (error) {
       throw new Error(`Authentication failed: ${error instanceof Error ? error.message : String(error)}`);
     }
   }
 
-  isAuthenticated(request: VectorRequest<TTypes>): boolean {
-    return !!request.authUser;
+  isAuthenticated(context: VectorContext<TTypes>): boolean {
+    return !!context.authUser;
   }
 
-  getUser(request: VectorRequest<TTypes>): GetAuthType<TTypes> | null {
-    return request.authUser || null;
+  getUser(context: VectorContext<TTypes>): GetAuthType<TTypes> | null {
+    return context.authUser || null;
   }
 }

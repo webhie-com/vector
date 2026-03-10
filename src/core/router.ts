@@ -3,7 +3,9 @@ import type { CacheManager } from '../cache/manager';
 import { APIError, createResponse } from '../http';
 import type { MiddlewareManager } from '../middleware/manager';
 import { STATIC_RESPONSES } from '../constants';
+import { AuthKind } from '../types';
 import { buildRouteRegex } from '../utils/path';
+import type { CheckpointGateway } from '../checkpoint/gateway';
 import type {
   BunMethodMap,
   BunRouteTable,
@@ -14,6 +16,7 @@ import type {
   RouteHandler,
   RouteOptions,
   RouteSchemaDefinition,
+  VectorContext,
   VectorRequest,
   VectorTypes,
 } from '../types';
@@ -24,6 +27,12 @@ import {
   normalizeValidationIssues,
   runStandardValidation,
 } from '../utils/schema-validation';
+
+const AUTH_KIND_VALUES = new Set<string>(Object.values(AuthKind));
+
+function isAuthKindValue(value: unknown): value is AuthKind {
+  return typeof value === 'string' && AUTH_KIND_VALUES.has(value);
+}
 
 export interface RegisteredRouteDefinition<TTypes extends VectorTypes = DefaultVectorTypes> {
   method: string;
@@ -48,6 +57,7 @@ export class VectorRouter<TTypes extends VectorTypes = DefaultVectorTypes> {
   private routeMatchers: RouteMatcher[] = [];
   private corsHeadersEntries: [string, string][] | null = null;
   private corsHandler: ((response: Response, request: Request) => Response) | null = null;
+  private checkpointGateway: CheckpointGateway | null = null;
 
   constructor(
     middlewareManager: MiddlewareManager<TTypes>,
@@ -65,6 +75,10 @@ export class VectorRouter<TTypes extends VectorTypes = DefaultVectorTypes> {
 
   setCorsHandler(handler: ((response: Response, request: Request) => Response) | null): void {
     this.corsHandler = handler;
+  }
+
+  setCheckpointGateway(gateway: CheckpointGateway | null): void {
+    this.checkpointGateway = gateway;
   }
 
   setRouteBooleanDefaults(defaults?: RouteBooleanDefaults): void {
@@ -85,6 +99,12 @@ export class VectorRouter<TTypes extends VectorTypes = DefaultVectorTypes> {
       if (resolved[key] === undefined && defaults[key] !== undefined) {
         (resolved as any)[key] = defaults[key];
       }
+    }
+
+    // If a route explicitly sets auth:true and the global default auth is an AuthKind,
+    // promote the route to that kind so OpenAPI docs and runtime defaults stay aligned.
+    if (resolved.auth === true && isAuthKindValue(defaults.auth)) {
+      resolved.auth = defaults.auth;
     }
 
     return resolved;
@@ -181,148 +201,117 @@ export class VectorRouter<TTypes extends VectorTypes = DefaultVectorTypes> {
     } catch {
       return APIError.badRequest('Malformed request URL');
     }
-    (request as any)._parsedUrl = url;
     const pathname = url.pathname;
+    const directRoute = this.routeTable[pathname];
+
+    if (directRoute) {
+      if (directRoute instanceof Response) {
+        return this.applyCorsResponse(directRoute.clone() as unknown as Response, request);
+      }
+
+      const methodMap = directRoute as BunMethodMap;
+      const handler = methodMap[request.method] ?? (request.method === 'HEAD' ? methodMap['GET'] : undefined);
+
+      if (handler) {
+        const response = await handler(request);
+        if (response) {
+          return response;
+        }
+      }
+    }
 
     for (const matcher of this.routeMatchers) {
       const path = matcher.path;
       const value = this.routeTable[path];
       if (!value) continue;
-      if (value instanceof Response) continue;
-      const methodMap = value as BunMethodMap;
-      if (request.method === 'OPTIONS' || request.method in methodMap) {
-        const match = pathname.match(matcher.regex);
-        if (match) {
-          try {
-            (request as any).params = match.groups ?? {};
-          } catch {
-            // Request.params can be readonly on Bun-native requests.
-          }
-          const handler = methodMap[request.method] ?? methodMap['GET'];
-          if (handler) {
-            const response = await handler(request);
-            if (response) return response;
-          }
+      if (value instanceof Response) {
+        if (pathname === path) {
+          return this.applyCorsResponse(value.clone() as unknown as Response, request);
         }
+        continue;
       }
+      const methodMap = value as BunMethodMap;
+      const handler = methodMap[request.method] ?? (request.method === 'HEAD' ? methodMap['GET'] : undefined);
+      if (!handler) {
+        continue;
+      }
+
+      const match = pathname.match(matcher.regex);
+      if (!match) {
+        continue;
+      }
+
+      const response = await handler(request);
+      if (response) return response;
     }
 
-    return STATIC_RESPONSES.NOT_FOUND.clone() as unknown as Response;
+    return this.applyCorsResponse(STATIC_RESPONSES.NOT_FOUND.clone() as unknown as Response, request);
   }
 
-  private prepareRequest(
+  private cloneMetadata<T>(value: T): T {
+    if (Array.isArray(value)) {
+      return [...value] as unknown as T;
+    }
+
+    if (value && typeof value === 'object') {
+      return { ...(value as Record<string, unknown>) } as unknown as T;
+    }
+
+    return value;
+  }
+
+  private createContext(
     request: VectorRequest<TTypes>,
     options?: {
-      params?: Record<string, string>;
-      route?: string;
       metadata?: any;
+      params?: Record<string, string>;
+      query?: Record<string, string | string[]>;
+      cookies?: Record<string, string>;
     }
-  ): void {
-    if (!request.context) {
-      request.context = {} as any;
-    }
+  ): VectorContext<TTypes> {
+    const context = {
+      request,
+    } as VectorContext<TTypes>;
 
-    const hasEmptyParamsObject =
-      !!request.params &&
-      typeof request.params === 'object' &&
-      !Array.isArray(request.params) &&
-      Object.keys(request.params as Record<string, unknown>).length === 0;
+    this.setContextField(
+      context,
+      'metadata',
+      options?.metadata !== undefined ? this.cloneMetadata(options.metadata) : ({} as any)
+    );
+    this.setContextField(context, 'params', options?.params ?? {});
+    this.setContextField(context, 'query', options?.query ?? {});
+    this.setContextField(context, 'cookies', options?.cookies ?? {});
 
-    if (options?.params !== undefined && (request.params === undefined || hasEmptyParamsObject)) {
-      try {
-        request.params = options.params;
-      } catch {
-        // params is readonly (set by Bun natively) — use as-is
-      }
-    }
-    if (options?.route !== undefined) {
-      request.route = options.route;
-    }
-    if (options?.metadata !== undefined) {
-      request.metadata = options.metadata;
-    }
-
-    if (request.query == null && request.url) {
-      try {
-        Object.defineProperty(request, 'query', {
-          get() {
-            const url = (this as any)._parsedUrl ?? new URL(this.url);
-            const query = VectorRouter.parseQuery(url);
-            Object.defineProperty(this, 'query', {
-              value: query,
-              writable: true,
-              configurable: true,
-              enumerable: true,
-            });
-            return query;
-          },
-          set(value) {
-            Object.defineProperty(this, 'query', {
-              value,
-              writable: true,
-              configurable: true,
-              enumerable: true,
-            });
-          },
-          configurable: true,
-          enumerable: true,
-        });
-      } catch {
-        const url = (request as any)._parsedUrl ?? new URL(request.url);
-        try {
-          request.query = VectorRouter.parseQuery(url);
-        } catch {
-          // Leave query as-is when request shape is non-extensible.
-        }
-      }
-    }
-
-    if (!Object.getOwnPropertyDescriptor(request, 'cookies')) {
-      Object.defineProperty(request, 'cookies', {
-        get() {
-          const cookieHeader = this.headers.get('cookie') ?? '';
-          const cookies: Record<string, string> = {};
-          if (cookieHeader) {
-            for (const pair of cookieHeader.split(';')) {
-              const idx = pair.indexOf('=');
-              if (idx > 0) {
-                cookies[pair.slice(0, idx).trim()] = pair.slice(idx + 1).trim();
-              }
-            }
-          }
-          Object.defineProperty(this, 'cookies', {
-            value: cookies,
-            writable: true,
-            configurable: true,
-            enumerable: true,
-          });
-          return cookies;
-        },
-        configurable: true,
-        enumerable: true,
-      });
-    }
+    return context;
   }
 
-  private resolveFallbackParams(request: Request, routeMatcher: RegExp | null): Record<string, string> | undefined {
+  private setContextField(context: VectorContext<TTypes>, key: string, value: unknown): void {
+    (context as Record<string, unknown>)[key] = value;
+  }
+
+  private hasOwnContextField(context: VectorContext<TTypes>, key: string): boolean {
+    return Object.prototype.hasOwnProperty.call(context, key);
+  }
+
+  private buildCheckpointContextPayload(context: VectorContext<TTypes>): Record<string, unknown> {
+    const payload: Record<string, unknown> = {};
+    const allowedKeys = ['metadata', 'content', 'validatedInput', 'authUser'] as const;
+    for (const key of allowedKeys) {
+      if (!this.hasOwnContextField(context, key)) {
+        continue;
+      }
+
+      const value = (context as Record<string, unknown>)[key];
+      if (typeof value === 'function' || typeof value === 'symbol' || value === undefined) {
+        continue;
+      }
+      payload[key] = value;
+    }
+    return payload;
+  }
+
+  private resolveFallbackParams(pathname: string, routeMatcher: RegExp | null): Record<string, string> | undefined {
     if (!routeMatcher) {
-      return undefined;
-    }
-
-    const currentParams = (request as any).params;
-    if (
-      currentParams &&
-      typeof currentParams === 'object' &&
-      !Array.isArray(currentParams) &&
-      Object.keys(currentParams as Record<string, unknown>).length > 0
-    ) {
-      return undefined;
-    }
-
-    let pathname: string;
-    try {
-      pathname = ((request as any)._parsedUrl ?? new URL(request.url)).pathname;
-    } catch {
       return undefined;
     }
 
@@ -334,18 +323,92 @@ export class VectorRouter<TTypes extends VectorTypes = DefaultVectorTypes> {
     return matched.groups as Record<string, string>;
   }
 
+  private getRequestedCheckpointVersion(request: Request): string | null {
+    if (!this.checkpointGateway) {
+      return null;
+    }
+
+    const gateway = this.checkpointGateway as unknown as {
+      getRequestedVersion?: (request: Request) => string | null;
+    } | null;
+    if (gateway?.getRequestedVersion) {
+      return gateway.getRequestedVersion(request);
+    }
+
+    const primary = request.headers.get('x-vector-checkpoint-version');
+    if (primary && primary.trim().length > 0) {
+      return primary.trim();
+    }
+
+    const fallback = request.headers.get('x-vector-checkpoint');
+    if (fallback && fallback.trim().length > 0) {
+      return fallback.trim();
+    }
+
+    return null;
+  }
+
+  private getCheckpointCacheKeyOverrideValue(request: Request): string | null {
+    if (!this.checkpointGateway) {
+      return null;
+    }
+
+    const gateway = this.checkpointGateway as unknown as {
+      getCacheKeyOverrideValue?: (request: Request) => string | null;
+    } | null;
+    if (gateway?.getCacheKeyOverrideValue) {
+      return gateway.getCacheKeyOverrideValue(request);
+    }
+
+    const primary = request.headers.get('x-vector-checkpoint-version');
+    if (primary && primary.trim().length > 0) {
+      return `x-vector-checkpoint-version:${primary.trim()}`;
+    }
+
+    const fallback = request.headers.get('x-vector-checkpoint');
+    if (fallback && fallback.trim().length > 0) {
+      return `x-vector-checkpoint:${fallback.trim()}`;
+    }
+
+    return null;
+  }
+
+  private applyCheckpointCacheNamespace(cacheKey: string, request: Request): string {
+    const checkpointVersion = this.getRequestedCheckpointVersion(request);
+    if (!checkpointVersion) {
+      return cacheKey;
+    }
+
+    return `${cacheKey}:checkpoint=${checkpointVersion}`;
+  }
+
+  private applyCheckpointRouteKeyOverride(cacheKey: string, request: Request): string {
+    const override = this.getCheckpointCacheKeyOverrideValue(request);
+    if (!override) {
+      return cacheKey;
+    }
+
+    return override;
+  }
+
   private wrapHandler(options: RouteOptions<TTypes>, handler: RouteHandler<TTypes>) {
     const routePath = options.path;
     const routeMatcher = routePath.includes(':') ? buildRouteRegex(routePath) : null;
 
     return async (request: Request) => {
       const vectorRequest = request as unknown as VectorRequest<TTypes>;
-      const fallbackParams = this.resolveFallbackParams(request, routeMatcher);
-
-      this.prepareRequest(vectorRequest, {
-        params: fallbackParams,
-        route: routePath,
+      let pathname = '';
+      try {
+        pathname = new URL(request.url).pathname;
+      } catch {
+        // Ignore malformed URLs here; router.handle() already guards route matching.
+      }
+      const fallbackParams = this.resolveFallbackParams(pathname, routeMatcher);
+      const context = this.createContext(vectorRequest, {
         metadata: options.metadata,
+        params: this.getRequestParams(request, fallbackParams),
+        query: this.getRequestQuery(request),
+        cookies: this.getRequestCookies(request),
       });
 
       try {
@@ -353,15 +416,14 @@ export class VectorRouter<TTypes extends VectorTypes = DefaultVectorTypes> {
           return APIError.forbidden('Forbidden');
         }
 
-        const beforeResult = await this.middlewareManager.executeBefore(vectorRequest);
-        if (beforeResult instanceof Response) {
-          return beforeResult;
+        const beforeResponse = await this.middlewareManager.executeBefore(context);
+        if (beforeResponse instanceof Response) {
+          return beforeResponse;
         }
-        const req = beforeResult as VectorRequest<TTypes>;
 
         if (options.auth) {
           try {
-            await this.authManager.authenticate(req);
+            await this.authManager.authenticate(context);
           } catch (error) {
             return APIError.unauthorized(
               error instanceof Error ? error.message : 'Authentication failed',
@@ -370,84 +432,78 @@ export class VectorRouter<TTypes extends VectorTypes = DefaultVectorTypes> {
           }
         }
 
-        if (!options.rawRequest && req.method !== 'GET' && req.method !== 'HEAD') {
-          let parsedContent: unknown = null;
-          try {
-            const contentType = req.headers.get('content-type');
-            if (contentType?.startsWith('application/json')) {
-              parsedContent = await req.json();
-            } else if (contentType?.startsWith('application/x-www-form-urlencoded')) {
-              parsedContent = Object.fromEntries(await req.formData());
-            } else if (contentType?.startsWith('multipart/form-data')) {
-              parsedContent = await req.formData();
-            } else {
-              parsedContent = await req.text();
+        const executeRoute = async (): Promise<unknown> => {
+          const req = context.request;
+
+          if (!options.rawRequest && req.method !== 'GET' && req.method !== 'HEAD') {
+            let parsedContent: unknown = null;
+            try {
+              const contentType = req.headers.get('content-type');
+              if (contentType?.startsWith('application/json')) {
+                parsedContent = await req.json();
+              } else if (contentType?.startsWith('application/x-www-form-urlencoded')) {
+                parsedContent = Object.fromEntries(await req.formData());
+              } else if (contentType?.startsWith('multipart/form-data')) {
+                parsedContent = await req.formData();
+              } else {
+                parsedContent = await req.text();
+              }
+            } catch {
+              parsedContent = null;
             }
-          } catch {
-            parsedContent = null;
+            this.setContextField(context, 'content', parsedContent);
           }
-          this.setContentAndBodyAlias(req, parsedContent);
-        }
 
-        const inputValidationResponse = await this.validateInputSchema(req, options);
-        if (inputValidationResponse) {
-          return inputValidationResponse;
-        }
+          const inputValidationResponse = await this.validateInputSchema(context, options, fallbackParams);
+          if (inputValidationResponse) {
+            return inputValidationResponse;
+          }
 
-        let result;
+          if (this.checkpointGateway) {
+            const checkpointResponse = await this.checkpointGateway.handle(
+              req as unknown as Request,
+              this.buildCheckpointContextPayload(context)
+            );
+            if (checkpointResponse) {
+              return checkpointResponse;
+            }
+          }
+
+          return await handler(context as any);
+        };
+
+        let result: any;
         const cacheOptions = options.cache;
 
         if (cacheOptions && typeof cacheOptions === 'number' && cacheOptions > 0) {
-          const cacheKey = this.cacheManager.generateKey(req as any, {
-            authUser: req.authUser,
-          });
-          result = await this.cacheManager.get(
-            cacheKey,
-            async () => {
-              const res = await handler(req);
-              if (res instanceof Response) {
-                return {
-                  _isResponse: true,
-                  body: await res.text(),
-                  status: res.status,
-                  headers: Object.fromEntries(res.headers.entries()),
-                };
-              }
-              return res;
-            },
-            cacheOptions
+          const cacheKey = this.applyCheckpointCacheNamespace(
+            this.cacheManager.generateKey(context.request as any, {
+              authUser: context.authUser,
+            }),
+            context.request as unknown as Request
           );
+          result = await this.cacheManager.get(cacheKey, async () => await executeRoute(), cacheOptions);
         } else if (cacheOptions && typeof cacheOptions === 'object' && cacheOptions.ttl) {
-          const cacheKey =
-            cacheOptions.key ||
-            this.cacheManager.generateKey(req as any, {
-              authUser: req.authUser,
+          const hasRouteCacheKey = typeof cacheOptions.key === 'string' && cacheOptions.key.length > 0;
+          let cacheKey: string;
+          if (hasRouteCacheKey) {
+            cacheKey = this.applyCheckpointRouteKeyOverride(
+              cacheOptions.key as string,
+              context.request as unknown as Request
+            );
+          } else {
+            const generatedKey = this.cacheManager.generateKey(context.request as any, {
+              authUser: context.authUser,
             });
-          result = await this.cacheManager.get(
-            cacheKey,
-            async () => {
-              const res = await handler(req);
-              if (res instanceof Response) {
-                return {
-                  _isResponse: true,
-                  body: await res.text(),
-                  status: res.status,
-                  headers: Object.fromEntries(res.headers.entries()),
-                };
-              }
-              return res;
-            },
-            cacheOptions.ttl
-          );
+            cacheKey = this.applyCheckpointCacheNamespace(generatedKey, context.request as unknown as Request);
+          }
+          result = await this.cacheManager.get(cacheKey, async () => await executeRoute(), cacheOptions.ttl);
         } else {
-          result = await handler(req);
+          result = await executeRoute();
         }
 
-        if (result && typeof result === 'object' && result._isResponse === true) {
-          result = new Response(result.body, {
-            status: result.status,
-            headers: result.headers,
-          });
+        if (result instanceof Response && !!cacheOptions) {
+          result = result.clone();
         }
 
         let response: Response;
@@ -457,22 +513,9 @@ export class VectorRouter<TTypes extends VectorTypes = DefaultVectorTypes> {
           response = createResponse(200, result, options.responseContentType);
         }
 
-        response = await this.middlewareManager.executeFinally(response, req);
+        response = await this.middlewareManager.executeFinally(response, context);
 
-        // Apply pre-built CORS headers if configured
-        const entries = this.corsHeadersEntries;
-        if (entries) {
-          for (const [k, v] of entries) {
-            response.headers.set(k, v);
-          }
-        } else {
-          const dynamicCors = this.corsHandler;
-          if (dynamicCors) {
-            response = dynamicCors(response, req as unknown as Request);
-          }
-        }
-
-        return response;
+        return this.applyCorsResponse(response, context.request as unknown as Request);
       } catch (error) {
         if (error instanceof Response) {
           return error;
@@ -497,10 +540,12 @@ export class VectorRouter<TTypes extends VectorTypes = DefaultVectorTypes> {
   }
 
   private async buildInputValidationPayload(
-    request: VectorRequest<TTypes>,
-    options: RouteOptions<TTypes>
+    context: VectorContext<TTypes>,
+    options: RouteOptions<TTypes>,
+    fallbackParams?: Record<string, string>
   ): Promise<Record<string, unknown>> {
-    let body = request.content;
+    const request = context.request;
+    let body = this.hasOwnContextField(context, 'content') ? context.content : undefined;
 
     if (options.rawRequest && request.method !== 'GET' && request.method !== 'HEAD') {
       try {
@@ -511,71 +556,60 @@ export class VectorRouter<TTypes extends VectorTypes = DefaultVectorTypes> {
     }
 
     return {
-      params: request.params ?? {},
-      query: request.query ?? {},
+      params: this.getRequestParams(request as unknown as Request, fallbackParams),
+      query: this.getRequestQuery(request as unknown as Request),
       headers: Object.fromEntries(request.headers.entries()),
-      cookies: request.cookies ?? {},
+      cookies: this.getRequestCookies(request as unknown as Request),
       body,
     };
   }
 
-  private applyValidatedInput(request: VectorRequest<TTypes>, validatedValue: unknown): void {
-    request.validatedInput = validatedValue;
+  private getRequestParams(request: Request, fallbackParams?: Record<string, string>): Record<string, string> {
+    const nativeParams = this.readRequestObjectField(request, 'params');
+    if (nativeParams && Object.keys(nativeParams).length > 0) {
+      return nativeParams as Record<string, string>;
+    }
+    return fallbackParams ?? {};
+  }
 
-    if (!validatedValue || typeof validatedValue !== 'object') {
-      return;
+  private getRequestQuery(request: Request): Record<string, string | string[]> {
+    const nativeQuery = this.readRequestObjectField(request, 'query');
+    if (nativeQuery) {
+      return nativeQuery as Record<string, string | string[]>;
     }
 
-    const validated = validatedValue as Record<string, unknown>;
-
-    if ('params' in validated) {
-      try {
-        request.params = validated.params as any;
-      } catch {
-        // Request.params can be readonly on Bun-native requests.
-      }
-    }
-    if ('query' in validated) {
-      try {
-        request.query = validated.query as any;
-      } catch {
-        // Request.query can be readonly/non-configurable on some request objects.
-      }
-    }
-    if ('cookies' in validated) {
-      try {
-        request.cookies = validated.cookies as any;
-      } catch {
-        // Request.cookies can be readonly/non-configurable on some request objects.
-      }
-    }
-    if ('body' in validated) {
-      this.setContentAndBodyAlias(request, validated.body);
+    try {
+      return VectorRouter.parseQuery(new URL(request.url));
+    } catch {
+      return {};
     }
   }
 
-  private setContentAndBodyAlias(request: VectorRequest<TTypes>, value: unknown): void {
-    try {
-      request.content = value;
-    } catch {
-      // Request.content can be readonly/non-configurable on some request objects.
-      return;
+  private getRequestCookies(request: Request): Record<string, string> {
+    const nativeCookies = this.readRequestObjectField(request, 'cookies');
+    if (nativeCookies) {
+      return nativeCookies as Record<string, string>;
     }
 
-    this.setBodyAlias(request, value);
+    return VectorRouter.parseCookies(request.headers.get('cookie'));
   }
 
-  private setBodyAlias(request: VectorRequest<TTypes>, value: unknown): void {
-    try {
-      request.body = value as any;
-    } catch {
-      // Keep request.content as source of truth when body alias is readonly.
+  private readRequestObjectField(request: Request, key: string): Record<string, unknown> | undefined {
+    const value = (request as any)[key];
+    if (!value || typeof value !== 'object' || Array.isArray(value)) {
+      return undefined;
     }
+    return value as Record<string, unknown>;
+  }
+
+  private applyValidatedInput(context: VectorContext<TTypes>, validatedValue: unknown): void {
+    this.setContextField(context, 'validatedInput', validatedValue as any);
   }
 
   private async validateInputSchema(
-    request: VectorRequest<TTypes>,
-    options: RouteOptions<TTypes>
+    context: VectorContext<TTypes>,
+    options: RouteOptions<TTypes>,
+    fallbackParams?: Record<string, string>
   ): Promise<Response | null> {
     const inputSchema = options.schema?.input;
 
@@ -592,7 +626,7 @@ export class VectorRouter<TTypes extends VectorTypes = DefaultVectorTypes> {
     }
 
     const includeRawIssues = this.isDevelopmentMode();
-    const payload = await this.buildInputValidationPayload(request, options);
+    const payload = await this.buildInputValidationPayload(context, options, fallbackParams);
 
     try {
       const validation = await runStandardValidation(inputSchema, payload);
@@ -601,7 +635,7 @@ export class VectorRouter<TTypes extends VectorTypes = DefaultVectorTypes> {
         return createResponse(422, createValidationErrorPayload('input', issues), options.responseContentType);
       }
 
-      this.applyValidatedInput(request, validation.value);
+      this.applyValidatedInput(context, validation.value);
       return null;
     } catch (error) {
       const thrownIssues = extractThrownIssues(error);
@@ -672,6 +706,22 @@ export class VectorRouter<TTypes extends VectorTypes = DefaultVectorTypes> {
     return query;
   }
 
+  private static parseCookies(cookieHeader: string | null): Record<string, string> {
+    const cookies: Record<string, string> = {};
+    if (!cookieHeader) {
+      return cookies;
+    }
+
+    for (const pair of cookieHeader.split(';')) {
+      const idx = pair.indexOf('=');
+      if (idx > 0) {
+        cookies[pair.slice(0, idx).trim()] = pair.slice(idx + 1).trim();
+      }
+    }
+
+    return cookies;
+  }
+
   private routeSpecificityScore(path: string): number {
     const STATIC_SEGMENT_WEIGHT = 1000;
     const PARAM_SEGMENT_WEIGHT = 10;
@@ -697,5 +747,22 @@ export class VectorRouter<TTypes extends VectorTypes = DefaultVectorTypes> {
     }
 
     return score;
+  }
+
+  private applyCorsResponse(response: Response, request: Request): Response {
+    const entries = this.corsHeadersEntries;
+    if (entries) {
+      for (const [k, v] of entries) {
+        response.headers.set(k, v);
+      }
+      return response;
+    }
+
+    const dynamicCors = this.corsHandler;
+    if (dynamicCors) {
+      return dynamicCors(response, request);
+    }
+
+    return response;
   }
 }

@@ -165,4 +165,94 @@ describe('OpenAPI schema matrix', () => {
     expect(openapiSchema.properties.status.enum).toEqual(draftSchema.properties.status.enum);
     expect(openapiSchema.properties.maybe.anyOf).toEqual(draftSchema.properties.maybe.anyOf);
   });
+
+  it('matrix: emits operation docs and status descriptions across zod/valibot/arktype routes', () => {
+    const zodSchema = z.object({
+      id: z.string().describe('Zod id field'),
+    });
+    const valibotSchema = v.object({
+      id: v.description('Valibot id field', v.string()),
+    });
+    const arktypeSchema = arktype({
+      id: 'string',
+    });
+
+    const routes: RegisteredRouteDefinition[] = [
+      {
+        method: 'POST',
+        path: '/matrix-docs-zod',
+        options: {
+          method: 'POST',
+          path: '/matrix-docs-zod',
+          expose: true,
+          schema: {
+            summary: 'Create Zod Thing',
+            description: 'Creates an entity using Zod schema.',
+            output: {
+              201: zodSchema as any,
+              404: zodSchema as any,
+            },
+          },
+        },
+      },
+      {
+        method: 'POST',
+        path: '/matrix-docs-valibot',
+        options: {
+          method: 'POST',
+          path: '/matrix-docs-valibot',
+          expose: true,
+          schema: {
+            summary: 'Create Valibot Thing',
+            descrition: 'Creates an entity using Valibot schema.',
+            output: {
+              201: valibotSchema as any,
+              429: valibotSchema as any,
+            },
+          },
+        },
+      },
+      {
+        method: 'POST',
+        path: '/matrix-docs-arktype',
+        options: {
+          method: 'POST',
+          path: '/matrix-docs-arktype',
+          expose: true,
+          schema: {
+            summary: 'Create ArkType Thing',
+            description: 'Creates an entity using ArkType schema.',
+            output: {
+              202: arktypeSchema as any,
+              503: arktypeSchema as any,
+            },
+          },
+        },
+      },
+    ];
+
+    const result = generateOpenAPIDocument(routes, { target: 'openapi-3.0' });
+    const paths = result.document.paths as Record<string, any>;
+
+    const zodOp = paths['/matrix-docs-zod'].post;
+    expect(zodOp.summary).toBe('Create Zod Thing');
+    expect(zodOp.description).toBe('Creates an entity using Zod schema.');
+    expect(zodOp.responses['201'].description).toBe('Created');
+    expect(zodOp.responses['404'].description).toBe('Not Found');
+    expect(zodOp.responses['201'].content['application/json'].schema.properties.id.description).toBe('Zod id field');
+
+    const valibotOp = paths['/matrix-docs-valibot'].post;
+    expect(valibotOp.summary).toBe('Create Valibot Thing');
+    expect(valibotOp.description).toBe('Creates an entity using Valibot schema.');
+    expect(valibotOp.responses['201'].description).toBe('Created');
+    expect(valibotOp.responses['429'].description).toBe('Too Many Requests');
+    // Current valibot conversion path does not preserve field descriptions.
+    expect(valibotOp.responses['201'].content['application/json'].schema.properties.id.description).toBeUndefined();
+
+    const arktypeOp = paths['/matrix-docs-arktype'].post;
+    expect(arktypeOp.summary).toBe('Create ArkType Thing');
+    expect(arktypeOp.description).toBe('Creates an entity using ArkType schema.');
+    expect(arktypeOp.responses['202'].description).toBe('Accepted');
+    expect(arktypeOp.responses['503'].description).toBe('Service Unavailable');
+  });
 });

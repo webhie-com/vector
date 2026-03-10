@@ -10,6 +10,8 @@ This directory contains detailed guides that were intentionally moved out of the
 - [Schema Validation](schema-validation.md): `schema.input`/`schema.output`, validation behavior, and compatibility.
 - [OpenAPI and Docs UI](openapi.md): OpenAPI config, generated endpoints, and docs UI setup.
 - [CLI and Route Discovery](cli-and-discovery.md): CLI commands and auto-discovery patterns.
+- [Versioned Checkpoints](checkpoints.md): Freeze route versions while keeping config live. Zero-downtime rollbacks via Unix sockets.
+- [Checkpoints Architecture](checkpoints-architecture.md): Internal design and contributor guide for checkpoint system.
 - [Error Reference](errors.md): `APIError` response format and helpers.
 - [Migration Notes](migration.md): Practical notes for upgrading existing routes.
 - [Performance Notes](performance.md): Runtime and routing design considerations.

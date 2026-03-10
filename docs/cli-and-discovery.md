@@ -70,7 +70,9 @@ Customize with `routeExcludePatterns`:
 
 ```ts
 const config = {
+  // string: route discovery root
   routesDir: "./routes",
+  // string[]: glob patterns excluded from discovery
   routeExcludePatterns: [
     "*.test.ts",
     "*.spec.ts",

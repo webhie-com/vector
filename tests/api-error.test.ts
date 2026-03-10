@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'bun:test';
-import { APIError, createResponse, route } from '../src/http';
+import { APIError, createResponse, depRoute, route } from '../src/http';
 
 describe('APIError', () => {
   describe('Error Response Creation', () => {
@@ -145,5 +145,20 @@ describe('route helper', () => {
     expect(definition.options.path).toBe('/health');
     expect(typeof definition.handler).toBe('function');
     expect('_handler' in definition).toBe(false);
+  });
+
+  it('depRoute marks the route definition as deprecated with the same route behavior', () => {
+    const definition = depRoute(
+      {
+        method: 'GET',
+        path: '/legacy-health',
+      },
+      async () => ({ ok: true })
+    );
+
+    expect(definition.entry).toEqual({ method: 'GET', path: '/legacy-health' });
+    expect(definition.options.path).toBe('/legacy-health');
+    expect(definition.options.deprecated).toBe(true);
+    expect(typeof definition.handler).toBe('function');
   });
 });

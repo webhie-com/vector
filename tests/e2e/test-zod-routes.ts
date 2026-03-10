@@ -199,7 +199,7 @@ export const createOrder = route(
     const validated = req.validatedInput;
     const requestId = validated?.headers?.['x-request-id'];
     const body = validated?.body ?? req.content;
-    const dryRun = validated?.query?.dryRun ?? req.query?.dryRun ?? false;
+    const dryRun = validated?.query?.dryRun ?? false;
 
     if (!requestId || !body) {
       throw APIError.badRequest('Missing validated order input');
@@ -287,13 +287,13 @@ export const getOrderById = route(
   },
   async (req) => {
     const validated = req.validatedInput;
-    const orderIdValue = validated?.params?.orderId ?? req.params?.orderId;
+    const orderIdValue = validated?.params?.orderId;
     const orderId = typeof orderIdValue === 'number' ? orderIdValue : Number(orderIdValue);
     if (!Number.isInteger(orderId) || orderId <= 0) {
       throw APIError.badRequest('Missing order id');
     }
 
-    const includeItems = validated?.query?.includeItems ?? req.query?.includeItems ?? false;
+    const includeItems = validated?.query?.includeItems ?? false;
     const order = await getOrder(orderId);
 
     if (!order) {
@@ -320,7 +320,7 @@ export const updateOrderStatus = route(
   },
   async (req) => {
     const validated = req.validatedInput;
-    const orderIdValue = validated?.params?.orderId ?? req.params?.orderId;
+    const orderIdValue = validated?.params?.orderId;
     const orderId = typeof orderIdValue === 'number' ? orderIdValue : Number(orderIdValue);
     const body = validated?.body ?? req.content;
 

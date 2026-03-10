@@ -1,12 +1,13 @@
-import type { VectorRequest } from '../src/types';
+import type { VectorContext } from '../src/types';
 
 // Simple rate limiting middleware
 const requestCounts = new Map<string, { count: number; resetTime: number }>();
 const WINDOW_MS = 60000; // 1 minute
 const MAX_REQUESTS = 100;
 
-export default async function rateLimit(request: VectorRequest) {
-  const ip = request.headers.get('x-forwarded-for') || request.headers.get('cf-connecting-ip') || 'unknown';
+export default async function rateLimit(context: VectorContext) {
+  const ip =
+    context.request.headers.get('x-forwarded-for') || context.request.headers.get('cf-connecting-ip') || 'unknown';
 
   const now = Date.now();
   const userLimit = requestCounts.get(ip);
@@ -31,6 +32,4 @@ export default async function rateLimit(request: VectorRequest) {
     // Increment count
     userLimit.count++;
   }
-
-  return request;
 }

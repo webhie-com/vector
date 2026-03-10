@@ -29,14 +29,26 @@ Requirements:
 import type { VectorConfigSchema } from "vector-framework";
 
 const config: VectorConfigSchema = {
+  // number: TCP port for Bun.serve
   port: 3000,
+  // string: host/interface to bind
   hostname: "localhost",
+  // boolean: enables dev-oriented defaults (OpenAPI JSON on by default)
   development: process.env.NODE_ENV !== "production",
+  // string: route discovery directory
   routesDir: "./routes",
+  // number (seconds): keep-alive timeout for idle connections
+  idleTimeout: 60,
   defaults: {
     route: {
+      // boolean: expose route publicly by default
       expose: true,
+      // boolean | AuthKind: auth requirement default for routes
       auth: false,
+      // boolean: enable schema.input validation by default
+      validate: true,
+      // boolean: return handler value as-is when true
+      rawResponse: false,
     },
   },
 };
@@ -51,9 +63,9 @@ export default config;
 import { route } from "vector-framework";
 
 export const hello = route(
-  { method: "GET", path: "/hello/:name", expose: true },
-  async (req) => {
-    return { message: `Hello ${req.params.name}` };
+  { method: "GET", path: "/hello", expose: true },
+  async (ctx) => {
+    return { message: "Hello world" };
   },
 );
 ```
@@ -130,8 +142,8 @@ const CreateUserSchema = { input: CreateUserInput };
 
 export const createUser = route(
   { method: "POST", path: "/users", expose: true, schema: CreateUserSchema },
-  async (req) => {
-    return { created: true, email: req.content.email };
+  async (ctx) => {
+    return { created: true, email: ctx.validatedInput.body.email };
   },
 );
 ```

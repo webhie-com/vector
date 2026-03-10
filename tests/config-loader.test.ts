@@ -53,7 +53,7 @@ describe('ConfigLoader', () => {
         defaults: {
           route: {
             expose: false,
-            auth: true,
+            auth: "HttpBearer",
             rawRequest: true,
             validate: false,
             rawResponse: true
@@ -71,6 +71,11 @@ describe('ConfigLoader', () => {
           enabled: true,
           path: "/openapi.json",
           target: "openapi-3.0",
+          auth: {
+            securitySchemeNames: {
+              HttpBearer: "jwtAuth"
+            }
+          },
           docs: {
             enabled: true,
             path: "/docs",
@@ -84,6 +89,14 @@ describe('ConfigLoader', () => {
         },
         startup: async () => {},
         shutdown: async () => {},
+        checkpoint: {
+          enabled: true,
+          storageDir: "./.vector/checkpoints",
+          maxCheckpoints: 25,
+          versionHeader: "x-vector-checkpoint-version",
+          idleTimeoutMs: 300000,
+          cacheKeyOverride: true
+        },
         auth: async () => ({ userId: "u_1" }),
         cache: async (key, factory) => factory(),
         before: [async (request) => request],
@@ -105,7 +118,7 @@ describe('ConfigLoader', () => {
     expect(config.defaults).toEqual({
       route: {
         expose: false,
-        auth: true,
+        auth: 'HttpBearer',
         rawRequest: true,
         validate: false,
         rawResponse: true,
@@ -125,6 +138,11 @@ describe('ConfigLoader', () => {
       enabled: true,
       path: '/openapi.json',
       target: 'openapi-3.0',
+      auth: {
+        securitySchemeNames: {
+          HttpBearer: 'jwtAuth',
+        },
+      },
       docs: {
         enabled: true,
         path: '/docs',
@@ -135,6 +153,15 @@ describe('ConfigLoader', () => {
         version: '1.0.0',
         description: 'Config loader coverage test',
       },
+    });
+
+    expect(config.checkpoint).toEqual({
+      enabled: true,
+      storageDir: './.vector/checkpoints',
+      maxCheckpoints: 25,
+      versionHeader: 'x-vector-checkpoint-version',
+      idleTimeoutMs: 300000,
+      cacheKeyOverride: true,
     });
 
     expect(typeof config.startup).toBe('function');

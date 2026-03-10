@@ -69,6 +69,7 @@ export class ConfigLoader<TTypes extends VectorTypes = DefaultVectorTypes> {
       config.openapi = this.config.openapi;
       config.startup = this.config.startup;
       config.shutdown = this.config.shutdown;
+      config.checkpoint = this.config.checkpoint;
     }
 
     // Always auto-discover routes

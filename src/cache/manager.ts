@@ -41,12 +41,13 @@ export class CacheManager<TTypes extends VectorTypes = DefaultVectorTypes> {
     const cached = this.memoryCache.get(key);
 
     if (this.isCacheValid(cached, now)) {
-      return cached!.value as T;
+      return this.cloneCachedValue(cached!.value as T);
     }
 
     // Deduplicate concurrent requests for the same key (cache stampede prevention)
     if (this.inflight.has(key)) {
-      return (await this.inflight.get(key)!) as T;
+      const inflightValue = (await this.inflight.get(key)!) as T;
+      return this.cloneCachedValue(inflightValue);
     }
 
     const promise = (async () => {
@@ -69,17 +70,35 @@ export class CacheManager<TTypes extends VectorTypes = DefaultVectorTypes> {
 
   private setInMemoryCache(key: string, value: any, ttl: number): void {
     const expires = Date.now() + ttl * 1000;
-    this.memoryCache.set(key, { value, expires });
+    this.memoryCache.set(key, { value: this.cloneForStore(value), expires });
 
     this.scheduleCleanup();
+  }
+
+  private cloneForStore<T>(value: T): T {
+    if (value instanceof Response) {
+      return value.clone() as unknown as T;
+    }
+    return value;
+  }
+
+  private cloneCachedValue<T>(value: T): T {
+    if (value instanceof Response) {
+      return value.clone() as unknown as T;
+    }
+    return value;
   }
 
   private scheduleCleanup(): void {
     if (this.cleanupInterval) return;
 
-    this.cleanupInterval = setInterval(() => {
+    const timer = setInterval(() => {
       this.cleanupExpired();
     }, 60000); // Clean up every minute
+    if (typeof (timer as any).unref === 'function') {
+      (timer as any).unref();
+    }
+    this.cleanupInterval = timer;
   }
 
   private cleanupExpired(): void {

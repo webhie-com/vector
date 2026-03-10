@@ -1,9 +1,9 @@
-import type { VectorRequest } from '../src/types';
+import type { VectorContext } from '../src/types';
 
 // Authentication handler - called for routes with auth: true
-export default async function authenticate(request: VectorRequest) {
+export default async function authenticate(context: VectorContext) {
   // Extract token from Authorization header
-  const authHeader = request.headers.get('Authorization');
+  const authHeader = context.request.headers.get('Authorization');
 
   if (!authHeader || !authHeader.startsWith('Bearer ')) {
     throw new Error('Missing or invalid authorization token');

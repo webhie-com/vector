@@ -8,13 +8,19 @@ Vector can generate OpenAPI documents from registered routes.
 import type { VectorConfigSchema } from "vector-framework";
 
 const config: VectorConfigSchema = {
+  // boolean: development mode defaults
   development: true,
   openapi: {
+    // boolean: enable OpenAPI generation
     enabled: true,
+    // string: OpenAPI JSON endpoint
     path: "/openapi.json",
+    // string: output schema target
     target: "openapi-3.0",
+    // boolean | { enabled, path, exposePaths }
     docs: false,
     info: {
+      // string: OpenAPI info fields
       title: "My API",
       version: "1.0.0",
       description: "Example API",
@@ -33,6 +39,35 @@ export default config;
 - `docs`: `false` by default; enable to serve built-in docs UI
 - `docs.exposePaths`: optional array of OpenAPI path strings/patterns to show in `/docs` (e.g. `["/health", "/users*"]`; `*` wildcard supported)
 - `info`: OpenAPI info object fields
+- `auth.securitySchemeNames`: optional custom component key names per `AuthKind`
+- `auth.securitySchemes`: optional per-`AuthKind` OpenAPI security scheme overrides
+
+## Route Auth -> OpenAPI Security
+
+Route `auth` supports `boolean | AuthKind`:
+
+- `auth: true` uses `HttpBearer`
+- `auth: AuthKind.HttpBasic` (or any `AuthKind`) uses that scheme for the operation
+- `auth: false` emits no operation security
+- `defaults.route.auth: AuthKind.*` applies that kind when the route omits `auth` and when the route sets `auth: true`
+- if neither route nor defaults specify a kind, `auth: true` uses `HttpBearer`
+
+```ts
+import { route, AuthKind } from "vector-framework";
+
+export const admin = route(
+  { method: "GET", path: "/admin", expose: true, auth: AuthKind.HttpBasic },
+  async () => ({ ok: true }),
+);
+```
+
+This emits:
+
+- `components.securitySchemes` for used auth kinds
+- operation-level `security` per route in `/openapi.json`
+- matching auth inputs in `/docs`
+
+For `OAuth2` and `OpenIdConnect`, default URLs are placeholders unless you override them via `openapi.auth.securitySchemes`.
 
 ## Docs Path Filtering (`docs.exposePaths`)
 
@@ -103,10 +138,10 @@ export const createUser = route(
       },
     },
   },
-  async (req) => {
+  async (ctx) => {
     return {
       id: "u_1",
-      email: req.content.email,
+      email: ctx.validatedInput.body.email,
     };
   },
 );

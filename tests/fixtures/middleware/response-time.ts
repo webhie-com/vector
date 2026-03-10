@@ -1,9 +1,9 @@
-import type { VectorRequest } from '../src/types';
+import type { VectorContext } from '../src/types';
 
 // Response time middleware - runs after route handlers
-export default async function responseTime(response: Response, request: VectorRequest) {
-  if (request.startTime) {
-    const duration = Date.now() - request.startTime;
+export default async function responseTime(response: Response, context: VectorContext) {
+  if (context.startTime) {
+    const duration = Date.now() - context.startTime;
 
     // Add response time header
     const headers = new Headers(response.headers);

@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it } from 'bun:test';
 import { MiddlewareManager } from '../src/middleware/manager';
-import type { VectorRequest } from '../src/types';
+import type { VectorContext } from '../src/types';
 
 describe('MiddlewareManager', () => {
   let manager: MiddlewareManager;
@@ -9,42 +9,45 @@ describe('MiddlewareManager', () => {
     manager = new MiddlewareManager();
   });
 
+  function makeContext(): VectorContext {
+    return {
+      request: new Request('http://localhost/test'),
+      metadata: {},
+    } as VectorContext;
+  }
+
   describe('Before Middleware', () => {
     it('should execute middleware in order', async () => {
       const order: number[] = [];
 
-      manager.addBefore(async (req) => {
+      manager.addBefore(async () => {
         order.push(1);
-        return req;
       });
 
-      manager.addBefore(async (req) => {
+      manager.addBefore(async () => {
         order.push(2);
-        return req;
       });
 
-      const request = { context: {} } as VectorRequest;
-      await manager.executeBefore(request);
-
+      await manager.executeBefore(makeContext());
       expect(order).toEqual([1, 2]);
     });
 
-    it('should allow middleware to modify request', async () => {
-      manager.addBefore(async (req) => {
-        req.context.modified = true;
-        return req;
+    it('should allow middleware to modify context', async () => {
+      const context = makeContext();
+
+      manager.addBefore(async (ctx) => {
+        ctx.metadata.modified = true;
       });
 
-      manager.addBefore(async (req) => {
-        req.context.count = (req.context.count || 0) + 1;
-        return req;
+      manager.addBefore(async (ctx) => {
+        ctx.metadata.count = (ctx.metadata.count || 0) + 1;
       });
 
-      const request = { context: {} } as VectorRequest;
-      const result = await manager.executeBefore(request);
+      const result = await manager.executeBefore(context);
 
-      expect(result.context.modified).toBe(true);
-      expect(result.context.count).toBe(1);
+      expect(result).toBeNull();
+      expect(context.metadata.modified).toBe(true);
+      expect(context.metadata.count).toBe(1);
     });
 
     it('should stop execution when middleware returns Response', async () => {
@@ -54,13 +57,11 @@ describe('MiddlewareManager', () => {
         return new Response('Early return', { status: 401 });
       });
 
-      manager.addBefore(async (req) => {
+      manager.addBefore(async () => {
         secondCalled = true;
-        return req;
       });
 
-      const request = { context: {} } as VectorRequest;
-      const result = await manager.executeBefore(request);
+      const result = await manager.executeBefore(makeContext());
 
       expect(result).toBeInstanceOf(Response);
       expect((result as Response).status).toBe(401);
@@ -68,16 +69,27 @@ describe('MiddlewareManager', () => {
     });
 
     it('should handle async middleware', async () => {
-      manager.addBefore(async (req) => {
+      const context = makeContext();
+
+      manager.addBefore(async (ctx) => {
         await new Promise((resolve) => setTimeout(resolve, 10));
-        req.context.async = true;
-        return req;
+        ctx.metadata.async = true;
       });
 
-      const request = { context: {} } as VectorRequest;
-      const result = await manager.executeBefore(request);
+      const result = await manager.executeBefore(context);
 
-      expect(result.context.async).toBe(true);
+      expect(result).toBeNull();
+      expect(context.metadata.async).toBe(true);
+    });
+
+    it('should throw on invalid non-void return values', async () => {
+      manager.addBefore(async () => {
+        return {} as any;
+      });
+
+      await expect(manager.executeBefore(makeContext())).rejects.toThrow(
+        'Before middleware must return void or Response'
+      );
     });
   });
 
@@ -96,14 +108,13 @@ describe('MiddlewareManager', () => {
       });
 
       const response = new Response('test');
-      const request = { context: {} } as VectorRequest;
-      await manager.executeFinally(response, request);
+      await manager.executeFinally(response, makeContext());
 
       expect(order).toEqual([1, 2]);
     });
 
     it('should allow middleware to modify response', async () => {
-      manager.addFinally(async (res, _req) => {
+      manager.addFinally(async (res) => {
         const headers = new Headers(res.headers);
         headers.set('X-Custom', 'value');
         return new Response(res.body, {
@@ -113,23 +124,22 @@ describe('MiddlewareManager', () => {
       });
 
       const response = new Response('test');
-      const request = { context: {} } as VectorRequest;
-      const result = await manager.executeFinally(response, request);
+      const result = await manager.executeFinally(response, makeContext());
 
       expect(result.headers.get('X-Custom')).toBe('value');
     });
 
-    it('should have access to request context', async () => {
+    it('should have access to context metadata', async () => {
       let contextValue: any;
 
-      manager.addFinally(async (res, req) => {
-        contextValue = req.context.testValue;
+      manager.addFinally(async (res, ctx) => {
+        contextValue = ctx.metadata.testValue;
         return res;
       });
 
-      const response = new Response('test');
-      const request = { context: { testValue: 'found' } } as VectorRequest;
-      await manager.executeFinally(response, request);
+      const context = makeContext();
+      context.metadata = { testValue: 'found' };
+      await manager.executeFinally(new Response('test'), context);
 
       expect(contextValue).toBe('found');
     });
@@ -137,29 +147,25 @@ describe('MiddlewareManager', () => {
 
   describe('Middleware Cloning', () => {
     it('should create independent copy', () => {
-      manager.addBefore(async (req) => req);
+      manager.addBefore(async () => {});
       manager.addFinally(async (res) => res);
 
       const clone = manager.clone();
 
-      // Add more middleware to original
-      manager.addBefore(async (req) => req);
+      manager.addBefore(async () => {});
 
-      // Clone should still have original count
       expect(clone).not.toBe(manager);
     });
 
     it('should preserve middleware functions in clone', async () => {
       let originalCalled = false;
 
-      manager.addBefore(async (req) => {
+      manager.addBefore(async () => {
         originalCalled = true;
-        return req;
       });
 
       const clone = manager.clone();
-      const request = { context: {} } as VectorRequest;
-      await clone.executeBefore(request);
+      await clone.executeBefore(makeContext());
 
       expect(originalCalled).toBe(true);
     });
@@ -170,22 +176,18 @@ describe('MiddlewareManager', () => {
       const order: string[] = [];
 
       manager.addBefore(
-        async (req) => {
+        async () => {
           order.push('first');
-          return req;
         },
-        async (req) => {
+        async () => {
           order.push('second');
-          return req;
         },
-        async (req) => {
+        async () => {
           order.push('third');
-          return req;
         }
       );
 
-      const request = { context: {} } as VectorRequest;
-      await manager.executeBefore(request);
+      await manager.executeBefore(makeContext());
 
       expect(order).toEqual(['first', 'second', 'third']);
     });
@@ -204,9 +206,7 @@ describe('MiddlewareManager', () => {
         }
       );
 
-      const response = new Response('test');
-      const request = { context: {} } as VectorRequest;
-      await manager.executeFinally(response, request);
+      await manager.executeFinally(new Response('test'), makeContext());
 
       expect(headers).toEqual(['header1', 'header2']);
     });

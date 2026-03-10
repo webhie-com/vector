@@ -222,12 +222,12 @@ export function renderOpenAPIDocsHtml(
       width: min(42rem, calc(100vw - 0.75rem));
       border-radius: 0.5rem;
       border: 1px solid rgba(15, 23, 42, 0.12);
-      background: rgba(255, 255, 255, 0.98);
+      background: rgba(255, 255, 255, 0.92);
       color: #111111;
       box-shadow: 0 10px 20px rgba(15, 23, 42, 0.14);
       backdrop-filter: blur(12px) saturate(145%);
       -webkit-backdrop-filter: blur(12px) saturate(145%);
-      padding: 0.2rem 0.4rem;
+      padding: 0.4rem 0.6rem;
       opacity: 0;
       pointer-events: none;
       transform: translateY(6px) scale(0.98);
@@ -242,19 +242,25 @@ export function renderOpenAPIDocsHtml(
     }
     .dark #param-value-tooltip {
       border-color: rgba(148, 163, 184, 0.24);
-      background: rgba(17, 17, 17, 0.97);
+      background: rgba(17, 17, 17, 0.9);
       color: #ededed;
       box-shadow: 0 14px 30px rgba(0, 0, 0, 0.45);
     }
     #param-tooltip-line {
       margin: 0;
       font-size: 11px;
-      line-height: 1.2;
+      line-height: 1.3;
       font-family: "JetBrains Mono", monospace;
-      white-space: nowrap;
+      white-space: normal;
       word-break: break-word;
-      overflow: hidden;
-      text-overflow: ellipsis;
+    }
+    #param-tooltip-description {
+      margin: 0.2rem 0 0;
+      font-size: 11px;
+      line-height: 1.3;
+      opacity: 0.8;
+      white-space: normal;
+      word-break: break-word;
     }
   </style>
 </head>
@@ -428,6 +434,7 @@ export function renderOpenAPIDocsHtml(
   </div>
   <div id="param-value-tooltip" aria-hidden="true" role="tooltip">
     <p id="param-tooltip-line"></p>
+    <p id="param-tooltip-description" class="hidden"></p>
   </div>
 
   <script>
@@ -500,6 +507,7 @@ export function renderOpenAPIDocsHtml(
     }
 
     const AUTH_STATE_KEY = "vector-docs-auth-v1";
+    const AUTH_SELECTION_KEY = "vector-docs-auth-selection-v1";
     const HEADERS_STATE_KEY = "vector-docs-headers-v1";
 
     function loadSavedHeaders() {
@@ -529,8 +537,26 @@ export function renderOpenAPIDocsHtml(
       try { localStorage.setItem(AUTH_STATE_KEY, JSON.stringify(authState)); } catch {}
     }
 
+    function loadAuthSelectionState() {
+      try {
+        const raw = localStorage.getItem(AUTH_SELECTION_KEY);
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+            return parsed;
+          }
+        }
+      } catch {}
+      return {};
+    }
+
+    function saveAuthSelectionState() {
+      try { localStorage.setItem(AUTH_SELECTION_KEY, JSON.stringify(authSelectionState)); } catch {}
+    }
+
     const authSchemes = (spec.components && spec.components.securitySchemes) || {};
     let authState = loadAuthState();
+    let authSelectionState = loadAuthSelectionState();
 
     const operations = getOperations();
     let selected = operations[0] || null;
@@ -542,6 +568,7 @@ export function renderOpenAPIDocsHtml(
     let sidebarSearchQuery = "";
     const paramTooltipRoot = document.getElementById("param-value-tooltip");
     const paramTooltipLine = document.getElementById("param-tooltip-line");
+    const paramTooltipDescription = document.getElementById("param-tooltip-description");
     let activeParamTooltipTrigger = null;
     let paramTooltipHideTimer = null;
 
@@ -871,6 +898,7 @@ export function renderOpenAPIDocsHtml(
       if (
         !paramTooltipRoot ||
         !paramTooltipLine ||
+        !paramTooltipDescription ||
         !trigger
       ) {
         return;
@@ -882,6 +910,7 @@ export function renderOpenAPIDocsHtml(
       const label = trigger.getAttribute("data-param-tooltip-label") || "Value";
       const value = trigger.getAttribute("data-param-tooltip-value") || "";
       const related = trigger.getAttribute("data-param-tooltip-related") || "";
+      const description = trigger.getAttribute("data-param-tooltip-description") || "";
       if (activeParamTooltipTrigger && activeParamTooltipTrigger !== trigger) {
         activeParamTooltipTrigger.setAttribute("aria-expanded", "false");
       }
@@ -889,6 +918,13 @@ export function renderOpenAPIDocsHtml(
       activeParamTooltipTrigger.setAttribute("aria-expanded", "true");
       const pathLabel = related ? " | path: " + related : "";
       paramTooltipLine.textContent = label + ": " + value + pathLabel;
+      if (description.trim()) {
+        paramTooltipDescription.textContent = description;
+        paramTooltipDescription.classList.remove("hidden");
+      } else {
+        paramTooltipDescription.textContent = "";
+        paramTooltipDescription.classList.add("hidden");
+      }
       paramTooltipRoot.classList.add("is-visible");
       paramTooltipRoot.setAttribute("aria-hidden", "false");
       positionParamTooltip(trigger);
@@ -933,13 +969,18 @@ export function renderOpenAPIDocsHtml(
       if (!params.length) return "";
       let rows = "";
       for (const p of params) {
-        const schema = p.schema || {};
+        const schema = resolveSchemaRef(p.schema || {});
         const typeRaw = getSchemaTypeLabel(schema);
         const type = escapeHtml(typeRaw);
         const nameRaw = p.name || "";
         const name = escapeHtml(nameRaw);
         const tooltipName = escapeHtmlAttribute(nameRaw);
         const tooltipType = escapeHtmlAttribute(typeRaw);
+        const tooltipDescription = (typeof p.description === "string" && p.description.trim())
+          ? escapeHtmlAttribute(p.description.trim())
+          : (typeof schema.description === "string" && schema.description.trim())
+            ? escapeHtmlAttribute(schema.description.trim())
+            : "";
         const desc = (typeof p.description === "string" && p.description.trim())
           ? '<p class="text-xs opacity-60 mt-0.5 leading-snug">' + renderMarkdown(p.description.trim()) + '</p>'
           : "";
@@ -950,6 +991,8 @@ export function renderOpenAPIDocsHtml(
           '<div class="param-row-main">' +
           '<button type="button" class="param-tooltip-trigger param-name-trigger" data-param-tooltip-label="Parameter" data-param-tooltip-value="' +
           tooltipName +
+          '" data-param-tooltip-description="' +
+          tooltipDescription +
           '" aria-expanded="false">' +
           '<code class="text-sm font-mono param-name-text">' +
           name +
@@ -959,6 +1002,8 @@ export function renderOpenAPIDocsHtml(
           "</span></div>" +
           '<button type="button" class="param-tooltip-trigger param-type-fade text-xs font-mono opacity-60" data-param-tooltip-label="Type" data-param-tooltip-value="' +
           tooltipType +
+          '" data-param-tooltip-description="' +
+          tooltipDescription +
           '" aria-expanded="false">' +
           type +
           "</button></div>" +
@@ -970,35 +1015,37 @@ export function renderOpenAPIDocsHtml(
     }
 
     function getSchemaTypeLabel(schema) {
-      if (!schema || typeof schema !== "object") return "unknown";
-      if (Array.isArray(schema.type)) return schema.type.join(" | ");
-      if (schema.type) return String(schema.type);
-      if (schema.properties) return "object";
-      if (schema.items) return "array";
-      if (Array.isArray(schema.oneOf)) return "oneOf";
-      if (Array.isArray(schema.anyOf)) return "anyOf";
-      if (Array.isArray(schema.allOf)) return "allOf";
+      const resolved = resolveSchemaRef(schema);
+      if (!resolved || typeof resolved !== "object") return "unknown";
+      if (Array.isArray(resolved.type)) return resolved.type.join(" | ");
+      if (resolved.type) return String(resolved.type);
+      if (resolved.properties) return "object";
+      if (resolved.items) return "array";
+      if (Array.isArray(resolved.oneOf)) return "oneOf";
+      if (Array.isArray(resolved.anyOf)) return "anyOf";
+      if (Array.isArray(resolved.allOf)) return "allOf";
       return "unknown";
     }
 
     function buildSchemaExtra(schema) {
-      if (!schema || typeof schema !== "object") return "";
+      const resolved = resolveSchemaRef(schema);
+      if (!resolved || typeof resolved !== "object") return "";
       const chips = [];
-      if (schema.format) chips.push(escapeHtml(String(schema.format)));
-      if (Array.isArray(schema.enum) && schema.enum.length > 0) {
-        const shown = schema.enum.slice(0, 5).map(function(v) { return escapeHtml(JSON.stringify(v)); });
-        chips.push(shown.join(" | ") + (schema.enum.length > 5 ? " …" : ""));
+      if (resolved.format) chips.push(escapeHtml(String(resolved.format)));
+      if (Array.isArray(resolved.enum) && resolved.enum.length > 0) {
+        const shown = resolved.enum.slice(0, 5).map(function(v) { return escapeHtml(JSON.stringify(v)); });
+        chips.push(shown.join(" | ") + (resolved.enum.length > 5 ? " …" : ""));
       }
-      if (schema.minimum !== undefined) chips.push("min: " + schema.minimum);
-      if (schema.maximum !== undefined) chips.push("max: " + schema.maximum);
-      if (typeof schema.exclusiveMinimum === "number") chips.push("&gt;" + schema.exclusiveMinimum);
-      if (typeof schema.exclusiveMaximum === "number") chips.push("&lt;" + schema.exclusiveMaximum);
-      if (schema.minLength !== undefined) chips.push("minLen: " + schema.minLength);
-      if (schema.maxLength !== undefined) chips.push("maxLen: " + schema.maxLength);
-      if (schema.minItems !== undefined) chips.push("minItems: " + schema.minItems);
-      if (schema.maxItems !== undefined) chips.push("maxItems: " + schema.maxItems);
-      if (schema.uniqueItems) chips.push("unique");
-      if (schema.pattern) chips.push("/" + escapeHtml(String(schema.pattern)) + "/");
+      if (resolved.minimum !== undefined) chips.push("min: " + resolved.minimum);
+      if (resolved.maximum !== undefined) chips.push("max: " + resolved.maximum);
+      if (typeof resolved.exclusiveMinimum === "number") chips.push("&gt;" + resolved.exclusiveMinimum);
+      if (typeof resolved.exclusiveMaximum === "number") chips.push("&lt;" + resolved.exclusiveMaximum);
+      if (resolved.minLength !== undefined) chips.push("minLen: " + resolved.minLength);
+      if (resolved.maxLength !== undefined) chips.push("maxLen: " + resolved.maxLength);
+      if (resolved.minItems !== undefined) chips.push("minItems: " + resolved.minItems);
+      if (resolved.maxItems !== undefined) chips.push("maxItems: " + resolved.maxItems);
+      if (resolved.uniqueItems) chips.push("unique");
+      if (resolved.pattern) chips.push("/" + escapeHtml(String(resolved.pattern)) + "/");
       if (!chips.length) return "";
       return '<div class="flex flex-wrap gap-1 mt-1.5">' +
         chips.map(function(c) {
@@ -1007,16 +1054,38 @@ export function renderOpenAPIDocsHtml(
         '</div>';
     }
 
+    function resolveSchemaRef(schema, visitedRefs) {
+      if (!schema || typeof schema !== "object") return schema;
+      const ref = typeof schema.$ref === "string" ? schema.$ref : "";
+      if (!ref || !ref.startsWith("#/components/schemas/")) {
+        return schema;
+      }
+
+      const seen = visitedRefs || new Set();
+      if (seen.has(ref)) return schema;
+      seen.add(ref);
+
+      const parts = ref.split("/");
+      const schemaName = parts[parts.length - 1];
+      const referenced = spec && spec.components && spec.components.schemas && spec.components.schemas[schemaName];
+      if (!referenced || typeof referenced !== "object") return schema;
+
+      const merged = Object.assign({}, referenced, schema);
+      delete merged.$ref;
+      return resolveSchemaRef(merged, seen);
+    }
+
     function buildSchemaChildren(schema) {
-      if (!schema || typeof schema !== "object") return [];
+      const resolved = resolveSchemaRef(schema);
+      if (!resolved || typeof resolved !== "object") return [];
 
       const children = [];
 
-      if (schema.properties && typeof schema.properties === "object") {
+      if (resolved.properties && typeof resolved.properties === "object") {
         const requiredSet = new Set(
-          Array.isArray(schema.required) ? schema.required : [],
+          Array.isArray(resolved.required) ? resolved.required : [],
         );
-        for (const [name, childSchema] of Object.entries(schema.properties)) {
+        for (const [name, childSchema] of Object.entries(resolved.properties)) {
           const childDef = childSchema || {};
           const isArrayType = Array.isArray(childDef.type)
             ? childDef.type.includes("array")
@@ -1030,10 +1099,10 @@ export function renderOpenAPIDocsHtml(
         }
       }
 
-      if (schema.items) {
+      if (resolved.items) {
         children.push({
-          name: getArrayItemNodeName(schema.items),
-          schema: schema.items,
+          name: getArrayItemNodeName(resolved.items),
+          schema: resolved.items,
           required: true,
         });
       }
@@ -1065,7 +1134,7 @@ export function renderOpenAPIDocsHtml(
     }
 
     function renderSchemaFieldNode(field, depth, parentPath) {
-      const schema = field.schema || {};
+      const schema = resolveSchemaRef(field.schema || {});
       const nameRaw = field.name || "field";
       const name = escapeHtml(nameRaw);
       const requiredLabel = field.required ? "required" : "optional";
@@ -1075,11 +1144,11 @@ export function renderOpenAPIDocsHtml(
       const tooltipType = escapeHtmlAttribute(typeRaw);
       const fieldPath = parentPath ? (parentPath + "." + nameRaw) : nameRaw;
       const tooltipPath = escapeHtmlAttribute(fieldPath);
+      const tooltipDescription = (typeof schema.description === "string" && schema.description.trim())
+        ? escapeHtmlAttribute(schema.description.trim())
+        : "";
       const children = buildSchemaChildren(schema);
       const padding = depth * 14;
-      const desc = (typeof schema.description === "string" && schema.description.trim())
-        ? '<p class="text-xs opacity-60 mt-0.5 leading-snug">' + renderMarkdown(schema.description.trim()) + '</p>'
-        : "";
       const extra = buildSchemaExtra(schema);
 
       if (!children.length) {
@@ -1091,15 +1160,19 @@ export function renderOpenAPIDocsHtml(
           tooltipName +
           '" data-param-tooltip-related="' +
           tooltipPath +
+          '" data-param-tooltip-description="' +
+          tooltipDescription +
           '" aria-expanded="false"><code class="text-sm font-mono param-name-text">' +
           name +
           '</code></button><span class="text-xs text-brand shrink-0">' +
           requiredLabel +
           '</span></div><button type="button" class="param-tooltip-trigger param-type-fade text-xs font-mono opacity-60" data-param-tooltip-label="Type" data-param-tooltip-value="' +
           tooltipType +
+          '" data-param-tooltip-description="' +
+          tooltipDescription +
           '" aria-expanded="false">' +
           type +
-          "</button></div>" + desc + extra + "</div>"
+          "</button></div>" + extra + "</div>"
         );
       }
 
@@ -1117,15 +1190,19 @@ export function renderOpenAPIDocsHtml(
         tooltipName +
         '" data-param-tooltip-related="' +
         tooltipPath +
+        '" data-param-tooltip-description="' +
+        tooltipDescription +
         '" aria-expanded="false"><code class="text-sm font-mono param-name-text">' +
         name +
         '</code></button><span class="text-xs text-brand shrink-0">' +
         requiredLabel +
         '</span></div><button type="button" class="param-tooltip-trigger param-type-fade text-xs font-mono opacity-60" data-param-tooltip-label="Type" data-param-tooltip-value="' +
         tooltipType +
+        '" data-param-tooltip-description="' +
+        tooltipDescription +
         '" aria-expanded="false">' +
         type +
-        "</button></div>" + desc + extra + "</summary>" +
+        "</button></div>" + extra + "</summary>" +
         "<div>" +
         nested +
         "</div></details>"
@@ -1188,14 +1265,18 @@ export function renderOpenAPIDocsHtml(
         const descHtml = responseDesc
           ? ' <span class="normal-case font-sans opacity-70 ml-1">— ' + escapeHtml(responseDesc) + '</span>'
           : "";
+        const contentHtml = rows || '<p class="text-xs opacity-60 mt-1">No schema fields</p>';
 
         sections +=
-          '<div class="mb-4"><h4 class="text-xs font-mono uppercase tracking-wider opacity-70 mb-2">Status ' +
+          '<details class="mb-4">' +
+          '<summary class="list-none cursor-pointer">' +
+          '<h4 class="text-xs font-mono uppercase tracking-wider opacity-70 mb-2">Status ' +
           escapeHtml(statusCode) +
           descHtml +
           "</h4>" +
-          rows +
-          "</div>";
+          "</summary>" +
+          contentHtml +
+          "</details>";
       }
 
       if (!sections) return "";
@@ -1333,8 +1414,23 @@ export function renderOpenAPIDocsHtml(
       return Object.keys(headers).some((key) => key.toLowerCase() === target);
     }
 
-    function getRequestHeadersObject() {
-      const auth = getAuthHeaders();
+    function buildCookieHeaderValue(cookieValues) {
+      const entries = Object.entries(cookieValues);
+      if (!entries.length) return "";
+      return entries
+        .map(([name, value]) => String(name) + "=" + encodeURIComponent(String(value)))
+        .join("; ");
+    }
+
+    function getRequestHeadersObject(op) {
+      const auth = getAuthHeaders(op);
+      const authCookies = getAuthCookieParams(op);
+      if (Object.keys(authCookies).length > 0) {
+        const cookieHeader = buildCookieHeaderValue(authCookies);
+        if (cookieHeader) {
+          auth["Cookie"] = cookieHeader;
+        }
+      }
       const manual = {};
       for (const entry of requestHeaders) {
         const key = String(entry.key || "").trim();
@@ -1540,10 +1636,10 @@ export function renderOpenAPIDocsHtml(
 
       const { path, query } = getOperationParameterGroups(selected);
       const values = getParameterValues(selected);
-      const requestPath = buildRequestPath(selected, path, query, values, getAuthQueryParams());
+      const requestPath = buildRequestPath(selected, path, query, values, getAuthQueryParams(selected));
       const bodyInput = document.getElementById("body-input");
       const body = bodyInput ? bodyInput.value.trim() : "";
-      const headers = getRequestHeadersObject();
+      const headers = getRequestHeadersObject(selected);
       if (body && !hasHeaderName(headers, "Content-Type")) {
         headers["Content-Type"] = "application/json";
       }
@@ -1623,6 +1719,7 @@ export function renderOpenAPIDocsHtml(
         paramsColumn.innerHTML = html || '<div class="text-sm opacity-70">No parameters</div>';
         registerParamTooltipTargets(paramsColumn);
       }
+      renderAuthPanel();
       renderTryItParameterInputs(path, query);
       renderHeaderInputs();
       updateRequestPreview();
@@ -1676,7 +1773,7 @@ export function renderOpenAPIDocsHtml(
         return;
       }
 
-      const requestPath = buildRequestPath(selected, path, query, values, getAuthQueryParams());
+      const requestPath = buildRequestPath(selected, path, query, values, getAuthQueryParams(selected));
       formatBodyJsonInput();
       updateBodyJsonPresentation();
       const op = selected.operation || {};
@@ -1685,7 +1782,7 @@ export function renderOpenAPIDocsHtml(
       const bodyInput = document.getElementById("body-input");
       const body =
         supportsBody && bodyInput ? bodyInput.value.trim() : "";
-      const headers = getRequestHeadersObject();
+      const headers = getRequestHeadersObject(selected);
       if (body && !hasHeaderName(headers, "Content-Type")) {
         headers["Content-Type"] = "application/json";
       }
@@ -1693,7 +1790,13 @@ export function renderOpenAPIDocsHtml(
       setSubmitLoading(true);
       try {
         const requestStart = performance.now();
-        const response = await fetch(requestPath, { method: selected.method, headers, body: body || undefined });
+        applyAuthCookies(selected);
+        const response = await fetch(requestPath, {
+          method: selected.method,
+          headers,
+          body: body || undefined,
+          credentials: "same-origin",
+        });
         const text = await response.text();
         const responseTimeMs = Math.round(performance.now() - requestStart);
         const contentType = response.headers.get("content-type") || "unknown";
@@ -1922,15 +2025,163 @@ export function renderOpenAPIDocsHtml(
       }
     });
 
-    function getAuthHeaders() {
-      const headers = {};
-      const schemeNames = Object.keys(authSchemes);
+    function getOperationSecurityRequirements(op) {
+      const operationSecurity = op && op.operation && Array.isArray(op.operation.security)
+        ? op.operation.security
+        : null;
+      if (operationSecurity) {
+        return operationSecurity;
+      }
+      return Array.isArray(spec.security) ? spec.security : [];
+    }
 
-      if (!schemeNames.length) {
+    function getAuthSelectionKeyForOperation(op) {
+      if (!op) return "";
+      return getOperationKey(op);
+    }
+
+    function getAuthSchemeOptionsForOperation(op) {
+      const requirements = getOperationSecurityRequirements(op).filter((requirement) =>
+        requirement && typeof requirement === "object" && !Array.isArray(requirement)
+      );
+      if (!requirements.length) return [];
+
+      const seen = new Set();
+      const options = [];
+      for (const requirement of requirements) {
+        for (const schemeName of Object.keys(requirement)) {
+          if (!Object.prototype.hasOwnProperty.call(authSchemes, schemeName)) continue;
+          if (seen.has(schemeName)) continue;
+          seen.add(schemeName);
+          options.push(schemeName);
+        }
+      }
+      return options;
+    }
+
+    function getSelectedAuthSchemeForOperation(op) {
+      const selectionKey = getAuthSelectionKeyForOperation(op);
+      if (!selectionKey) return null;
+
+      const selectedScheme = authSelectionState[selectionKey];
+      if (!selectedScheme || typeof selectedScheme !== "string") return null;
+
+      const options = Object.keys(authSchemes);
+      if (!options.includes(selectedScheme)) {
+        delete authSelectionState[selectionKey];
+        saveAuthSelectionState();
+        return null;
+      }
+
+      return selectedScheme;
+    }
+
+    function setSelectedAuthSchemeForOperation(op, schemeName) {
+      const selectionKey = getAuthSelectionKeyForOperation(op);
+      if (!selectionKey) return;
+
+      if (!schemeName) {
+        delete authSelectionState[selectionKey];
+      } else {
+        authSelectionState[selectionKey] = schemeName;
+      }
+      saveAuthSelectionState();
+    }
+
+    function hasAuthStateForScheme(schemeName) {
+      const scheme = authSchemes[schemeName];
+      if (!scheme) return false;
+
+      const state = authState[schemeName] || {};
+      const type = (scheme.type || "").toLowerCase();
+      const httpScheme = (scheme.scheme || "").toLowerCase();
+
+      if (type === "http" && httpScheme === "basic") {
+        return Boolean(state.username && state.password);
+      }
+      if (type === "http") {
+        return Boolean(state.token);
+      }
+      if (type === "apikey") {
+        return Boolean(state.value);
+      }
+      if (type === "oauth2" || type === "openidconnect") {
+        return Boolean(state.token);
+      }
+
+      return false;
+    }
+
+    function chooseOperationSecurityRequirement(op) {
+      const requirements = getOperationSecurityRequirements(op).filter((requirement) =>
+        requirement && typeof requirement === "object" && !Array.isArray(requirement)
+      );
+      if (!requirements.length) return null;
+
+      const selectedScheme = getSelectedAuthSchemeForOperation(op);
+      if (selectedScheme) {
+        const selectedRequirement = requirements.find((requirement) =>
+          Object.prototype.hasOwnProperty.call(requirement, selectedScheme)
+        );
+        if (selectedRequirement) return selectedRequirement;
+      }
+
+      let bestRequirement = null;
+      let bestScore = -1;
+
+      for (const requirement of requirements) {
+        const schemeNames = Object.keys(requirement).filter((schemeName) =>
+          Object.prototype.hasOwnProperty.call(authSchemes, schemeName)
+        );
+        if (!schemeNames.length) continue;
+
+        const providedCount = schemeNames.filter((schemeName) => hasAuthStateForScheme(schemeName)).length;
+        const isComplete = providedCount === schemeNames.length;
+        const score = isComplete ? 1000 + providedCount : providedCount;
+
+        if (score > bestScore) {
+          bestScore = score;
+          bestRequirement = requirement;
+        }
+      }
+
+      return bestRequirement || requirements[0];
+    }
+
+    function getAuthSchemeNamesForOperation(op) {
+      const schemeNames = Object.keys(authSchemes);
+      if (!schemeNames.length) return [];
+
+      const selectedScheme = getSelectedAuthSchemeForOperation(op);
+      if (selectedScheme) {
+        const requirement = chooseOperationSecurityRequirement(op);
+        if (requirement && Object.prototype.hasOwnProperty.call(requirement, selectedScheme)) {
+          return Object.keys(requirement).filter((schemeName) =>
+            Object.prototype.hasOwnProperty.call(authSchemes, schemeName)
+          );
+        }
+        return [selectedScheme];
+      }
+
+      const requirement = chooseOperationSecurityRequirement(op);
+      if (!requirement) return [];
+
+      return Object.keys(requirement).filter((schemeName) =>
+        Object.prototype.hasOwnProperty.call(authSchemes, schemeName)
+      );
+    }
+
+    function getAuthHeaders(op) {
+      const headers = {};
+      const schemeNames = getAuthSchemeNamesForOperation(op);
+      const allSchemeNames = Object.keys(authSchemes);
+
+      if (!allSchemeNames.length) {
         const state = authState["__default__"] || {};
         if (state.token) headers["Authorization"] = "Bearer " + state.token;
         return headers;
       }
+      if (!schemeNames.length) return headers;
 
       for (const schemeName of schemeNames) {
         const scheme = authSchemes[schemeName];
@@ -1948,16 +2199,16 @@ export function renderOpenAPIDocsHtml(
           if (state.token) headers["Authorization"] = "Bearer " + state.token;
         } else if (type === "apikey" && (scheme.in || "").toLowerCase() === "header") {
           if (state.value && scheme.name) headers[scheme.name] = state.value;
-        } else if (type === "oauth2") {
+        } else if (type === "oauth2" || type === "openidconnect") {
           if (state.token) headers["Authorization"] = "Bearer " + state.token;
         }
       }
       return headers;
     }
 
-    function getAuthQueryParams() {
+    function getAuthQueryParams(op) {
       const params = {};
-      for (const schemeName of Object.keys(authSchemes)) {
+      for (const schemeName of getAuthSchemeNamesForOperation(op)) {
         const scheme = authSchemes[schemeName];
         if ((scheme.type || "").toLowerCase() === "apikey" && (scheme.in || "").toLowerCase() === "query") {
           const state = authState[schemeName] || {};
@@ -1967,79 +2218,220 @@ export function renderOpenAPIDocsHtml(
       return params;
     }
 
+    function getAuthCookieParams(op) {
+      const cookies = {};
+      for (const schemeName of getAuthSchemeNamesForOperation(op)) {
+        const scheme = authSchemes[schemeName];
+        if ((scheme.type || "").toLowerCase() !== "apikey") continue;
+        if ((scheme.in || "").toLowerCase() !== "cookie") continue;
+        const state = authState[schemeName] || {};
+        if (state.value && scheme.name) {
+          cookies[scheme.name] = state.value;
+        }
+      }
+      return cookies;
+    }
+
+    function applyAuthCookies(op) {
+      const cookies = getAuthCookieParams(op);
+      for (const [name, value] of Object.entries(cookies)) {
+        try {
+          document.cookie = encodeURIComponent(String(name)) + "=" + encodeURIComponent(String(value)) + "; path=/";
+        } catch {}
+      }
+    }
+
     function renderAuthPanel() {
       const fields = document.getElementById("auth-fields");
       if (!fields) return;
       fields.innerHTML = "";
 
       const schemeNames = Object.keys(authSchemes);
+      const op = selected;
+      const operationSchemeOptions = op ? getAuthSchemeOptionsForOperation(op) : [];
+      const availableSchemeOptions = Object.keys(authSchemes);
+      const selectedScheme = op ? getSelectedAuthSchemeForOperation(op) : null;
 
-      function makeInput(placeholder, value, onInput) {
+      function getAuthSchemeDisplayLabel(schemeName) {
+        const scheme = authSchemes[schemeName] || {};
+        const type = (scheme.type || "").toLowerCase();
+        const httpScheme = (scheme.scheme || "").toLowerCase();
+        const location = (scheme.in || "").toLowerCase();
+
+        if (type === "http" && httpScheme === "basic") return "HTTP Basic";
+        if (type === "http" && httpScheme === "bearer") return "HTTP Bearer";
+        if (type === "http" && httpScheme === "digest") return "HTTP Digest";
+        if (type === "http") return "HTTP " + (httpScheme || "Token");
+        if (type === "apikey") return "API Key" + (location ? " (" + location + ")" : "");
+        if (type === "oauth2") return "OAuth 2.0";
+        if (type === "openidconnect") return "OpenID Connect";
+        if (type === "mutualtls") return "Mutual TLS";
+        return schemeName;
+      }
+
+      function makeInput(placeholder, value, onInput, type) {
         const inp = document.createElement("input");
-        inp.type = "text";
+        inp.type = type || "text";
         inp.value = value || "";
         inp.placeholder = placeholder;
-        inp.className = "w-full text-xs px-2.5 py-1.5 rounded border border-light-border dark:border-dark-border bg-light-bg dark:bg-dark-bg focus:outline-none focus:border-brand dark:focus:border-brand transition-colors font-mono";
+        inp.className = "w-full text-xs px-2.5 py-2 rounded-md border border-light-border dark:border-dark-border bg-light-bg dark:bg-dark-bg focus:outline-none focus:border-brand dark:focus:border-brand transition-colors font-mono";
         inp.addEventListener("input", onInput);
         return inp;
       }
 
-      function makeLabel(text) {
+      function makeLabel(text, small) {
         const el = document.createElement("p");
-        el.className = "text-[10px] font-semibold uppercase tracking-wider opacity-50 pt-1";
+        el.className = small
+          ? "text-[10px] font-medium uppercase tracking-wider opacity-55"
+          : "text-[10px] font-semibold uppercase tracking-wider opacity-55";
         el.textContent = text;
         return el;
       }
 
+      function makeField(label, input) {
+        const wrapper = document.createElement("div");
+        wrapper.className = "space-y-1";
+        wrapper.appendChild(makeLabel(label, true));
+        wrapper.appendChild(input);
+        return wrapper;
+      }
+
+      function makeSchemeCard(title, subtitle) {
+        const card = document.createElement("div");
+        card.className = "space-y-2 rounded-md border border-light-border dark:border-dark-border bg-light-bg/40 dark:bg-dark-bg/40 p-2.5";
+
+        const titleRow = document.createElement("div");
+        titleRow.className = "flex items-center justify-between gap-2";
+
+        const heading = document.createElement("p");
+        heading.className = "text-[11px] font-semibold tracking-wide";
+        heading.textContent = title;
+        titleRow.appendChild(heading);
+
+        if (subtitle) {
+          const note = document.createElement("span");
+          note.className = "text-[10px] opacity-60 font-mono";
+          note.textContent = subtitle;
+          titleRow.appendChild(note);
+        }
+
+        card.appendChild(titleRow);
+        return card;
+      }
+
       if (!schemeNames.length) {
         if (!authState["__default__"]) authState["__default__"] = {};
-        fields.appendChild(makeLabel("Bearer Token"));
-        fields.appendChild(makeInput("Enter token…", authState["__default__"].token, function(e) {
+        const defaultCard = makeSchemeCard("Default Auth", "bearer");
+        defaultCard.appendChild(makeField("Token", makeInput("Enter token…", authState["__default__"].token, function(e) {
           authState["__default__"].token = e.target.value;
           saveAuthState();
           updateRequestPreview();
-        }));
+        })));
+        fields.appendChild(defaultCard);
         return;
       }
 
-      for (const schemeName of schemeNames) {
+      if (op && availableSchemeOptions.length > 0) {
+        const selectorWrap = document.createElement("div");
+        selectorWrap.className = "space-y-1";
+        selectorWrap.appendChild(makeLabel("Auth Type"));
+        const select = document.createElement("select");
+        select.className = "w-full text-xs px-2.5 py-2 rounded-md border border-light-border dark:border-dark-border bg-light-bg dark:bg-dark-bg focus:outline-none focus:border-brand dark:focus:border-brand transition-colors font-mono";
+
+        const autoOption = document.createElement("option");
+        autoOption.value = "";
+        autoOption.textContent = "Auto";
+        select.appendChild(autoOption);
+
+        for (const schemeName of availableSchemeOptions) {
+          const option = document.createElement("option");
+          option.value = schemeName;
+          const isOperationScheme = operationSchemeOptions.includes(schemeName);
+          const label = getAuthSchemeDisplayLabel(schemeName);
+          option.textContent = isOperationScheme
+            ? label
+            : (label + " • override");
+          select.appendChild(option);
+        }
+
+        select.value = selectedScheme || "";
+        select.addEventListener("change", function(e) {
+          setSelectedAuthSchemeForOperation(op, e.target.value || "");
+          renderAuthPanel();
+          updateRequestPreview();
+        });
+        selectorWrap.appendChild(select);
+        fields.appendChild(selectorWrap);
+      }
+
+      const schemesToRender = selectedScheme
+        ? [selectedScheme]
+        : (operationSchemeOptions.length ? operationSchemeOptions : schemeNames);
+
+      for (const schemeName of schemesToRender) {
         const scheme = authSchemes[schemeName];
         if (!authState[schemeName]) authState[schemeName] = {};
         const state = authState[schemeName];
         const type = (scheme.type || "").toLowerCase();
         const httpScheme = (scheme.scheme || "").toLowerCase();
-
-        fields.appendChild(makeLabel(schemeName));
+        const card = makeSchemeCard(getAuthSchemeDisplayLabel(schemeName), schemeName);
 
         if (type === "http" && httpScheme === "basic") {
-          fields.appendChild(makeInput("Username", state.username, function(e) {
+          card.appendChild(makeField("Username", makeInput("Username", state.username, function(e) {
             authState[schemeName].username = e.target.value;
             saveAuthState();
             updateRequestPreview();
-          }));
-          var pwInput = makeInput("Password", state.password, function(e) {
+          })));
+          card.appendChild(makeField("Password", makeInput("Password", state.password, function(e) {
             authState[schemeName].password = e.target.value;
             saveAuthState();
             updateRequestPreview();
-          });
-          pwInput.type = "password";
-          fields.appendChild(pwInput);
+          }, "password")));
         } else if (type === "apikey") {
           const paramName = scheme.name || "key";
           const location = (scheme.in || "header").toLowerCase();
-          fields.appendChild(makeInput(paramName + " (" + location + ")", state.value, function(e) {
+          card.appendChild(makeField("API Key", makeInput(paramName + " (" + location + ")", state.value, function(e) {
             authState[schemeName].value = e.target.value;
             saveAuthState();
             updateRequestPreview();
-          }));
-        } else {
-          // http bearer, oauth2, or unknown — show token input
-          fields.appendChild(makeInput("Bearer token…", state.token, function(e) {
+          })));
+        } else if (type === "oauth2") {
+          card.appendChild(makeField("Access Token", makeInput("OAuth2 access token…", state.token, function(e) {
             authState[schemeName].token = e.target.value;
             saveAuthState();
             updateRequestPreview();
-          }));
+          })));
+        } else if (type === "openidconnect") {
+          card.appendChild(makeField("ID Token / Access Token", makeInput("OpenID Connect token…", state.token, function(e) {
+            authState[schemeName].token = e.target.value;
+            saveAuthState();
+            updateRequestPreview();
+          })));
+        } else if (type === "http" && httpScheme === "digest") {
+          card.appendChild(makeField("Digest Credential", makeInput("Digest token…", state.token, function(e) {
+            authState[schemeName].token = e.target.value;
+            saveAuthState();
+            updateRequestPreview();
+          })));
+        } else if (type === "http" && httpScheme === "bearer") {
+          card.appendChild(makeField("Bearer Token", makeInput("Bearer token…", state.token, function(e) {
+            authState[schemeName].token = e.target.value;
+            saveAuthState();
+            updateRequestPreview();
+          })));
+        } else if (type === "mutualtls") {
+          const hint = document.createElement("p");
+          hint.className = "text-xs opacity-70 leading-relaxed";
+          hint.textContent = "Configured by your client certificate. No token input required.";
+          card.appendChild(hint);
+        } else {
+          card.appendChild(makeField("Token", makeInput("Token…", state.token, function(e) {
+            authState[schemeName].token = e.target.value;
+            saveAuthState();
+            updateRequestPreview();
+          })));
         }
+        fields.appendChild(card);
       }
     }
 

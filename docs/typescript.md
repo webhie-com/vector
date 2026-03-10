@@ -18,6 +18,7 @@ interface AppTypes extends VectorTypes {
 }
 
 const config: VectorConfigSchema<AppTypes> = {
+  // (context) => Promise<AppTypes["auth"]> | AppTypes["auth"]
   auth: async () => ({
     id: "u1",
     email: "admin@example.com",
@@ -32,17 +33,17 @@ export type { AppTypes };
 ## Typed Routes
 
 ```ts
-import { route, APIError } from "vector-framework";
+import { route, APIError, AuthKind } from "vector-framework";
 import type { AppTypes } from "../vector.config";
 
 export const adminOnly = route<AppTypes>(
-  { method: "GET", path: "/admin", auth: true },
-  async (req) => {
-    if (req.authUser?.role !== "admin") {
+  { method: "GET", path: "/admin", auth: AuthKind.HttpBearer },
+  async (ctx) => {
+    if (ctx.authUser?.role !== "admin") {
       throw APIError.forbidden("Admin access required");
     }
 
-    return { user: req.authUser.email };
+    return { user: ctx.authUser.email };
   },
 );
 ```
@@ -77,9 +78,9 @@ interface AppTypes extends VectorTypes {
 
 const config: VectorConfigSchema<AppTypes> = {
   before: [
-    async (request) => {
-      sendNewRelicEvent(request);
-      return request;
+    // (context) => void | Response
+    async (context) => {
+      sendNewRelicEvent(context.request);
     },
   ],
 };
@@ -106,11 +107,10 @@ Why this matters:
 
 When `schema.input` is provided, request fields are inferred from validator output:
 
-- `req.content`
-- `req.body`
-- `req.params`
-- `req.query`
-- `req.cookies`
-- `req.validatedInput`
+- `ctx.validatedInput.body`
+- `ctx.validatedInput.params`
+- `ctx.validatedInput.query`
+- `ctx.validatedInput.cookies`
+- `ctx.validatedInput` (full typed payload)
 
 This lets route handlers consume normalized values with strong typing.
