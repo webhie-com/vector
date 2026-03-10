@@ -17,7 +17,7 @@ export class CheckpointPackager {
 
   async packageVersion(version: string): Promise<CheckpointArtifactPackageRecord> {
     const versionDir = join(this.storageDir, version);
-    const archiveRelPath = join(ARCHIVE_DIR, `${version}.tar.gz`).replace(/\\/g, '/');
+    const archiveRelPath = join(ARCHIVE_DIR, `${version}${this.archiveSuffix()}`).replace(/\\/g, '/');
     const archivePath = join(this.storageDir, archiveRelPath);
     await fs.mkdir(join(this.storageDir, ARCHIVE_DIR), { recursive: true });
 
@@ -72,6 +72,10 @@ export class CheckpointPackager {
 
     const stderr = await new Response(proc.stderr).text();
     throw new Error(`Failed to package checkpoint archive with tar (exit ${exitCode}): ${stderr.trim()}`);
+  }
+
+  private archiveSuffix(): '.tar' | '.tar.gz' {
+    return this.codec === 'gzip' ? '.tar.gz' : '.tar';
   }
 }
 

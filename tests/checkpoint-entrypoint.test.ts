@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach } from 'bun:test';
 import { existsSync, promises as fs } from 'node:fs';
-import { join } from 'node:path';
+import { join, relative, sep } from 'node:path';
 import { CheckpointEntrypointGenerator } from '../src/checkpoint/entrypoint-generator';
 
 const TEST_OUTPUT_DIR = join(process.cwd(), '.vector/test-entrypoint');
@@ -10,6 +10,14 @@ async function cleanup() {
   if (existsSync(TEST_OUTPUT_DIR)) {
     await fs.rm(TEST_OUTPUT_DIR, { recursive: true, force: true });
   }
+}
+
+function toImportSpecifier(fromDir: string, toFile: string): string {
+  const normalized = relative(fromDir, toFile).split(sep).join('/');
+  if (normalized.startsWith('.') || normalized.startsWith('/')) {
+    return normalized;
+  }
+  return `./${normalized}`;
 }
 
 describe('CheckpointEntrypointGenerator', () => {
@@ -91,7 +99,7 @@ describe('CheckpointEntrypointGenerator', () => {
     expect(content).toContain('/_vector/health');
   });
 
-  it('imports route files from routesDir', async () => {
+  it('imports route files from routesDir via relative specifiers', async () => {
     const generator = new CheckpointEntrypointGenerator();
 
     await generator.generate({
@@ -102,6 +110,8 @@ describe('CheckpointEntrypointGenerator', () => {
     });
 
     const content = await fs.readFile(join(TEST_OUTPUT_DIR, 'entrypoint.ts'), 'utf-8');
+    const expectedSpecifier = toImportSpecifier(TEST_OUTPUT_DIR, join(TEST_ROUTES_DIR, 'hello.ts'));
+    expect(content).toContain(`from "${expectedSpecifier}";`);
     expect(content).toContain('hello');
   });
 
@@ -200,15 +210,15 @@ describe('CheckpointEntrypointGenerator', () => {
     const content = await fs.readFile(outputPath, 'utf-8');
 
     // params derived from req.params (Bun native route params) with fallback to {}
-    expect(content).toContain("function extractRouteParams(");
+    expect(content).toContain('function extractRouteParams(');
     expect(content).toContain("setContextField(ctx, 'params', extractRouteParams(req))");
 
     // query parsed from URL searchParams
-    expect(content).toContain("function parseQuery(");
+    expect(content).toContain('function parseQuery(');
     expect(content).toContain("setContextField(ctx, 'query', parseQuery(new URL(req.url)))");
 
     // cookies parsed from Cookie header
-    expect(content).toContain("function parseCookies(");
+    expect(content).toContain('function parseCookies(');
     expect(content).toContain("setContextField(ctx, 'cookies', parseCookies(req.headers.get('cookie')))");
 
     // metadata initialized to empty object before forwarded context may override it

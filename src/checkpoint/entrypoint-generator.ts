@@ -65,7 +65,8 @@ export class CheckpointEntrypointGenerator {
 
     for (const [i, file] of routeFiles.entries()) {
       const varName = `routeModule_${i}`;
-      imports.push(`import * as ${varName} from '${file}';`);
+      const importSpecifier = this.toImportSpecifier(file, options.outputDir);
+      imports.push(`import * as ${varName} from ${JSON.stringify(importSpecifier)};`);
       registrations.push(`  registerModule(${varName});`);
 
       // Record discovered route for manifest
@@ -262,5 +263,13 @@ const server = Bun.serve({
 // Signal readiness to parent process
 process.stdout.write('READY\\n');
 `;
+  }
+
+  private toImportSpecifier(filePath: string, outputDir: string): string {
+    const normalized = relative(outputDir, filePath).split(sep).join('/');
+    if (normalized.startsWith('.') || normalized.startsWith('/')) {
+      return normalized;
+    }
+    return `./${normalized}`;
   }
 }
