@@ -126,9 +126,60 @@ function parseCheckpointContext(req: Request): Record<string, unknown> {
   }
 }
 
+function parseQuery(url: URL): Record<string, string | string[]> {
+  const query: Record<string, string | string[]> = {};
+  for (const [key, value] of url.searchParams) {
+    if (key in query) {
+      const existing = query[key];
+      if (Array.isArray(existing)) {
+        existing.push(value);
+      } else {
+        query[key] = [existing as string, value];
+      }
+    } else {
+      query[key] = value;
+    }
+  }
+  return query;
+}
+
+function parseCookies(cookieHeader: string | null): Record<string, string> {
+  const cookies: Record<string, string> = {};
+  if (!cookieHeader) {
+    return cookies;
+  }
+  for (const pair of cookieHeader.split(';')) {
+    const idx = pair.indexOf('=');
+    if (idx > 0) {
+      cookies[pair.slice(0, idx).trim()] = pair.slice(idx + 1).trim();
+    }
+  }
+  return cookies;
+}
+
+function extractRouteParams(req: Request): Record<string, string> {
+  const nativeParams = (req as Request & { params?: Record<string, string> }).params;
+  if (nativeParams && typeof nativeParams === 'object' && !Array.isArray(nativeParams)) {
+    return nativeParams;
+  }
+  return {};
+}
+
 function createContext(req: Request): Record<string, unknown> {
   const ctx: Record<string, unknown> = Object.create(null);
   setContextField(ctx, 'request', req);
+
+  // Initialize always-present VectorContext fields with defaults derived from the request
+  setContextField(ctx, 'params', extractRouteParams(req));
+
+  try {
+    setContextField(ctx, 'query', parseQuery(new URL(req.url)));
+  } catch {
+    setContextField(ctx, 'query', {});
+  }
+
+  setContextField(ctx, 'cookies', parseCookies(req.headers.get('cookie')));
+  setContextField(ctx, 'metadata', {});
 
   const checkpointContext = parseCheckpointContext(req);
   const allowedCheckpointKeys = ['metadata', 'content', 'validatedInput', 'authUser'] as const;

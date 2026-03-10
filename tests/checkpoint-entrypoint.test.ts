@@ -186,4 +186,32 @@ describe('CheckpointEntrypointGenerator', () => {
     expect(content).toContain('function setContextField(');
     expect(content).toContain('parseCheckpointContext');
   });
+
+  it('initializes params, query, cookies, and metadata defaults in createContext', async () => {
+    const generator = new CheckpointEntrypointGenerator();
+
+    const outputPath = await generator.generate({
+      version: '1.0.0',
+      outputDir: TEST_OUTPUT_DIR,
+      routesDir: TEST_ROUTES_DIR,
+      socketPath: '/tmp/test-checkpoint.sock',
+    });
+
+    const content = await fs.readFile(outputPath, 'utf-8');
+
+    // params derived from req.params (Bun native route params) with fallback to {}
+    expect(content).toContain("function extractRouteParams(");
+    expect(content).toContain("setContextField(ctx, 'params', extractRouteParams(req))");
+
+    // query parsed from URL searchParams
+    expect(content).toContain("function parseQuery(");
+    expect(content).toContain("setContextField(ctx, 'query', parseQuery(new URL(req.url)))");
+
+    // cookies parsed from Cookie header
+    expect(content).toContain("function parseCookies(");
+    expect(content).toContain("setContextField(ctx, 'cookies', parseCookies(req.headers.get('cookie')))");
+
+    // metadata initialized to empty object before forwarded context may override it
+    expect(content).toContain("setContextField(ctx, 'metadata', {})");
+  });
 });
