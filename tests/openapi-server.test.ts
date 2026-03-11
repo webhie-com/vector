@@ -4,6 +4,7 @@ import { CacheManager } from '../src/cache/manager';
 import { VectorRouter } from '../src/core/router';
 import { VectorServer } from '../src/core/server';
 import { MiddlewareManager } from '../src/middleware/manager';
+import { AuthKind, OpenApiSecuritySchemeType } from '../src/types';
 import { z } from 'zod';
 
 function makeRouter() {
@@ -34,6 +35,53 @@ describe('OpenAPI server endpoints', () => {
 
     const docsResponse = (server as any).tryHandleOpenAPIRequest(new Request('http://localhost/docs'));
     expect(docsResponse).toBeNull();
+  });
+
+  it('publishes security metadata in /openapi.json for auth-enabled routes', async () => {
+    const router = makeRouter();
+    router.setRouteBooleanDefaults({ auth: AuthKind.ApiKey });
+    router.route({ method: 'GET', path: '/secure', expose: true, auth: AuthKind.HttpBearer }, async () => ({
+      ok: true,
+    }));
+    router.route({ method: 'GET', path: '/secure-true', expose: true, auth: true }, async () => ({ ok: true }));
+    router.route({ method: 'GET', path: '/secure-default', expose: true }, async () => ({ ok: true }));
+
+    const server = new VectorServer(router, {
+      development: true,
+      openapi: {
+        enabled: true,
+        path: '/openapi.json',
+        auth: {
+          securitySchemeNames: {
+            [AuthKind.HttpBearer]: 'jwtAuth',
+          },
+          securitySchemes: {
+            [AuthKind.HttpBearer]: {
+              type: OpenApiSecuritySchemeType.Http,
+              scheme: 'bearer',
+              bearerFormat: 'AccessToken',
+            },
+          },
+        },
+      },
+    });
+
+    const openapiResponse = (server as any).tryHandleOpenAPIRequest(
+      new Request('http://localhost/openapi.json')
+    ) as Response;
+    expect(openapiResponse.status).toBe(200);
+
+    const spec = await openapiResponse.json();
+    expect(spec.paths['/secure'].get.security).toEqual([{ jwtAuth: [] }]);
+    expect(spec.paths['/secure-true'].get.security).toEqual([{ apiKeyAuth: [] }]);
+    expect(spec.paths['/secure-default'].get.security).toEqual([{ apiKeyAuth: [] }]);
+    expect(spec.components.securitySchemes.jwtAuth).toEqual(
+      expect.objectContaining({
+        type: OpenApiSecuritySchemeType.Http,
+        scheme: 'bearer',
+        bearerFormat: 'AccessToken',
+      })
+    );
   });
 
   it('suppresses openapi conversion warnings when not in debug logging mode', async () => {
@@ -224,6 +272,49 @@ describe('OpenAPI server endpoints', () => {
     expect(html).toContain('/openapi.json');
   });
 
+  it('includes advanced auth UI handlers (openIdConnect, apiKey cookie, security alternatives)', async () => {
+    const router = makeRouter();
+    router.route({ method: 'GET', path: '/oidc', expose: true, auth: AuthKind.OpenIdConnect }, async () => ({
+      ok: true,
+    }));
+    router.route({ method: 'GET', path: '/cookie', expose: true, auth: AuthKind.ApiKey }, async () => ({ ok: true }));
+
+    const server = new VectorServer(router, {
+      development: true,
+      openapi: {
+        enabled: true,
+        path: '/openapi.json',
+        auth: {
+          securitySchemes: {
+            [AuthKind.ApiKey]: {
+              type: OpenApiSecuritySchemeType.ApiKey,
+              in: 'cookie',
+              name: 'session_token',
+            },
+          },
+        },
+        docs: {
+          enabled: true,
+          path: '/docs',
+        },
+      },
+    });
+
+    const docsResponse = (server as any).tryHandleOpenAPIRequest(new Request('http://localhost/docs')) as Response;
+    const html = await docsResponse.text();
+
+    expect(html).toContain('chooseOperationSecurityRequirement');
+    expect(html).toContain('AUTH_SELECTION_KEY');
+    expect(html).toContain('getSelectedAuthSchemeForOperation');
+    expect(html).toContain('setSelectedAuthSchemeForOperation');
+    expect(html).toContain('getAuthCookieParams(op)');
+    expect(html).toContain('type === "oauth2" || type === "openidconnect"');
+    expect(html).toContain('OAuth2 access token…');
+    expect(html).toContain('OpenID Connect token…');
+    expect(html).toContain('applyAuthCookies(selected)');
+    expect(html).toContain('credentials: "same-origin"');
+  });
+
   it('renders response schemas in docs UI for routes with schema.output', async () => {
     const router = makeRouter();
     const outputSchema = z.object({
@@ -261,7 +352,56 @@ describe('OpenAPI server endpoints', () => {
     const html = await docsResponse.text();
     expect(html).toContain('Response Schemas');
     expect(html).toContain('renderResponseSchemasSection(op.responses)');
+    expect(html).toContain('<details class="mb-4">');
+    expect(html).toContain('data-param-tooltip-description');
     expect(html).toContain('"responses":{"201"');
+  });
+
+  it('publishes zod field descriptions and includes tooltip renderer wiring in docs UI', async () => {
+    const router = makeRouter();
+    const outputSchema = z.object({
+      id: z.string().describe('Zod id field'),
+      email: z.string().email(),
+    });
+
+    router.route(
+      {
+        method: 'GET',
+        path: '/zod-tooltips',
+        expose: true,
+        schema: {
+          output: {
+            200: outputSchema,
+          },
+        },
+      },
+      async () => ({ id: 'u_1', email: 'dev@example.com' })
+    );
+
+    const server = new VectorServer(router, {
+      development: true,
+      openapi: {
+        enabled: true,
+        path: '/openapi.json',
+        docs: {
+          enabled: true,
+          path: '/docs',
+        },
+      },
+    });
+
+    const openapiResponse = (server as any).tryHandleOpenAPIRequest(
+      new Request('http://localhost/openapi.json')
+    ) as Response;
+    const spec = await openapiResponse.json();
+    expect(
+      spec.paths['/zod-tooltips'].get.responses['200'].content['application/json'].schema.properties.id.description
+    ).toBe('Zod id field');
+
+    const docsResponse = (server as any).tryHandleOpenAPIRequest(new Request('http://localhost/docs')) as Response;
+    const html = await docsResponse.text();
+    expect(html).toContain('data-param-tooltip-description');
+    expect(html).toContain('const tooltipDescription =');
   });
 
   it('filters docs UI to configured docs.exposePaths while keeping openapi.json complete', async () => {

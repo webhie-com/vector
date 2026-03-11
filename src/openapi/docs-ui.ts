@@ -144,6 +144,124 @@ export function renderOpenAPIDocsHtml(
     .dark .json-number { color: #7dc9ff; }
     .dark .json-boolean { color: #93a4bf; }
     .dark .json-null { color: #7c8ba3; }
+    .param-row {
+      --param-row-bg-rgb: 255 255 255;
+    }
+    .dark .param-row {
+      --param-row-bg-rgb: 10 10 10;
+    }
+    .param-row-head {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      align-items: center;
+      gap: 0.5rem;
+      min-width: 0;
+      width: 100%;
+    }
+    .param-row-main {
+      min-width: 0;
+      display: flex;
+      align-items: center;
+      gap: 0.4rem;
+      overflow: hidden;
+    }
+    .param-tooltip-trigger {
+      border: 0;
+      margin: 0;
+      padding: 0;
+      background: transparent;
+      color: inherit;
+      cursor: pointer;
+      font: inherit;
+      text-align: left;
+      min-width: 0;
+    }
+    .param-tooltip-trigger:focus-visible {
+      outline: 2px solid rgba(0, 161, 255, 0.65);
+      outline-offset: 2px;
+      border-radius: 0.375rem;
+    }
+    .param-name-trigger {
+      min-width: 0;
+      flex: 1 1 auto;
+      overflow: hidden;
+    }
+    .param-name-text {
+      display: block;
+      max-width: 100%;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      mask-image: linear-gradient(to right, #000 0%, #000 calc(100% - 18px), transparent 100%);
+      -webkit-mask-image: linear-gradient(to right, #000 0%, #000 calc(100% - 18px), transparent 100%);
+    }
+    .param-type-fade {
+      position: relative;
+      z-index: 1;
+      display: block;
+      max-width: none;
+      overflow: visible;
+      text-overflow: clip;
+      padding-left: 1.25rem;
+      white-space: nowrap;
+      text-align: left;
+      justify-self: end;
+      background: linear-gradient(
+        90deg,
+        rgba(var(--param-row-bg-rgb), 0) 0%,
+        rgba(var(--param-row-bg-rgb), 0.76) 36%,
+        rgba(var(--param-row-bg-rgb), 0.94) 68%,
+        rgba(var(--param-row-bg-rgb), 1) 100%
+      );
+    }
+    #param-value-tooltip {
+      position: fixed;
+      top: 0;
+      left: 0;
+      z-index: 70;
+      width: min(42rem, calc(100vw - 0.75rem));
+      border-radius: 0.5rem;
+      border: 1px solid rgba(15, 23, 42, 0.12);
+      background: rgba(255, 255, 255, 0.92);
+      color: #111111;
+      box-shadow: 0 10px 20px rgba(15, 23, 42, 0.14);
+      backdrop-filter: blur(12px) saturate(145%);
+      -webkit-backdrop-filter: blur(12px) saturate(145%);
+      padding: 0.4rem 0.6rem;
+      opacity: 0;
+      pointer-events: none;
+      transform: translateY(6px) scale(0.98);
+      transition:
+        opacity var(--motion-fast) var(--motion-ease),
+        transform var(--motion-fast) var(--motion-ease);
+    }
+    #param-value-tooltip.is-visible {
+      opacity: 1;
+      pointer-events: auto;
+      transform: translateY(0) scale(1);
+    }
+    .dark #param-value-tooltip {
+      border-color: rgba(148, 163, 184, 0.24);
+      background: rgba(17, 17, 17, 0.9);
+      color: #ededed;
+      box-shadow: 0 14px 30px rgba(0, 0, 0, 0.45);
+    }
+    #param-tooltip-line {
+      margin: 0;
+      font-size: 11px;
+      line-height: 1.3;
+      font-family: "JetBrains Mono", monospace;
+      white-space: normal;
+      word-break: break-word;
+    }
+    #param-tooltip-description {
+      margin: 0.2rem 0 0;
+      font-size: 11px;
+      line-height: 1.3;
+      opacity: 0.8;
+      white-space: normal;
+      word-break: break-word;
+    }
   </style>
 </head>
 <body class="bg-light-bg text-light-text dark:bg-dark-bg dark:text-dark-text font-sans antialiased flex h-screen overflow-hidden">
@@ -172,6 +290,16 @@ export function renderOpenAPIDocsHtml(
           class="w-full pl-9 pr-3 py-2 text-sm rounded-md border border-light-border dark:border-dark-border bg-light-bg dark:bg-dark-bg focus:outline-none focus:border-brand dark:focus:border-brand transition-colors"
         />
       </div>
+    </div>
+    <div id="auth-panel" class="border-b border-light-border dark:border-dark-border">
+      <button id="auth-toggle" class="w-full flex items-center justify-between px-4 py-2.5 text-xs font-semibold uppercase tracking-wider opacity-60 hover:opacity-100 transition-opacity">
+        <span class="flex items-center gap-1.5">
+          <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"></path></svg>
+          Auth
+        </span>
+        <svg id="auth-chevron" class="w-3.5 h-3.5 transition-transform duration-200" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path></svg>
+      </button>
+      <div id="auth-fields" class="px-4 pb-3 space-y-2"></div>
     </div>
     <nav class="flex-1 overflow-y-auto px-3 py-2 space-y-6 text-sm" id="sidebar-nav"></nav>
   </aside>
@@ -205,6 +333,9 @@ export function renderOpenAPIDocsHtml(
           <div class="flex items-center gap-3 mb-4">
              <span id="endpoint-method" class="px-2.5 py-0.5 rounded-full text-xs font-mono font-medium"></span>
              <h2 class="text-xl font-semibold tracking-tight" id="endpoint-title">Operation</h2>
+          </div>
+          <div id="deprecated-banner" class="hidden mb-4 px-3 py-2 rounded border border-amber-300 dark:border-amber-700 bg-amber-50 dark:bg-amber-900/20 text-amber-700 dark:text-amber-400 text-xs font-medium">
+            ! This operation is deprecated
           </div>
           <p class="text-sm opacity-80 mb-8 font-mono" id="endpoint-path">/</p>
           <div class="grid grid-cols-1 lg:grid-cols-12 gap-10">
@@ -301,6 +432,10 @@ export function renderOpenAPIDocsHtml(
       <pre id="expand-viewer" class="hidden w-full h-[70vh] text-sm p-3 rounded border border-light-border dark:border-dark-border bg-light-bg dark:bg-dark-bg overflow-auto font-mono"></pre>
     </div>
   </div>
+  <div id="param-value-tooltip" aria-hidden="true" role="tooltip">
+    <p id="param-tooltip-line"></p>
+    <p id="param-tooltip-description" class="hidden"></p>
+  </div>
 
   <script>
     const spec = ${specJson};
@@ -371,14 +506,71 @@ export function renderOpenAPIDocsHtml(
       return ops;
     }
 
+    const AUTH_STATE_KEY = "vector-docs-auth-v1";
+    const AUTH_SELECTION_KEY = "vector-docs-auth-selection-v1";
+    const HEADERS_STATE_KEY = "vector-docs-headers-v1";
+
+    function loadSavedHeaders() {
+      try {
+        const raw = localStorage.getItem(HEADERS_STATE_KEY);
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+        }
+      } catch {}
+      return [{ key: "", value: "" }];
+    }
+
+    function saveHeaders() {
+      try { localStorage.setItem(HEADERS_STATE_KEY, JSON.stringify(requestHeaders)); } catch {}
+    }
+
+    function loadAuthState() {
+      try {
+        const raw = localStorage.getItem(AUTH_STATE_KEY);
+        if (raw) return JSON.parse(raw);
+      } catch {}
+      return {};
+    }
+
+    function saveAuthState() {
+      try { localStorage.setItem(AUTH_STATE_KEY, JSON.stringify(authState)); } catch {}
+    }
+
+    function loadAuthSelectionState() {
+      try {
+        const raw = localStorage.getItem(AUTH_SELECTION_KEY);
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+            return parsed;
+          }
+        }
+      } catch {}
+      return {};
+    }
+
+    function saveAuthSelectionState() {
+      try { localStorage.setItem(AUTH_SELECTION_KEY, JSON.stringify(authSelectionState)); } catch {}
+    }
+
+    const authSchemes = (spec.components && spec.components.securitySchemes) || {};
+    let authState = loadAuthState();
+    let authSelectionState = loadAuthSelectionState();
+
     const operations = getOperations();
     let selected = operations[0] || null;
     const operationParamValues = new Map();
     const operationBodyDrafts = new Map();
-    const requestHeaders = [{ key: "Authorization", value: "" }];
+    const requestHeaders = loadSavedHeaders();
     let expandModalMode = null;
     let isMobileSidebarOpen = false;
     let sidebarSearchQuery = "";
+    const paramTooltipRoot = document.getElementById("param-value-tooltip");
+    const paramTooltipLine = document.getElementById("param-tooltip-line");
+    const paramTooltipDescription = document.getElementById("param-tooltip-description");
+    let activeParamTooltipTrigger = null;
+    let paramTooltipHideTimer = null;
 
     function setMobileSidebarOpen(open) {
       const sidebar = document.getElementById("docs-sidebar");
@@ -396,6 +588,29 @@ export function renderOpenAPIDocsHtml(
 
     function getOperationKey(op) {
       return op.method + " " + op.path;
+    }
+
+    function getOpHash(op) {
+      var tag = op.tag || "default";
+      var id = (op.operation && op.operation.operationId)
+        ? op.operation.operationId
+        : op.method.toLowerCase() + "_" + op.path.split("/").filter(Boolean).join("_").replace(/[{}]/g, "");
+      return "#/" + encodeURIComponent(tag) + "/" + encodeURIComponent(id);
+    }
+
+    function findOpByHash(hash) {
+      if (!hash || hash.length <= 1) return null;
+      var parts = hash.slice(1).split("/").filter(Boolean);
+      if (parts.length < 2) return null;
+      var hashTag = decodeURIComponent(parts[0]);
+      var hashId = decodeURIComponent(parts[1]);
+      return operations.find(function(op) {
+        if (op.tag !== hashTag) return false;
+        var id = (op.operation && op.operation.operationId)
+          ? op.operation.operationId
+          : op.method.toLowerCase() + "_" + op.path.split("/").filter(Boolean).join("_").replace(/[{}]/g, "");
+        return id === hashId;
+      }) || null;
     }
 
     function getOperationParameterGroups(op) {
@@ -447,7 +662,7 @@ export function renderOpenAPIDocsHtml(
       return resolved;
     }
 
-    function buildRequestPath(op, pathParams, queryParams, values) {
+    function buildRequestPath(op, pathParams, queryParams, values, extraQuery) {
       const resolvedPath = resolvePath(op.path, pathParams, values);
       const query = new URLSearchParams();
 
@@ -457,6 +672,13 @@ export function renderOpenAPIDocsHtml(
           continue;
         }
         query.append(param.name, String(rawValue));
+      }
+
+      if (extraQuery) {
+        for (const key of Object.keys(extraQuery)) {
+          const val = extraQuery[key];
+          if (val) query.set(key, String(val));
+        }
       }
 
       const queryString = query.toString();
@@ -598,14 +820,25 @@ export function renderOpenAPIDocsHtml(
 
           const name = document.createElement("span");
           name.textContent = op.name;
+          if (op.operation && op.operation.deprecated) {
+            name.style.textDecoration = "line-through";
+            name.style.opacity = "0.5";
+          }
 
           row.appendChild(method);
           row.appendChild(name);
+          if (op.operation && op.operation.deprecated) {
+            const badge = document.createElement("span");
+            badge.className = "text-[9px] px-1 py-0.5 rounded bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-500 font-semibold shrink-0";
+            badge.textContent = "deprecated";
+            row.appendChild(badge);
+          }
           a.appendChild(row);
 
           a.onclick = (e) => {
             e.preventDefault();
             selected = op;
+            history.pushState(null, "", getOpHash(op));
             renderSidebar();
             renderEndpoint();
             if (window.innerWidth < 768) {
@@ -619,51 +852,257 @@ export function renderOpenAPIDocsHtml(
       }
     }
 
+    function hideParamTooltip() {
+      if (!paramTooltipRoot) return;
+      if (paramTooltipHideTimer) {
+        window.clearTimeout(paramTooltipHideTimer);
+        paramTooltipHideTimer = null;
+      }
+      paramTooltipRoot.classList.remove("is-visible");
+      paramTooltipRoot.setAttribute("aria-hidden", "true");
+      if (activeParamTooltipTrigger) {
+        activeParamTooltipTrigger.setAttribute("aria-expanded", "false");
+      }
+      activeParamTooltipTrigger = null;
+    }
+
+    function scheduleParamTooltipHide() {
+      if (paramTooltipHideTimer) {
+        window.clearTimeout(paramTooltipHideTimer);
+      }
+      paramTooltipHideTimer = window.setTimeout(() => {
+        hideParamTooltip();
+      }, 95);
+    }
+
+    function positionParamTooltip(trigger) {
+      if (!paramTooltipRoot || !trigger) return;
+      const viewportPadding = 8;
+      const spacing = 10;
+      const triggerRect = trigger.getBoundingClientRect();
+      const tooltipRect = paramTooltipRoot.getBoundingClientRect();
+      let left = triggerRect.left + (triggerRect.width / 2) - (tooltipRect.width / 2);
+      left = Math.max(viewportPadding, Math.min(left, window.innerWidth - tooltipRect.width - viewportPadding));
+      let top = triggerRect.top - tooltipRect.height - spacing;
+      if (top < viewportPadding) {
+        top = triggerRect.bottom + spacing;
+      }
+      if (top + tooltipRect.height > window.innerHeight - viewportPadding) {
+        top = window.innerHeight - tooltipRect.height - viewportPadding;
+      }
+      paramTooltipRoot.style.left = Math.round(left) + "px";
+      paramTooltipRoot.style.top = Math.round(top) + "px";
+    }
+
+    function showParamTooltip(trigger) {
+      if (
+        !paramTooltipRoot ||
+        !paramTooltipLine ||
+        !paramTooltipDescription ||
+        !trigger
+      ) {
+        return;
+      }
+      if (paramTooltipHideTimer) {
+        window.clearTimeout(paramTooltipHideTimer);
+        paramTooltipHideTimer = null;
+      }
+      const label = trigger.getAttribute("data-param-tooltip-label") || "Value";
+      const value = trigger.getAttribute("data-param-tooltip-value") || "";
+      const related = trigger.getAttribute("data-param-tooltip-related") || "";
+      const description = trigger.getAttribute("data-param-tooltip-description") || "";
+      if (activeParamTooltipTrigger && activeParamTooltipTrigger !== trigger) {
+        activeParamTooltipTrigger.setAttribute("aria-expanded", "false");
+      }
+      activeParamTooltipTrigger = trigger;
+      activeParamTooltipTrigger.setAttribute("aria-expanded", "true");
+      const pathLabel = related ? " | path: " + related : "";
+      paramTooltipLine.textContent = label + ": " + value + pathLabel;
+      if (description.trim()) {
+        paramTooltipDescription.textContent = description;
+        paramTooltipDescription.classList.remove("hidden");
+      } else {
+        paramTooltipDescription.textContent = "";
+        paramTooltipDescription.classList.add("hidden");
+      }
+      paramTooltipRoot.classList.add("is-visible");
+      paramTooltipRoot.setAttribute("aria-hidden", "false");
+      positionParamTooltip(trigger);
+    }
+
+    function registerParamTooltipTargets(scope) {
+      if (!scope) return;
+      const targets = scope.querySelectorAll("[data-param-tooltip-value]");
+      for (const target of targets) {
+        target.addEventListener("click", (event) => {
+          event.preventDefault();
+          if (
+            activeParamTooltipTrigger === target &&
+            paramTooltipRoot &&
+            paramTooltipRoot.classList.contains("is-visible")
+          ) {
+            hideParamTooltip();
+            return;
+          }
+          showParamTooltip(target);
+        });
+        target.addEventListener("mouseenter", () => {
+          showParamTooltip(target);
+        });
+        target.addEventListener("mouseleave", (event) => {
+          const related = event.relatedTarget;
+          if (paramTooltipRoot && related && paramTooltipRoot.contains(related)) return;
+          scheduleParamTooltipHide();
+        });
+        target.addEventListener("focus", () => {
+          showParamTooltip(target);
+        });
+        target.addEventListener("blur", (event) => {
+          const related = event.relatedTarget;
+          if (paramTooltipRoot && related && paramTooltipRoot.contains(related)) return;
+          scheduleParamTooltipHide();
+        });
+      }
+    }
+
     function renderParamSection(title, params) {
       if (!params.length) return "";
       let rows = "";
       for (const p of params) {
-        const type = escapeHtml((p.schema && p.schema.type) || "unknown");
-        const name = escapeHtml(p.name || "");
-        rows += '<div class="py-2 flex justify-between border-b border-light-border/50 dark:border-dark-border/50"><div><code class="text-sm font-mono">' + name + '</code><span class="text-xs text-brand ml-2">' + (p.required ? "required" : "optional") + '</span></div><span class="text-xs font-mono opacity-60">' + type + '</span></div>';
+        const schema = resolveSchemaRef(p.schema || {});
+        const typeRaw = getSchemaTypeLabel(schema);
+        const type = escapeHtml(typeRaw);
+        const nameRaw = p.name || "";
+        const name = escapeHtml(nameRaw);
+        const tooltipName = escapeHtmlAttribute(nameRaw);
+        const tooltipType = escapeHtmlAttribute(typeRaw);
+        const tooltipDescription = (typeof p.description === "string" && p.description.trim())
+          ? escapeHtmlAttribute(p.description.trim())
+          : (typeof schema.description === "string" && schema.description.trim())
+            ? escapeHtmlAttribute(schema.description.trim())
+            : "";
+        const desc = (typeof p.description === "string" && p.description.trim())
+          ? '<p class="text-xs opacity-60 mt-0.5 leading-snug">' + renderMarkdown(p.description.trim()) + '</p>'
+          : "";
+        const extra = buildSchemaExtra(schema);
+        rows +=
+          '<div class="param-row py-2 border-b border-light-border/50 dark:border-dark-border/50">' +
+          '<div class="param-row-head">' +
+          '<div class="param-row-main">' +
+          '<button type="button" class="param-tooltip-trigger param-name-trigger" data-param-tooltip-label="Parameter" data-param-tooltip-value="' +
+          tooltipName +
+          '" data-param-tooltip-description="' +
+          tooltipDescription +
+          '" aria-expanded="false">' +
+          '<code class="text-sm font-mono param-name-text">' +
+          name +
+          "</code></button>" +
+          '<span class="text-xs text-brand shrink-0">' +
+          (p.required ? "required" : "optional") +
+          "</span></div>" +
+          '<button type="button" class="param-tooltip-trigger param-type-fade text-xs font-mono opacity-60" data-param-tooltip-label="Type" data-param-tooltip-value="' +
+          tooltipType +
+          '" data-param-tooltip-description="' +
+          tooltipDescription +
+          '" aria-expanded="false">' +
+          type +
+          "</button></div>" +
+          desc +
+          extra +
+          "</div>";
       }
       return '<div><h3 class="text-sm font-semibold mb-3 flex items-center border-b border-light-border dark:border-dark-border pb-2">' + escapeHtml(title) + "</h3>" + rows + "</div>";
     }
 
     function getSchemaTypeLabel(schema) {
-      if (!schema || typeof schema !== "object") return "unknown";
-      if (Array.isArray(schema.type)) return schema.type.join(" | ");
-      if (schema.type) return String(schema.type);
-      if (schema.properties) return "object";
-      if (schema.items) return "array";
-      if (Array.isArray(schema.oneOf)) return "oneOf";
-      if (Array.isArray(schema.anyOf)) return "anyOf";
-      if (Array.isArray(schema.allOf)) return "allOf";
+      const resolved = resolveSchemaRef(schema);
+      if (!resolved || typeof resolved !== "object") return "unknown";
+      if (Array.isArray(resolved.type)) return resolved.type.join(" | ");
+      if (resolved.type) return String(resolved.type);
+      if (resolved.properties) return "object";
+      if (resolved.items) return "array";
+      if (Array.isArray(resolved.oneOf)) return "oneOf";
+      if (Array.isArray(resolved.anyOf)) return "anyOf";
+      if (Array.isArray(resolved.allOf)) return "allOf";
       return "unknown";
     }
 
+    function buildSchemaExtra(schema) {
+      const resolved = resolveSchemaRef(schema);
+      if (!resolved || typeof resolved !== "object") return "";
+      const chips = [];
+      if (resolved.format) chips.push(escapeHtml(String(resolved.format)));
+      if (Array.isArray(resolved.enum) && resolved.enum.length > 0) {
+        const shown = resolved.enum.slice(0, 5).map(function(v) { return escapeHtml(JSON.stringify(v)); });
+        chips.push(shown.join(" | ") + (resolved.enum.length > 5 ? " …" : ""));
+      }
+      if (resolved.minimum !== undefined) chips.push("min: " + resolved.minimum);
+      if (resolved.maximum !== undefined) chips.push("max: " + resolved.maximum);
+      if (typeof resolved.exclusiveMinimum === "number") chips.push("&gt;" + resolved.exclusiveMinimum);
+      if (typeof resolved.exclusiveMaximum === "number") chips.push("&lt;" + resolved.exclusiveMaximum);
+      if (resolved.minLength !== undefined) chips.push("minLen: " + resolved.minLength);
+      if (resolved.maxLength !== undefined) chips.push("maxLen: " + resolved.maxLength);
+      if (resolved.minItems !== undefined) chips.push("minItems: " + resolved.minItems);
+      if (resolved.maxItems !== undefined) chips.push("maxItems: " + resolved.maxItems);
+      if (resolved.uniqueItems) chips.push("unique");
+      if (resolved.pattern) chips.push("/" + escapeHtml(String(resolved.pattern)) + "/");
+      if (!chips.length) return "";
+      return '<div class="flex flex-wrap gap-1 mt-1.5">' +
+        chips.map(function(c) {
+          return '<span class="text-[10px] px-1.5 py-0.5 rounded bg-black/5 dark:bg-white/5 font-mono opacity-80">' + c + '</span>';
+        }).join("") +
+        '</div>';
+    }
+
+    function resolveSchemaRef(schema, visitedRefs) {
+      if (!schema || typeof schema !== "object") return schema;
+      const ref = typeof schema.$ref === "string" ? schema.$ref : "";
+      if (!ref || !ref.startsWith("#/components/schemas/")) {
+        return schema;
+      }
+
+      const seen = visitedRefs || new Set();
+      if (seen.has(ref)) return schema;
+      seen.add(ref);
+
+      const parts = ref.split("/");
+      const schemaName = parts[parts.length - 1];
+      const referenced = spec && spec.components && spec.components.schemas && spec.components.schemas[schemaName];
+      if (!referenced || typeof referenced !== "object") return schema;
+
+      const merged = Object.assign({}, referenced, schema);
+      delete merged.$ref;
+      return resolveSchemaRef(merged, seen);
+    }
+
     function buildSchemaChildren(schema) {
-      if (!schema || typeof schema !== "object") return [];
+      const resolved = resolveSchemaRef(schema);
+      if (!resolved || typeof resolved !== "object") return [];
 
       const children = [];
 
-      if (schema.properties && typeof schema.properties === "object") {
+      if (resolved.properties && typeof resolved.properties === "object") {
         const requiredSet = new Set(
-          Array.isArray(schema.required) ? schema.required : [],
+          Array.isArray(resolved.required) ? resolved.required : [],
         );
-        for (const [name, childSchema] of Object.entries(schema.properties)) {
+        for (const [name, childSchema] of Object.entries(resolved.properties)) {
+          const childDef = childSchema || {};
+          const isArrayType = Array.isArray(childDef.type)
+            ? childDef.type.includes("array")
+            : childDef.type === "array";
+          const isArrayLike = isArrayType || childDef.items !== undefined;
           children.push({
-            name,
-            schema: childSchema || {},
+            name: isArrayLike ? (name + "[]") : name,
+            schema: childDef,
             required: requiredSet.has(name),
           });
         }
       }
 
-      if (schema.items) {
+      if (resolved.items) {
         children.push({
-          name: "items[]",
-          schema: schema.items,
+          name: getArrayItemNodeName(resolved.items),
+          schema: resolved.items,
           required: true,
         });
       }
@@ -671,45 +1110,100 @@ export function renderOpenAPIDocsHtml(
       return children;
     }
 
-    function renderSchemaFieldNode(field, depth) {
-      const schema = field.schema || {};
-      const name = escapeHtml(field.name || "field");
+    function getArrayItemNodeName(itemSchema) {
+      if (!itemSchema || typeof itemSchema !== "object") return "item";
+      const title =
+        typeof itemSchema.title === "string" && itemSchema.title.trim()
+          ? itemSchema.title.trim()
+          : "";
+      if (title) return title;
+
+      const ref =
+        typeof itemSchema.$ref === "string" && itemSchema.$ref.trim()
+          ? itemSchema.$ref.trim()
+          : "";
+      if (ref) {
+        const parts = ref.split("/").filter(Boolean);
+        const last = parts[parts.length - 1];
+        if (last) return last;
+      }
+
+      const typeLabel = getSchemaTypeLabel(itemSchema);
+      if (typeLabel && typeLabel !== "unknown") return typeLabel;
+      return "type";
+    }
+
+    function renderSchemaFieldNode(field, depth, parentPath) {
+      const schema = resolveSchemaRef(field.schema || {});
+      const nameRaw = field.name || "field";
+      const name = escapeHtml(nameRaw);
       const requiredLabel = field.required ? "required" : "optional";
-      const type = escapeHtml(getSchemaTypeLabel(schema));
+      const typeRaw = getSchemaTypeLabel(schema);
+      const type = escapeHtml(typeRaw);
+      const tooltipName = escapeHtmlAttribute(nameRaw);
+      const tooltipType = escapeHtmlAttribute(typeRaw);
+      const fieldPath = parentPath ? (parentPath + "." + nameRaw) : nameRaw;
+      const tooltipPath = escapeHtmlAttribute(fieldPath);
+      const tooltipDescription = (typeof schema.description === "string" && schema.description.trim())
+        ? escapeHtmlAttribute(schema.description.trim())
+        : "";
       const children = buildSchemaChildren(schema);
       const padding = depth * 14;
+      const extra = buildSchemaExtra(schema);
 
       if (!children.length) {
         return (
-          '<div class="py-2 border-b border-light-border/50 dark:border-dark-border/50" style="padding-left:' +
+          '<div class="param-row py-2 border-b border-light-border/50 dark:border-dark-border/50" style="padding-left:' +
           padding +
-          'px"><div class="flex justify-between"><div><code class="text-sm font-mono">' +
+          'px"><div class="param-row-head"><div class="param-row-main">' +
+          '<button type="button" class="param-tooltip-trigger param-name-trigger" data-param-tooltip-label="Field" data-param-tooltip-value="' +
+          tooltipName +
+          '" data-param-tooltip-related="' +
+          tooltipPath +
+          '" data-param-tooltip-description="' +
+          tooltipDescription +
+          '" aria-expanded="false"><code class="text-sm font-mono param-name-text">' +
           name +
-          '</code><span class="text-xs text-brand ml-2">' +
+          '</code></button><span class="text-xs text-brand shrink-0">' +
           requiredLabel +
-          '</span></div><span class="text-xs font-mono opacity-60">' +
+          '</span></div><button type="button" class="param-tooltip-trigger param-type-fade text-xs font-mono opacity-60" data-param-tooltip-label="Type" data-param-tooltip-value="' +
+          tooltipType +
+          '" data-param-tooltip-description="' +
+          tooltipDescription +
+          '" aria-expanded="false">' +
           type +
-          "</span></div></div>"
+          "</button></div>" + extra + "</div>"
         );
       }
 
       let nested = "";
       for (const child of children) {
-        nested += renderSchemaFieldNode(child, depth + 1);
+        nested += renderSchemaFieldNode(child, depth + 1, fieldPath);
       }
 
       return (
-        '<details class="border-b border-light-border/50 dark:border-dark-border/50" open>' +
-        '<summary class="list-none cursor-pointer py-2 flex justify-between items-center" style="padding-left:' +
+        '<details open>' +
+        '<summary class="list-none cursor-pointer py-2 border-b border-light-border/50 dark:border-dark-border/50" style="padding-left:' +
         padding +
-        'px"><div class="flex items-center gap-2"><span class="text-xs opacity-70">▾</span><code class="text-sm font-mono">' +
+        'px"><div class="param-row-head"><div class="param-row-main"><span class="text-xs opacity-70 shrink-0">▾</span>' +
+        '<button type="button" class="param-tooltip-trigger param-name-trigger" data-param-tooltip-label="Field" data-param-tooltip-value="' +
+        tooltipName +
+        '" data-param-tooltip-related="' +
+        tooltipPath +
+        '" data-param-tooltip-description="' +
+        tooltipDescription +
+        '" aria-expanded="false"><code class="text-sm font-mono param-name-text">' +
         name +
-        '</code><span class="text-xs text-brand">' +
+        '</code></button><span class="text-xs text-brand shrink-0">' +
         requiredLabel +
-        '</span></div><span class="text-xs font-mono opacity-60">' +
+        '</span></div><button type="button" class="param-tooltip-trigger param-type-fade text-xs font-mono opacity-60" data-param-tooltip-label="Type" data-param-tooltip-value="' +
+        tooltipType +
+        '" data-param-tooltip-description="' +
+        tooltipDescription +
+        '" aria-expanded="false">' +
         type +
-        "</span></summary>" +
-        '<div class="pb-1">' +
+        "</button></div>" + extra + "</summary>" +
+        "<div>" +
         nested +
         "</div></details>"
       );
@@ -722,7 +1216,7 @@ export function renderOpenAPIDocsHtml(
 
       let rows = "";
       for (const child of rootChildren) {
-        rows += renderSchemaFieldNode(child, 0);
+        rows += renderSchemaFieldNode(child, 0, "");
       }
 
       return (
@@ -749,27 +1243,40 @@ export function renderOpenAPIDocsHtml(
         const responseDef = responses[statusCode];
         if (!responseDef || typeof responseDef !== "object") continue;
 
+        const responseDesc = (typeof responseDef.description === "string" && responseDef.description.trim())
+          ? responseDef.description.trim()
+          : "";
+
         const jsonSchema =
           responseDef.content &&
           responseDef.content["application/json"] &&
           responseDef.content["application/json"].schema;
 
-        if (!jsonSchema || typeof jsonSchema !== "object") continue;
-
-        const rootChildren = buildSchemaChildren(jsonSchema);
-        if (!rootChildren.length) continue;
-
         let rows = "";
-        for (const child of rootChildren) {
-          rows += renderSchemaFieldNode(child, 0);
+        if (jsonSchema && typeof jsonSchema === "object") {
+          const rootChildren = buildSchemaChildren(jsonSchema);
+          for (const child of rootChildren) {
+            rows += renderSchemaFieldNode(child, 0, "");
+          }
         }
 
+        if (!responseDesc && !rows) continue;
+
+        const descHtml = responseDesc
+          ? ' <span class="normal-case font-sans opacity-70 ml-1">— ' + escapeHtml(responseDesc) + '</span>'
+          : "";
+        const contentHtml = rows || '<p class="text-xs opacity-60 mt-1">No schema fields</p>';
+
         sections +=
-          '<div class="mb-4"><h4 class="text-xs font-mono uppercase tracking-wider opacity-70 mb-2">Status ' +
+          '<details class="mb-4">' +
+          '<summary class="list-none cursor-pointer">' +
+          '<h4 class="text-xs font-mono uppercase tracking-wider opacity-70 mb-2">Status ' +
           escapeHtml(statusCode) +
+          descHtml +
           "</h4>" +
-          rows +
-          "</div>";
+          "</summary>" +
+          contentHtml +
+          "</details>";
       }
 
       if (!sections) return "";
@@ -861,6 +1368,7 @@ export function renderOpenAPIDocsHtml(
           "w-full text-xs px-2.5 py-2 rounded border border-light-border dark:border-dark-border bg-light-bg dark:bg-dark-bg focus:outline-none focus:border-brand dark:focus:border-brand transition-colors font-mono";
         keyInput.addEventListener("input", () => {
           entry.key = keyInput.value;
+          saveHeaders();
           updateRequestPreview();
         });
 
@@ -875,6 +1383,7 @@ export function renderOpenAPIDocsHtml(
           "w-full text-xs px-2.5 py-2 rounded border border-light-border dark:border-dark-border bg-light-bg dark:bg-dark-bg focus:outline-none focus:border-brand dark:focus:border-brand transition-colors font-mono";
         valueInput.addEventListener("input", () => {
           entry.value = valueInput.value;
+          saveHeaders();
           updateRequestPreview();
         });
 
@@ -888,6 +1397,7 @@ export function renderOpenAPIDocsHtml(
           '<svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 12h12"></path></svg>';
         removeButton.addEventListener("click", () => {
           requestHeaders.splice(index, 1);
+          saveHeaders();
           renderHeaderInputs();
           updateRequestPreview();
         });
@@ -904,15 +1414,32 @@ export function renderOpenAPIDocsHtml(
       return Object.keys(headers).some((key) => key.toLowerCase() === target);
     }
 
-    function getRequestHeadersObject() {
-      const headers = {};
+    function buildCookieHeaderValue(cookieValues) {
+      const entries = Object.entries(cookieValues);
+      if (!entries.length) return "";
+      return entries
+        .map(([name, value]) => String(name) + "=" + encodeURIComponent(String(value)))
+        .join("; ");
+    }
+
+    function getRequestHeadersObject(op) {
+      const auth = getAuthHeaders(op);
+      const authCookies = getAuthCookieParams(op);
+      if (Object.keys(authCookies).length > 0) {
+        const cookieHeader = buildCookieHeaderValue(authCookies);
+        if (cookieHeader) {
+          auth["Cookie"] = cookieHeader;
+        }
+      }
+      const manual = {};
       for (const entry of requestHeaders) {
         const key = String(entry.key || "").trim();
         const value = String(entry.value || "").trim();
         if (!key || !value) continue;
-        headers[key] = value;
+        manual[key] = value;
       }
-      return headers;
+      // Auth provides defaults; manual headers win on conflict
+      return Object.assign({}, auth, manual);
     }
 
     function buildCurl(op, headers, body, requestPath) {
@@ -947,6 +1474,33 @@ export function renderOpenAPIDocsHtml(
         .replace(/&/g, "&amp;")
         .replace(/</g, "&lt;")
         .replace(/>/g, "&gt;");
+    }
+
+    function escapeHtmlAttribute(value) {
+      return String(value)
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#39;");
+    }
+
+    function renderMarkdown(text) {
+      if (!text || typeof text !== "string") return "";
+      var s = escapeHtml(text);
+      // inline code — process first to protect content inside backticks
+      s = s.replace(/\`([^\`\\n]+)\`/g, '<code class="text-xs font-mono bg-black/5 dark:bg-white/5 px-1 py-0.5 rounded">$1</code>');
+      // bold **text**
+      s = s.replace(/\\*\\*([^*\\n]+)\\*\\*/g, '<strong>$1</strong>');
+      // italic *text*
+      s = s.replace(/\\*([^*\\n]+)\\*/g, '<em>$1</em>');
+      // links [text](url)
+      s = s.replace(/\\[([^\\]]+)\\]\\(([^)]+)\\)/g, function(m, txt, url) {
+        var lc = url.toLowerCase().replace(/\\s/g, "");
+        if (lc.indexOf("javascript:") === 0 || lc.indexOf("data:") === 0 || lc.indexOf("vbscript:") === 0) return txt;
+        return '<a href="' + url.replace(/"/g, '&quot;') + '" target="_blank" rel="noopener noreferrer" class="text-brand hover:underline">' + txt + '</a>';
+      });
+      return s;
     }
 
     function toPrettyJson(value) {
@@ -1082,10 +1636,10 @@ export function renderOpenAPIDocsHtml(
 
       const { path, query } = getOperationParameterGroups(selected);
       const values = getParameterValues(selected);
-      const requestPath = buildRequestPath(selected, path, query, values);
+      const requestPath = buildRequestPath(selected, path, query, values, getAuthQueryParams(selected));
       const bodyInput = document.getElementById("body-input");
       const body = bodyInput ? bodyInput.value.trim() : "";
-      const headers = getRequestHeadersObject();
+      const headers = getRequestHeadersObject(selected);
       if (body && !hasHeaderName(headers, "Content-Type")) {
         headers["Content-Type"] = "application/json";
       }
@@ -1136,8 +1690,13 @@ export function renderOpenAPIDocsHtml(
       }
       setResponseContent("", "", false);
 
+      const deprecatedBanner = document.getElementById("deprecated-banner");
+      if (deprecatedBanner) {
+        deprecatedBanner.classList.toggle("hidden", !op.deprecated);
+      }
+
       document.getElementById("tag-title").textContent = selected.tag;
-      document.getElementById("tag-description").textContent = op.description || "Interactive API documentation.";
+      document.getElementById("tag-description").innerHTML = op.description ? renderMarkdown(op.description) : "Interactive API documentation.";
       const methodNode = document.getElementById("endpoint-method");
       methodNode.textContent = selected.method;
       methodNode.className = "px-2.5 py-0.5 rounded-full text-xs font-mono font-medium " + (methodBadge[selected.method] || methodBadgeDefault);
@@ -1154,7 +1713,13 @@ export function renderOpenAPIDocsHtml(
 
       html += renderRequestBodySchemaSection(reqSchema);
       html += renderResponseSchemasSection(op.responses);
-      document.getElementById("params-column").innerHTML = html || '<div class="text-sm opacity-70">No parameters</div>';
+      const paramsColumn = document.getElementById("params-column");
+      if (paramsColumn) {
+        hideParamTooltip();
+        paramsColumn.innerHTML = html || '<div class="text-sm opacity-70">No parameters</div>';
+        registerParamTooltipTargets(paramsColumn);
+      }
+      renderAuthPanel();
       renderTryItParameterInputs(path, query);
       renderHeaderInputs();
       updateRequestPreview();
@@ -1164,6 +1729,24 @@ export function renderOpenAPIDocsHtml(
 
     document.getElementById("copy-curl").addEventListener("click", async () => {
       try { await navigator.clipboard.writeText(document.getElementById("curl-code").textContent || ""); } catch {}
+    });
+    if (paramTooltipRoot) {
+      paramTooltipRoot.addEventListener("mouseenter", () => {
+        if (paramTooltipHideTimer) {
+          window.clearTimeout(paramTooltipHideTimer);
+          paramTooltipHideTimer = null;
+        }
+      });
+      paramTooltipRoot.addEventListener("mouseleave", () => {
+        scheduleParamTooltipHide();
+      });
+    }
+    document.addEventListener("pointerdown", (event) => {
+      if (!paramTooltipRoot) return;
+      const target = event.target;
+      if (target && paramTooltipRoot.contains(target)) return;
+      if (target && target.closest && target.closest("[data-param-tooltip-value]")) return;
+      hideParamTooltip();
     });
     document.getElementById("sidebar-search").addEventListener("input", (event) => {
       sidebarSearchQuery = event.currentTarget.value || "";
@@ -1190,7 +1773,7 @@ export function renderOpenAPIDocsHtml(
         return;
       }
 
-      const requestPath = buildRequestPath(selected, path, query, values);
+      const requestPath = buildRequestPath(selected, path, query, values, getAuthQueryParams(selected));
       formatBodyJsonInput();
       updateBodyJsonPresentation();
       const op = selected.operation || {};
@@ -1199,7 +1782,7 @@ export function renderOpenAPIDocsHtml(
       const bodyInput = document.getElementById("body-input");
       const body =
         supportsBody && bodyInput ? bodyInput.value.trim() : "";
-      const headers = getRequestHeadersObject();
+      const headers = getRequestHeadersObject(selected);
       if (body && !hasHeaderName(headers, "Content-Type")) {
         headers["Content-Type"] = "application/json";
       }
@@ -1207,7 +1790,13 @@ export function renderOpenAPIDocsHtml(
       setSubmitLoading(true);
       try {
         const requestStart = performance.now();
-        const response = await fetch(requestPath, { method: selected.method, headers, body: body || undefined });
+        applyAuthCookies(selected);
+        const response = await fetch(requestPath, {
+          method: selected.method,
+          headers,
+          body: body || undefined,
+          credentials: "same-origin",
+        });
         const text = await response.text();
         const responseTimeMs = Math.round(performance.now() - requestStart);
         const contentType = response.headers.get("content-type") || "unknown";
@@ -1283,6 +1872,7 @@ export function renderOpenAPIDocsHtml(
 
     document.getElementById("add-header-btn").addEventListener("click", () => {
       requestHeaders.push({ key: "", value: "" });
+      saveHeaders();
       renderHeaderInputs();
       updateRequestPreview();
     });
@@ -1396,12 +1986,21 @@ export function renderOpenAPIDocsHtml(
       setMobileSidebarOpen(false);
     });
     window.addEventListener("resize", () => {
+      if (activeParamTooltipTrigger) {
+        positionParamTooltip(activeParamTooltipTrigger);
+      }
       if (window.innerWidth >= 768 && isMobileSidebarOpen) {
         setMobileSidebarOpen(false);
       }
     });
+    window.addEventListener("scroll", () => {
+      if (activeParamTooltipTrigger) {
+        positionParamTooltip(activeParamTooltipTrigger);
+      }
+    }, true);
     document.addEventListener("keydown", (event) => {
       if (event.key === "Escape") {
+        hideParamTooltip();
         if (isMobileSidebarOpen) {
           setMobileSidebarOpen(false);
         }
@@ -1426,7 +2025,444 @@ export function renderOpenAPIDocsHtml(
       }
     });
 
+    function getOperationSecurityRequirements(op) {
+      const operationSecurity = op && op.operation && Array.isArray(op.operation.security)
+        ? op.operation.security
+        : null;
+      if (operationSecurity) {
+        return operationSecurity;
+      }
+      return Array.isArray(spec.security) ? spec.security : [];
+    }
+
+    function getAuthSelectionKeyForOperation(op) {
+      if (!op) return "";
+      return getOperationKey(op);
+    }
+
+    function getAuthSchemeOptionsForOperation(op) {
+      const requirements = getOperationSecurityRequirements(op).filter((requirement) =>
+        requirement && typeof requirement === "object" && !Array.isArray(requirement)
+      );
+      if (!requirements.length) return [];
+
+      const seen = new Set();
+      const options = [];
+      for (const requirement of requirements) {
+        for (const schemeName of Object.keys(requirement)) {
+          if (!Object.prototype.hasOwnProperty.call(authSchemes, schemeName)) continue;
+          if (seen.has(schemeName)) continue;
+          seen.add(schemeName);
+          options.push(schemeName);
+        }
+      }
+      return options;
+    }
+
+    function getSelectedAuthSchemeForOperation(op) {
+      const selectionKey = getAuthSelectionKeyForOperation(op);
+      if (!selectionKey) return null;
+
+      const selectedScheme = authSelectionState[selectionKey];
+      if (!selectedScheme || typeof selectedScheme !== "string") return null;
+
+      const options = Object.keys(authSchemes);
+      if (!options.includes(selectedScheme)) {
+        delete authSelectionState[selectionKey];
+        saveAuthSelectionState();
+        return null;
+      }
+
+      return selectedScheme;
+    }
+
+    function setSelectedAuthSchemeForOperation(op, schemeName) {
+      const selectionKey = getAuthSelectionKeyForOperation(op);
+      if (!selectionKey) return;
+
+      if (!schemeName) {
+        delete authSelectionState[selectionKey];
+      } else {
+        authSelectionState[selectionKey] = schemeName;
+      }
+      saveAuthSelectionState();
+    }
+
+    function hasAuthStateForScheme(schemeName) {
+      const scheme = authSchemes[schemeName];
+      if (!scheme) return false;
+
+      const state = authState[schemeName] || {};
+      const type = (scheme.type || "").toLowerCase();
+      const httpScheme = (scheme.scheme || "").toLowerCase();
+
+      if (type === "http" && httpScheme === "basic") {
+        return Boolean(state.username && state.password);
+      }
+      if (type === "http") {
+        return Boolean(state.token);
+      }
+      if (type === "apikey") {
+        return Boolean(state.value);
+      }
+      if (type === "oauth2" || type === "openidconnect") {
+        return Boolean(state.token);
+      }
+
+      return false;
+    }
+
+    function chooseOperationSecurityRequirement(op) {
+      const requirements = getOperationSecurityRequirements(op).filter((requirement) =>
+        requirement && typeof requirement === "object" && !Array.isArray(requirement)
+      );
+      if (!requirements.length) return null;
+
+      const selectedScheme = getSelectedAuthSchemeForOperation(op);
+      if (selectedScheme) {
+        const selectedRequirement = requirements.find((requirement) =>
+          Object.prototype.hasOwnProperty.call(requirement, selectedScheme)
+        );
+        if (selectedRequirement) return selectedRequirement;
+      }
+
+      let bestRequirement = null;
+      let bestScore = -1;
+
+      for (const requirement of requirements) {
+        const schemeNames = Object.keys(requirement).filter((schemeName) =>
+          Object.prototype.hasOwnProperty.call(authSchemes, schemeName)
+        );
+        if (!schemeNames.length) continue;
+
+        const providedCount = schemeNames.filter((schemeName) => hasAuthStateForScheme(schemeName)).length;
+        const isComplete = providedCount === schemeNames.length;
+        const score = isComplete ? 1000 + providedCount : providedCount;
+
+        if (score > bestScore) {
+          bestScore = score;
+          bestRequirement = requirement;
+        }
+      }
+
+      return bestRequirement || requirements[0];
+    }
+
+    function getAuthSchemeNamesForOperation(op) {
+      const schemeNames = Object.keys(authSchemes);
+      if (!schemeNames.length) return [];
+
+      const selectedScheme = getSelectedAuthSchemeForOperation(op);
+      if (selectedScheme) {
+        const requirement = chooseOperationSecurityRequirement(op);
+        if (requirement && Object.prototype.hasOwnProperty.call(requirement, selectedScheme)) {
+          return Object.keys(requirement).filter((schemeName) =>
+            Object.prototype.hasOwnProperty.call(authSchemes, schemeName)
+          );
+        }
+        return [selectedScheme];
+      }
+
+      const requirement = chooseOperationSecurityRequirement(op);
+      if (!requirement) return [];
+
+      return Object.keys(requirement).filter((schemeName) =>
+        Object.prototype.hasOwnProperty.call(authSchemes, schemeName)
+      );
+    }
+
+    function getAuthHeaders(op) {
+      const headers = {};
+      const schemeNames = getAuthSchemeNamesForOperation(op);
+      const allSchemeNames = Object.keys(authSchemes);
+
+      if (!allSchemeNames.length) {
+        const state = authState["__default__"] || {};
+        if (state.token) headers["Authorization"] = "Bearer " + state.token;
+        return headers;
+      }
+      if (!schemeNames.length) return headers;
+
+      for (const schemeName of schemeNames) {
+        const scheme = authSchemes[schemeName];
+        const state = authState[schemeName] || {};
+        const type = (scheme.type || "").toLowerCase();
+        const httpScheme = (scheme.scheme || "").toLowerCase();
+
+        if (type === "http" && httpScheme === "basic") {
+          if (state.username && state.password) {
+            try {
+              headers["Authorization"] = "Basic " + btoa(state.username + ":" + state.password);
+            } catch {}
+          }
+        } else if (type === "http") {
+          if (state.token) headers["Authorization"] = "Bearer " + state.token;
+        } else if (type === "apikey" && (scheme.in || "").toLowerCase() === "header") {
+          if (state.value && scheme.name) headers[scheme.name] = state.value;
+        } else if (type === "oauth2" || type === "openidconnect") {
+          if (state.token) headers["Authorization"] = "Bearer " + state.token;
+        }
+      }
+      return headers;
+    }
+
+    function getAuthQueryParams(op) {
+      const params = {};
+      for (const schemeName of getAuthSchemeNamesForOperation(op)) {
+        const scheme = authSchemes[schemeName];
+        if ((scheme.type || "").toLowerCase() === "apikey" && (scheme.in || "").toLowerCase() === "query") {
+          const state = authState[schemeName] || {};
+          if (state.value && scheme.name) params[scheme.name] = state.value;
+        }
+      }
+      return params;
+    }
+
+    function getAuthCookieParams(op) {
+      const cookies = {};
+      for (const schemeName of getAuthSchemeNamesForOperation(op)) {
+        const scheme = authSchemes[schemeName];
+        if ((scheme.type || "").toLowerCase() !== "apikey") continue;
+        if ((scheme.in || "").toLowerCase() !== "cookie") continue;
+        const state = authState[schemeName] || {};
+        if (state.value && scheme.name) {
+          cookies[scheme.name] = state.value;
+        }
+      }
+      return cookies;
+    }
+
+    function applyAuthCookies(op) {
+      const cookies = getAuthCookieParams(op);
+      for (const [name, value] of Object.entries(cookies)) {
+        try {
+          document.cookie = encodeURIComponent(String(name)) + "=" + encodeURIComponent(String(value)) + "; path=/";
+        } catch {}
+      }
+    }
+
+    function renderAuthPanel() {
+      const fields = document.getElementById("auth-fields");
+      if (!fields) return;
+      fields.innerHTML = "";
+
+      const schemeNames = Object.keys(authSchemes);
+      const op = selected;
+      const operationSchemeOptions = op ? getAuthSchemeOptionsForOperation(op) : [];
+      const availableSchemeOptions = Object.keys(authSchemes);
+      const selectedScheme = op ? getSelectedAuthSchemeForOperation(op) : null;
+
+      function getAuthSchemeDisplayLabel(schemeName) {
+        const scheme = authSchemes[schemeName] || {};
+        const type = (scheme.type || "").toLowerCase();
+        const httpScheme = (scheme.scheme || "").toLowerCase();
+        const location = (scheme.in || "").toLowerCase();
+
+        if (type === "http" && httpScheme === "basic") return "HTTP Basic";
+        if (type === "http" && httpScheme === "bearer") return "HTTP Bearer";
+        if (type === "http" && httpScheme === "digest") return "HTTP Digest";
+        if (type === "http") return "HTTP " + (httpScheme || "Token");
+        if (type === "apikey") return "API Key" + (location ? " (" + location + ")" : "");
+        if (type === "oauth2") return "OAuth 2.0";
+        if (type === "openidconnect") return "OpenID Connect";
+        if (type === "mutualtls") return "Mutual TLS";
+        return schemeName;
+      }
+
+      function makeInput(placeholder, value, onInput, type) {
+        const inp = document.createElement("input");
+        inp.type = type || "text";
+        inp.value = value || "";
+        inp.placeholder = placeholder;
+        inp.className = "w-full text-xs px-2.5 py-2 rounded-md border border-light-border dark:border-dark-border bg-light-bg dark:bg-dark-bg focus:outline-none focus:border-brand dark:focus:border-brand transition-colors font-mono";
+        inp.addEventListener("input", onInput);
+        return inp;
+      }
+
+      function makeLabel(text, small) {
+        const el = document.createElement("p");
+        el.className = small
+          ? "text-[10px] font-medium uppercase tracking-wider opacity-55"
+          : "text-[10px] font-semibold uppercase tracking-wider opacity-55";
+        el.textContent = text;
+        return el;
+      }
+
+      function makeField(label, input) {
+        const wrapper = document.createElement("div");
+        wrapper.className = "space-y-1";
+        wrapper.appendChild(makeLabel(label, true));
+        wrapper.appendChild(input);
+        return wrapper;
+      }
+
+      function makeSchemeCard(title, subtitle) {
+        const card = document.createElement("div");
+        card.className = "space-y-2 rounded-md border border-light-border dark:border-dark-border bg-light-bg/40 dark:bg-dark-bg/40 p-2.5";
+
+        const titleRow = document.createElement("div");
+        titleRow.className = "flex items-center justify-between gap-2";
+
+        const heading = document.createElement("p");
+        heading.className = "text-[11px] font-semibold tracking-wide";
+        heading.textContent = title;
+        titleRow.appendChild(heading);
+
+        if (subtitle) {
+          const note = document.createElement("span");
+          note.className = "text-[10px] opacity-60 font-mono";
+          note.textContent = subtitle;
+          titleRow.appendChild(note);
+        }
+
+        card.appendChild(titleRow);
+        return card;
+      }
+
+      if (!schemeNames.length) {
+        if (!authState["__default__"]) authState["__default__"] = {};
+        const defaultCard = makeSchemeCard("Default Auth", "bearer");
+        defaultCard.appendChild(makeField("Token", makeInput("Enter token…", authState["__default__"].token, function(e) {
+          authState["__default__"].token = e.target.value;
+          saveAuthState();
+          updateRequestPreview();
+        })));
+        fields.appendChild(defaultCard);
+        return;
+      }
+
+      if (op && availableSchemeOptions.length > 0) {
+        const selectorWrap = document.createElement("div");
+        selectorWrap.className = "space-y-1";
+        selectorWrap.appendChild(makeLabel("Auth Type"));
+        const select = document.createElement("select");
+        select.className = "w-full text-xs px-2.5 py-2 rounded-md border border-light-border dark:border-dark-border bg-light-bg dark:bg-dark-bg focus:outline-none focus:border-brand dark:focus:border-brand transition-colors font-mono";
+
+        const autoOption = document.createElement("option");
+        autoOption.value = "";
+        autoOption.textContent = "Auto";
+        select.appendChild(autoOption);
+
+        for (const schemeName of availableSchemeOptions) {
+          const option = document.createElement("option");
+          option.value = schemeName;
+          const isOperationScheme = operationSchemeOptions.includes(schemeName);
+          const label = getAuthSchemeDisplayLabel(schemeName);
+          option.textContent = isOperationScheme
+            ? label
+            : (label + " • override");
+          select.appendChild(option);
+        }
+
+        select.value = selectedScheme || "";
+        select.addEventListener("change", function(e) {
+          setSelectedAuthSchemeForOperation(op, e.target.value || "");
+          renderAuthPanel();
+          updateRequestPreview();
+        });
+        selectorWrap.appendChild(select);
+        fields.appendChild(selectorWrap);
+      }
+
+      const schemesToRender = selectedScheme
+        ? [selectedScheme]
+        : (operationSchemeOptions.length ? operationSchemeOptions : schemeNames);
+
+      for (const schemeName of schemesToRender) {
+        const scheme = authSchemes[schemeName];
+        if (!authState[schemeName]) authState[schemeName] = {};
+        const state = authState[schemeName];
+        const type = (scheme.type || "").toLowerCase();
+        const httpScheme = (scheme.scheme || "").toLowerCase();
+        const card = makeSchemeCard(getAuthSchemeDisplayLabel(schemeName), schemeName);
+
+        if (type === "http" && httpScheme === "basic") {
+          card.appendChild(makeField("Username", makeInput("Username", state.username, function(e) {
+            authState[schemeName].username = e.target.value;
+            saveAuthState();
+            updateRequestPreview();
+          })));
+          card.appendChild(makeField("Password", makeInput("Password", state.password, function(e) {
+            authState[schemeName].password = e.target.value;
+            saveAuthState();
+            updateRequestPreview();
+          }, "password")));
+        } else if (type === "apikey") {
+          const paramName = scheme.name || "key";
+          const location = (scheme.in || "header").toLowerCase();
+          card.appendChild(makeField("API Key", makeInput(paramName + " (" + location + ")", state.value, function(e) {
+            authState[schemeName].value = e.target.value;
+            saveAuthState();
+            updateRequestPreview();
+          })));
+        } else if (type === "oauth2") {
+          card.appendChild(makeField("Access Token", makeInput("OAuth2 access token…", state.token, function(e) {
+            authState[schemeName].token = e.target.value;
+            saveAuthState();
+            updateRequestPreview();
+          })));
+        } else if (type === "openidconnect") {
+          card.appendChild(makeField("ID Token / Access Token", makeInput("OpenID Connect token…", state.token, function(e) {
+            authState[schemeName].token = e.target.value;
+            saveAuthState();
+            updateRequestPreview();
+          })));
+        } else if (type === "http" && httpScheme === "digest") {
+          card.appendChild(makeField("Digest Credential", makeInput("Digest token…", state.token, function(e) {
+            authState[schemeName].token = e.target.value;
+            saveAuthState();
+            updateRequestPreview();
+          })));
+        } else if (type === "http" && httpScheme === "bearer") {
+          card.appendChild(makeField("Bearer Token", makeInput("Bearer token…", state.token, function(e) {
+            authState[schemeName].token = e.target.value;
+            saveAuthState();
+            updateRequestPreview();
+          })));
+        } else if (type === "mutualtls") {
+          const hint = document.createElement("p");
+          hint.className = "text-xs opacity-70 leading-relaxed";
+          hint.textContent = "Configured by your client certificate. No token input required.";
+          card.appendChild(hint);
+        } else {
+          card.appendChild(makeField("Token", makeInput("Token…", state.token, function(e) {
+            authState[schemeName].token = e.target.value;
+            saveAuthState();
+            updateRequestPreview();
+          })));
+        }
+        fields.appendChild(card);
+      }
+    }
+
+    let authPanelOpen = true;
+    document.getElementById("auth-toggle").addEventListener("click", function() {
+      authPanelOpen = !authPanelOpen;
+      const fieldsEl = document.getElementById("auth-fields");
+      const chevron = document.getElementById("auth-chevron");
+      if (fieldsEl) fieldsEl.classList.toggle("hidden", !authPanelOpen);
+      if (chevron) chevron.style.transform = authPanelOpen ? "" : "rotate(-90deg)";
+    });
+
+    // Restore selected operation from URL hash, or set hash for the default selection
+    var initMatch = findOpByHash(window.location.hash);
+    if (initMatch) {
+      selected = initMatch;
+    } else if (selected) {
+      history.replaceState(null, "", getOpHash(selected));
+    }
+
+    window.addEventListener("popstate", function() {
+      var match = findOpByHash(window.location.hash);
+      if (match) {
+        selected = match;
+        renderSidebar();
+        renderEndpoint();
+      }
+    });
+
     setMobileSidebarOpen(false);
+    renderAuthPanel();
     renderSidebar();
     renderEndpoint();
   </script>

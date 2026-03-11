@@ -62,12 +62,12 @@ const checkoutSchema = {
 
 export const createFestivalCheckoutSession = route(
   { method: 'POST', path: '/commerce/checkout/:tenantId', auth: true, schema: checkoutSchema },
-  async (req) => {
-    if (!req.content) {
+  async (ctx) => {
+    if (!ctx.content) {
       return { error: true, message: 'Missing checkout payload' };
     }
 
-    const body = req.content;
+    const body = ctx.content;
 
     const subtotalCents = body.items.reduce((sum, item) => sum + item.quantity * item.unitPriceCents, 0);
     const serviceFeeCents = Math.round(subtotalCents * 0.08);

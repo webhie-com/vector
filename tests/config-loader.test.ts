@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it } from 'bun:test';
 import { rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { ConfigLoader } from '../src/core/config-loader';
+import { AuthKind } from '../src/types';
 
 const tempFiles: string[] = [];
 
@@ -35,6 +36,26 @@ describe('ConfigLoader', () => {
     expect(config.routeExcludePatterns).toEqual(['*.spec.ts', '*.spec.pause.ts']);
   });
 
+  it('coerces string port values to numbers', async () => {
+    const tempPath = join(process.cwd(), `.tmp.vector.config.port-string.${Date.now()}.mjs`);
+    tempFiles.push(tempPath);
+
+    await Bun.write(
+      tempPath,
+      `
+      export default {
+        port: "4321"
+      };
+    `
+    );
+
+    const loader = new ConfigLoader(tempPath);
+    const config = await loader.load();
+
+    expect(config.port).toBe(4321);
+    expect(typeof config.port).toBe('number');
+  });
+
   it('maps all major config fields from VectorConfigSchema', async () => {
     const tempPath = join(process.cwd(), `.tmp.vector.config.full.${Date.now()}.mjs`);
     tempFiles.push(tempPath);
@@ -53,7 +74,7 @@ describe('ConfigLoader', () => {
         defaults: {
           route: {
             expose: false,
-            auth: true,
+            auth: "HttpBearer",
             rawRequest: true,
             validate: false,
             rawResponse: true
@@ -71,6 +92,11 @@ describe('ConfigLoader', () => {
           enabled: true,
           path: "/openapi.json",
           target: "openapi-3.0",
+          auth: {
+            securitySchemeNames: {
+              HttpBearer: "jwtAuth"
+            }
+          },
           docs: {
             enabled: true,
             path: "/docs",
@@ -84,6 +110,14 @@ describe('ConfigLoader', () => {
         },
         startup: async () => {},
         shutdown: async () => {},
+        checkpoint: {
+          enabled: true,
+          storageDir: "./.vector/checkpoints",
+          maxCheckpoints: 25,
+          versionHeader: "x-vector-checkpoint-version",
+          idleTimeoutMs: 300000,
+          cacheKeyOverride: true
+        },
         auth: async () => ({ userId: "u_1" }),
         cache: async (key, factory) => factory(),
         before: [async (request) => request],
@@ -105,7 +139,7 @@ describe('ConfigLoader', () => {
     expect(config.defaults).toEqual({
       route: {
         expose: false,
-        auth: true,
+        auth: AuthKind.HttpBearer,
         rawRequest: true,
         validate: false,
         rawResponse: true,
@@ -125,6 +159,11 @@ describe('ConfigLoader', () => {
       enabled: true,
       path: '/openapi.json',
       target: 'openapi-3.0',
+      auth: {
+        securitySchemeNames: {
+          [AuthKind.HttpBearer]: 'jwtAuth',
+        },
+      },
       docs: {
         enabled: true,
         path: '/docs',
@@ -135,6 +174,15 @@ describe('ConfigLoader', () => {
         version: '1.0.0',
         description: 'Config loader coverage test',
       },
+    });
+
+    expect(config.checkpoint).toEqual({
+      enabled: true,
+      storageDir: './.vector/checkpoints',
+      maxCheckpoints: 25,
+      versionHeader: 'x-vector-checkpoint-version',
+      idleTimeoutMs: 300000,
+      cacheKeyOverride: true,
     });
 
     expect(typeof config.startup).toBe('function');

@@ -153,4 +153,66 @@ describe('startVector', () => {
     expect(app.config.idleTimeout).toBe(0);
     app.stop();
   });
+
+  it('does not enable checkpoint gateway when checkpoint.enabled is false', async () => {
+    const tempPath = join(process.cwd(), `.tmp.vector.start.checkpoint-disabled.${Date.now()}.mjs`);
+    tempFiles.push(tempPath);
+
+    await Bun.write(
+      tempPath,
+      `
+      export default {
+        checkpoint: {
+          enabled: false,
+          versionHeader: "x-custom-checkpoint-version"
+        }
+      };
+    `
+    );
+
+    const originalEnableCheckpointGateway = (Vector.prototype as any).enableCheckpointGateway;
+    let enableCalls = 0;
+    (Vector.prototype as any).enableCheckpointGateway = async function () {
+      enableCalls += 1;
+    };
+
+    try {
+      const app = await startVector({ configPath: tempPath, autoDiscover: false });
+      expect(enableCalls).toBe(0);
+      app.stop();
+    } finally {
+      (Vector.prototype as any).enableCheckpointGateway = originalEnableCheckpointGateway;
+    }
+  });
+
+  it('enables checkpoint gateway when checkpoint.enabled is true', async () => {
+    const tempPath = join(process.cwd(), `.tmp.vector.start.checkpoint-enabled.${Date.now()}.mjs`);
+    tempFiles.push(tempPath);
+
+    await Bun.write(
+      tempPath,
+      `
+      export default {
+        checkpoint: {
+          enabled: true,
+          versionHeader: "x-custom-checkpoint-version"
+        }
+      };
+    `
+    );
+
+    const originalEnableCheckpointGateway = (Vector.prototype as any).enableCheckpointGateway;
+    let enableCalls = 0;
+    (Vector.prototype as any).enableCheckpointGateway = async function () {
+      enableCalls += 1;
+    };
+
+    try {
+      const app = await startVector({ configPath: tempPath, autoDiscover: false });
+      expect(enableCalls).toBe(1);
+      app.stop();
+    } finally {
+      (Vector.prototype as any).enableCheckpointGateway = originalEnableCheckpointGateway;
+    }
+  });
 });

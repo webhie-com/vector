@@ -95,9 +95,10 @@ export class RouteScanner {
 
         try {
           // Convert Windows paths to URLs for import
+          // Append cache-busting query to force re-import on dev reload
           const importPath = process.platform === 'win32' ? `file:///${fullPath.replace(/\\/g, '/')}` : fullPath;
 
-          const module = await import(importPath);
+          const module = await import(`${importPath}?t=${Date.now()}`);
 
           if (module.default && typeof module.default === 'function') {
             routes.push({

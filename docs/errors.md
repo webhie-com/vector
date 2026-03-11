@@ -46,20 +46,20 @@ Custom status:
 ## Example
 
 ```ts
-import { route, APIError } from 'vector-framework';
+import { route, APIError } from "vector-framework";
 
 export const createUser = route(
-  { method: 'POST', path: '/users', expose: true },
-  async (req) => {
-    if (!req.content?.email) {
-      throw APIError.badRequest('Email is required');
+  { method: "POST", path: "/users", expose: true },
+  async (ctx) => {
+    if (!ctx.content?.email) {
+      throw APIError.badRequest("Email is required");
     }
 
-    if (!req.authUser) {
-      throw APIError.unauthorized('Please login first');
+    if (!ctx.authUser) {
+      throw APIError.unauthorized("Please login first");
     }
 
     return { ok: true };
-  }
+  },
 );
 ```

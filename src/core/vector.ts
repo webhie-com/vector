@@ -5,6 +5,7 @@ import { RouteGenerator } from '../dev/route-generator';
 import { RouteScanner } from '../dev/route-scanner';
 import { MiddlewareManager } from '../middleware/manager';
 import { toFileUrl } from '../utils/path';
+import type { CheckpointConfig } from '../checkpoint/types';
 import type {
   CacheHandler,
   DefaultVectorTypes,
@@ -40,6 +41,7 @@ export class Vector<TTypes extends VectorTypes = DefaultVectorTypes> {
   private _protectedHandler: ProtectedHandler<TTypes> | null = null;
   private _cacheHandler: CacheHandler | null = null;
   private shutdownPromise: Promise<void> | null = null;
+  private checkpointProcessManager: { stopAll: () => Promise<void> } | null = null;
 
   private constructor() {
     this.middlewareManager = new MiddlewareManager<TTypes>();
@@ -95,6 +97,11 @@ export class Vector<TTypes extends VectorTypes = DefaultVectorTypes> {
 
   // Internal method to start server - only called by CLI
   async startServer(config?: VectorConfig<TTypes>): Promise<Server> {
+    if (this.checkpointProcessManager) {
+      await this.checkpointProcessManager.stopAll();
+      this.checkpointProcessManager = null;
+    }
+
     this.config = { ...this.config, ...config };
     const routeDefaults = { ...this.config.defaults?.route };
     this.router.setRouteBooleanDefaults(routeDefaults);
@@ -126,6 +133,9 @@ export class Vector<TTypes extends VectorTypes = DefaultVectorTypes> {
 
     this.server = new VectorServer<TTypes>(this.router, this.config);
     const bunServer = await this.server.start();
+    if (this.config.checkpoint && this.config.checkpoint.enabled !== false) {
+      await this.enableCheckpointGateway(this.config.checkpoint);
+    }
 
     return bunServer;
   }
@@ -154,7 +164,7 @@ export class Vector<TTypes extends VectorTypes = DefaultVectorTypes> {
           try {
             const importPath = toFileUrl(route.path);
 
-            const module = await import(importPath);
+            const module = await import(`${importPath}?t=${Date.now()}`);
             const exported = route.name === 'default' ? module.default : module[route.name];
 
             if (exported) {
@@ -232,6 +242,49 @@ export class Vector<TTypes extends VectorTypes = DefaultVectorTypes> {
     // Silent - no logging
   }
 
+  async enableCheckpointGateway(checkpointConfig?: CheckpointConfig): Promise<void> {
+    if (!this.server) {
+      throw new Error('Cannot enable checkpoint gateway before server is started. Call startServer() first.');
+    }
+
+    const { CheckpointManager } = await import('../checkpoint/manager');
+    const { CheckpointProcessManager } = await import('../checkpoint/process-manager');
+    const { CheckpointResolver } = await import('../checkpoint/resolver');
+    const { CheckpointForwarder } = await import('../checkpoint/forwarder');
+    const { CheckpointGateway } = await import('../checkpoint/gateway');
+
+    if (this.checkpointProcessManager) {
+      await this.checkpointProcessManager.stopAll();
+      this.checkpointProcessManager = null;
+    }
+
+    const manager = new CheckpointManager(checkpointConfig);
+    const processManager = new CheckpointProcessManager({
+      idleTimeoutMs: checkpointConfig?.idleTimeoutMs,
+    });
+    this.checkpointProcessManager = processManager;
+
+    const resolver = new CheckpointResolver(manager, processManager, {
+      versionHeader: checkpointConfig?.versionHeader,
+      cacheKeyOverride: checkpointConfig?.cacheKeyOverride,
+    });
+    const forwarder = new CheckpointForwarder();
+    const gateway = new CheckpointGateway(resolver, forwarder);
+
+    this.server.setCheckpointGateway(gateway);
+
+    // Auto-start the active checkpoint if one exists
+    const active = await manager.getActive();
+    if (active) {
+      try {
+        const manifest = await manager.readManifest(active.version);
+        await processManager.spawn(manifest, manager.getStorageDir());
+      } catch (err) {
+        console.error(`[Checkpoint] Failed to start active checkpoint ${active.version}:`, err);
+      }
+    }
+  }
+
   stop(): void {
     if (this.server) {
       this.server.stop();
@@ -249,6 +302,12 @@ export class Vector<TTypes extends VectorTypes = DefaultVectorTypes> {
     this.shutdownPromise = (async () => {
       // Stop accepting new traffic first.
       this.stop();
+
+      // Stop all checkpoint child processes
+      if (this.checkpointProcessManager) {
+        await this.checkpointProcessManager.stopAll();
+        this.checkpointProcessManager = null;
+      }
 
       if (typeof this.config.shutdown === 'function') {
         await this.config.shutdown();

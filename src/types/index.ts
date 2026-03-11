@@ -1,5 +1,6 @@
 import type { StandardJSONSchemaV1, StandardSchemaV1, StandardTypedV1 } from './standard-schema';
 import type { Server } from 'bun';
+import type { CheckpointConfig } from '../checkpoint/types';
 
 // Default AuthUser type - users can override this with their own type
 export interface DefaultAuthUser {
@@ -14,7 +15,6 @@ export interface DefaultAuthUser {
 // Users can override any of these types without breaking changes
 export interface VectorTypes {
   auth?: any; // Custom auth user type
-  context?: any; // Custom request context (future)
   cache?: any; // Custom cache value type (future)
   metadata?: any; // Custom metadata type (future)
 }
@@ -22,15 +22,12 @@ export interface VectorTypes {
 // Default types
 export interface DefaultVectorTypes extends VectorTypes {
   auth: DefaultAuthUser;
-  context: Record<string, any>;
   cache: any;
   metadata: Record<string, any>;
 }
 
 // Type helpers
 export type GetAuthType<T extends VectorTypes> = T['auth'] extends undefined ? DefaultAuthUser : T['auth'];
-
-export type GetContextType<T extends VectorTypes> = T['context'] extends undefined ? Record<string, any> : T['context'];
 
 export type GetCacheType<T extends VectorTypes> = T['cache'] extends undefined ? any : T['cache'];
 
@@ -41,11 +38,7 @@ export type GetMetadataType<T extends VectorTypes> = T['metadata'] extends undef
 // Legacy support - keep AuthUser for backward compatibility
 export type AuthUser = DefaultAuthUser;
 
-type DefaultQueryShape = { [key: string]: string | string[] | undefined };
-type DefaultParamsShape = Record<string, string>;
-type DefaultCookiesShape = Record<string, string>;
-
-type BaseVectorRequest = Omit<Request, 'body' | 'json' | 'text' | 'formData' | 'arrayBuffer' | 'blob'>;
+type BaseVectorRequest = Request;
 
 type InferValidatedSection<TValidatedInput, TKey extends string, TFallback> = [TValidatedInput] extends [undefined]
   ? TFallback
@@ -56,27 +49,35 @@ type InferValidatedSection<TValidatedInput, TKey extends string, TFallback> = [T
     : TFallback;
 
 type InferValidatedInputValue<TValidatedInput> = [TValidatedInput] extends [undefined] ? unknown : TValidatedInput;
+type ValidatedInputField<TValidatedInput> = [TValidatedInput] extends [undefined]
+  ? { validatedInput?: InferValidatedInputValue<TValidatedInput> }
+  : { validatedInput: InferValidatedInputValue<TValidatedInput> };
 
 export type BunRouteHandler = (req: Request) => Response | Promise<Response>;
 export type BunMethodMap = Record<string, BunRouteHandler>;
 export type BunRouteTable = Record<string, BunMethodMap | Response>;
 export type LegacyRouteEntry = [string, RegExp, [BunRouteHandler, ...BunRouteHandler[]], string?];
 
-export interface VectorRequest<TTypes extends VectorTypes = DefaultVectorTypes, TValidatedInput = undefined>
-  extends BaseVectorRequest {
+type VectorRequestTypeBrand<TTypes extends VectorTypes, TValidatedInput> = {
+  readonly __vectorTypesBrand__?: TTypes;
+  readonly __validatedInputBrand__?: TValidatedInput;
+};
+
+export type VectorRequest<
+  TTypes extends VectorTypes = DefaultVectorTypes,
+  TValidatedInput = undefined,
+> = BaseVectorRequest & VectorRequestTypeBrand<TTypes, TValidatedInput>;
+
+export type VectorContext<TTypes extends VectorTypes = DefaultVectorTypes, TValidatedInput = undefined> = {
+  request: VectorRequest<TTypes, TValidatedInput>;
   authUser?: GetAuthType<TTypes>;
-  context: GetContextType<TTypes>;
-  metadata?: GetMetadataType<TTypes>;
+  metadata: GetMetadataType<TTypes>;
+  params: InferValidatedSection<TValidatedInput, 'params', Record<string, string>>;
+  query: InferValidatedSection<TValidatedInput, 'query', Record<string, string | string[]>>;
+  cookies: InferValidatedSection<TValidatedInput, 'cookies', Record<string, string>>;
   content?: InferValidatedSection<TValidatedInput, 'body', any>;
-  body?: InferValidatedSection<TValidatedInput, 'body', any>;
-  params?: InferValidatedSection<TValidatedInput, 'params', DefaultParamsShape>;
-  query: InferValidatedSection<TValidatedInput, 'query', DefaultQueryShape>;
-  headers: Headers;
-  cookies?: InferValidatedSection<TValidatedInput, 'cookies', DefaultCookiesShape>;
-  validatedInput?: InferValidatedInputValue<TValidatedInput>;
-  startTime?: number;
   [key: string]: any;
-}
+} & ValidatedInputField<TValidatedInput>;
 
 export interface CacheOptions {
   key?: string;
@@ -97,6 +98,52 @@ export interface RouteSchemaDefinition<
   input?: TInput;
   output?: TOutput;
   tag?: string;
+  summary?: string;
+  description?: string;
+  descrition?: string;
+}
+
+export enum OpenApiSecuritySchemeType {
+  ApiKey = 'apiKey',
+  Http = 'http',
+  MutualTls = 'mutualTLS',
+  OAuth2 = 'oauth2',
+  OpenIdConnect = 'openIdConnect',
+}
+
+export enum HttpAuthScheme {
+  Basic = 'basic',
+  Bearer = 'bearer',
+  Digest = 'digest',
+}
+
+export enum AuthKind {
+  ApiKey = 'ApiKey',
+  HttpBasic = 'HttpBasic',
+  HttpBearer = 'HttpBearer',
+  HttpDigest = 'HttpDigest',
+  OAuth2 = 'OAuth2',
+  OpenIdConnect = 'OpenIdConnect',
+  MutualTls = 'MutualTls',
+}
+
+export type RouteAuthOption = boolean | AuthKind;
+
+export interface OpenAPISecurityScheme {
+  type: OpenApiSecuritySchemeType | ({} & string);
+  description?: string;
+  name?: string;
+  in?: 'query' | 'header' | 'cookie';
+  scheme?: string;
+  bearerFormat?: string;
+  flows?: Record<string, unknown>;
+  openIdConnectUrl?: string;
+  [key: string]: unknown;
+}
+
+export interface OpenAPIAuthOptions {
+  securitySchemeNames?: Partial<Record<AuthKind, string>>;
+  securitySchemes?: Partial<Record<AuthKind, OpenAPISecurityScheme>>;
 }
 
 export type InferStandardSchemaInput<TSchema extends StandardRouteSchema> = StandardSchemaV1.InferInput<TSchema>;
@@ -113,8 +160,9 @@ export type InferRouteInputFromSchemaDefinition<TSchemaDef extends RouteSchemaDe
 export interface RouteOptions<TTypes extends VectorTypes = DefaultVectorTypes> {
   method: string;
   path: string;
-  auth?: boolean;
+  auth?: RouteAuthOption;
   expose?: boolean; // defaults to true
+  deprecated?: boolean; // OpenAPI operation.deprecated flag
   cache?: CacheOptions | number;
   rawRequest?: boolean;
   validate?: boolean; // defaults to validating schema.input unless false
@@ -125,7 +173,7 @@ export interface RouteOptions<TTypes extends VectorTypes = DefaultVectorTypes> {
 }
 
 export interface RouteBooleanDefaults {
-  auth?: boolean;
+  auth?: RouteAuthOption;
   expose?: boolean;
   rawRequest?: boolean;
   validate?: boolean;
@@ -138,7 +186,7 @@ export interface VectorDefaults {
 
 // Legacy config interface - will be deprecated
 export interface VectorConfig<TTypes extends VectorTypes = DefaultVectorTypes> {
-  port?: number;
+  port?: number | string;
   hostname?: string;
   reusePort?: boolean;
   development?: boolean;
@@ -153,6 +201,7 @@ export interface VectorConfig<TTypes extends VectorTypes = DefaultVectorTypes> {
   openapi?: OpenAPIOptions | boolean;
   startup?: StartupHandler;
   shutdown?: ShutdownHandler;
+  checkpoint?: CheckpointConfig;
 }
 
 export interface StartVectorContext {
@@ -181,7 +230,7 @@ export interface StartedVectorApp<TTypes extends VectorTypes = DefaultVectorType
 // New config-driven schema - flat structure
 export interface VectorConfigSchema<TTypes extends VectorTypes = DefaultVectorTypes> {
   // Server configuration
-  port?: number;
+  port?: number | string;
   hostname?: string;
   reusePort?: boolean;
   development?: boolean;
@@ -207,6 +256,9 @@ export interface VectorConfigSchema<TTypes extends VectorTypes = DefaultVectorTy
   // Startup lifecycle
   startup?: StartupHandler;
   shutdown?: ShutdownHandler;
+
+  // Checkpoints
+  checkpoint?: CheckpointConfig;
 
   // Custom types for TypeScript
   types?: VectorTypes;
@@ -239,15 +291,16 @@ export interface OpenAPIOptions {
   target?: 'openapi-3.0' | 'draft-2020-12' | 'draft-07' | ({} & string);
   docs?: boolean | OpenAPIDocsOptions;
   info?: OpenAPIInfoOptions;
+  auth?: OpenAPIAuthOptions;
 }
 
 export type BeforeMiddlewareHandler<TTypes extends VectorTypes = DefaultVectorTypes> = (
-  request: VectorRequest<TTypes>
-) => Promise<VectorRequest<TTypes> | Response> | VectorRequest<TTypes> | Response;
+  context: VectorContext<TTypes>
+) => Promise<void | Response> | void | Response;
 
 export type AfterMiddlewareHandler<TTypes extends VectorTypes = DefaultVectorTypes> = (
   response: Response,
-  request: VectorRequest<TTypes>
+  context: VectorContext<TTypes>
 ) => Promise<Response> | Response;
 export type MiddlewareHandler = BeforeMiddlewareHandler | AfterMiddlewareHandler;
 
@@ -255,11 +308,11 @@ export type StartupHandler = () => Promise<void> | void;
 export type ShutdownHandler = () => Promise<void> | void;
 
 export type RouteHandler<TTypes extends VectorTypes = DefaultVectorTypes, TValidatedInput = undefined> = (
-  request: VectorRequest<TTypes, TValidatedInput>
+  context: VectorContext<TTypes, TValidatedInput>
 ) => Promise<any> | any;
 
 export type ProtectedHandler<TTypes extends VectorTypes = DefaultVectorTypes> = (
-  request: VectorRequest<TTypes>
+  context: VectorContext<TTypes>
 ) => Promise<GetAuthType<TTypes>> | GetAuthType<TTypes>;
 
 export type CacheHandler = (key: string, factory: () => Promise<any>, ttl: number) => Promise<any>;

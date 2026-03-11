@@ -1,17 +1,25 @@
 import type { Server } from 'bun';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
-import { STATIC_RESPONSES } from '../constants';
 import { cors } from '../utils/cors';
 import { renderOpenAPIDocsHtml } from '../openapi/docs-ui';
 import { generateOpenAPIDocument } from '../openapi/generator';
-import type { CorsOptions, DefaultVectorTypes, OpenAPIOptions, VectorConfig, VectorTypes } from '../types';
+import type {
+  CorsOptions,
+  DefaultVectorTypes,
+  OpenAPIAuthOptions,
+  OpenAPIOptions,
+  VectorConfig,
+  VectorTypes,
+} from '../types';
+import type { CheckpointGateway } from '../checkpoint/gateway';
 import type { VectorRouter } from './router';
 
 interface NormalizedOpenAPIConfig {
   enabled: boolean;
   path: string;
   target: string;
+  auth?: OpenAPIAuthOptions;
   docs: {
     enabled: boolean;
     path: string;
@@ -202,11 +210,25 @@ const OPENAPI_FAVICON_ASSETS = [
 const DOCS_HTML_CACHE_CONTROL = 'public, max-age=0, must-revalidate';
 const DOCS_ASSET_CACHE_CONTROL = 'public, max-age=31536000, immutable';
 const DOCS_ASSET_ERROR_CACHE_CONTROL = 'no-store';
+const DEFAULT_PORT = 3000;
 
 interface OpenAPIDocsHtmlCacheEntry {
   html: string;
   gzip: Uint8Array;
   etag: string;
+}
+
+function normalizePort(port: number | string | undefined): number {
+  if (port === undefined) {
+    return DEFAULT_PORT;
+  }
+
+  const normalized = Number(port);
+  if (!Number.isInteger(normalized) || normalized < 0 || normalized > 65535) {
+    throw new Error(`Invalid port: ${String(port)}. Port must be an integer between 0 and 65535.`);
+  }
+
+  return normalized;
 }
 
 function escapeRegex(value: string): string {
@@ -283,6 +305,10 @@ export class VectorServer<TTypes extends VectorTypes = DefaultVectorTypes> {
     }
   }
 
+  setCheckpointGateway(gateway: CheckpointGateway): void {
+    this.router.setCheckpointGateway(gateway);
+  }
+
   private normalizeOpenAPIConfig(
     openapi: OpenAPIOptions | boolean | undefined,
     development: boolean | undefined
@@ -329,6 +355,7 @@ export class VectorServer<TTypes extends VectorTypes = DefaultVectorTypes> {
       target: openapiObject.target || 'openapi-3.0',
       docs,
       info: openapiObject.info,
+      auth: openapiObject.auth,
     };
   }
 
@@ -359,6 +386,7 @@ export class VectorServer<TTypes extends VectorTypes = DefaultVectorTypes> {
     const result = generateOpenAPIDocument(routes as any, {
       target: this.openapiConfig.target,
       info: this.openapiConfig.info,
+      auth: this.openapiConfig.auth,
     });
 
     if (!this.openapiWarningsLogged && result.warnings.length > 0) {
@@ -647,12 +675,12 @@ export class VectorServer<TTypes extends VectorTypes = DefaultVectorTypes> {
   }
 
   async start(): Promise<Server> {
-    const port = this.config.port ?? 3000;
+    const port = normalizePort(this.config.port);
     const hostname = this.config.hostname || 'localhost';
 
     this.validateReservedOpenAPIPaths();
 
-    const fallbackFetch = async (request: Request): Promise<Response> => {
+    const appFetch = async (request: Request): Promise<Response> => {
       try {
         // Handle CORS preflight for any path
         if (this.corsHandler && request.method === 'OPTIONS') {
@@ -665,8 +693,8 @@ export class VectorServer<TTypes extends VectorTypes = DefaultVectorTypes> {
           return this.applyCors(openapiResponse, request);
         }
 
-        // No route matched — return 404
-        return this.applyCors(STATIC_RESPONSES.NOT_FOUND.clone() as unknown as Response, request);
+        // Route through Vector router (includes middleware/auth/validation + CORS).
+        return await this.router.handle(request);
       } catch (error) {
         console.error('Server error:', error);
         return this.applyCors(new Response('Internal Server Error', { status: 500 }), request);
@@ -678,8 +706,7 @@ export class VectorServer<TTypes extends VectorTypes = DefaultVectorTypes> {
         port,
         hostname,
         reusePort: this.config.reusePort !== false,
-        routes: this.router.getRouteTable(),
-        fetch: fallbackFetch,
+        fetch: appFetch,
         idleTimeout: this.config.idleTimeout ?? 60,
         error: (error, request?: Request) => {
           console.error('[ERROR] Server error:', error);
@@ -724,7 +751,7 @@ export class VectorServer<TTypes extends VectorTypes = DefaultVectorTypes> {
   }
 
   getPort(): number {
-    return this.server?.port ?? this.config.port ?? 3000;
+    return this.server?.port ?? normalizePort(this.config.port);
   }
 
   getHostname(): string {

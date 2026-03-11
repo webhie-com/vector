@@ -1,10 +1,10 @@
-import type { VectorConfigSchema } from './src/types';
+import type { VectorConfigSchema, VectorContext } from './src/types';
 
 // Vector Framework Configuration
 // This file replaces all programmatic API calls
 const config: VectorConfigSchema = {
   // Server configuration
-  port: 3000,
+  port: process.env.PORT ?? 3000,
   hostname: 'localhost',
   reusePort: true,
   development: process.env.NODE_ENV !== 'production',
@@ -41,6 +41,22 @@ const config: VectorConfigSchema = {
       description: 'Local development OpenAPI document',
     },
   },
+
+  // Checkpoint configuration
+  checkpoint: {
+    enabled: true,
+    storageDir: './.vector/checkpoints',
+    maxCheckpoints: 10,
+    versionHeader: 'x-vector-checkpoint-version',
+    idleTimeoutMs: 600000,
+    cacheKeyOverride: true,
+  },
+
+  before: [
+    (ctx: VectorContext) => {
+      console.log(ctx.request.headers.get('x-vector-checkpoint-version') ?? 'latest');
+    },
+  ],
 
   // Optional: Custom TypeScript types
   // types: {

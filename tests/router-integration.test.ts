@@ -2,8 +2,9 @@ import { describe, expect, it } from 'bun:test';
 import { AuthManager } from '../src/auth/protected';
 import { CacheManager } from '../src/cache/manager';
 import { VectorRouter } from '../src/core/router';
+import { createResponse } from '../src/http';
 import { MiddlewareManager } from '../src/middleware/manager';
-import type { StandardSchemaV1 } from '../src/types';
+import { AuthKind, type StandardSchemaV1 } from '../src/types';
 
 function makeRouter() {
   const middleware = new MiddlewareManager();
@@ -37,7 +38,46 @@ function standardSchema<TOutput = unknown>(
   };
 }
 
+function createChunkedTextBody(chunks: string[]): ReadableStream<Uint8Array> {
+  const encoder = new TextEncoder();
+  return new ReadableStream({
+    start(controller) {
+      for (const chunk of chunks) {
+        controller.enqueue(encoder.encode(chunk));
+      }
+      controller.close();
+    },
+  });
+}
+
 describe('Router — request body parsing', () => {
+  it('exposes params/query/cookies on context for non-schema routes', async () => {
+    const { router } = makeRouter();
+    let captured: any;
+
+    router.route({ method: 'GET', path: '/ctx/:id', expose: true }, async (ctx) => {
+      captured = {
+        params: ctx.params,
+        query: ctx.query,
+        cookies: ctx.cookies,
+      };
+      return { ok: true };
+    });
+
+    const response = await router.handle(
+      new Request('http://localhost/ctx/abc?page=2&page=3', {
+        headers: { cookie: 'session=xyz; theme=dark' },
+      })
+    );
+
+    expect(response.status).toBe(200);
+    expect(captured).toEqual({
+      params: { id: 'abc' },
+      query: { page: ['2', '3'] },
+      cookies: { session: 'xyz', theme: 'dark' },
+    });
+  });
+
   it('parses JSON body on POST', async () => {
     const { router } = makeRouter();
     let captured: any;
@@ -96,7 +136,6 @@ describe('Router — request body parsing', () => {
     router.route({ method: 'POST', path: '/readonly-content-parse', expose: true }, async (req) => {
       captured = {
         content: req.content,
-        body: req.body,
       };
       return { ok: true };
     });
@@ -115,8 +154,7 @@ describe('Router — request body parsing', () => {
     const res = await router.handle(req);
 
     expect(res.status).toBe(200);
-    expect(captured.content).toBe('locked');
-    expect(typeof captured.body?.getReader).toBe('function');
+    expect(captured.content).toEqual({ name: 'Alice' });
   });
 
   it('does not parse body for GET requests', async () => {
@@ -143,6 +181,66 @@ describe('Router — request body parsing', () => {
 
     await router.handle(jsonRequest('http://localhost/raw', 'POST', { x: 1 }));
     expect(captured).toBeUndefined();
+  });
+});
+
+describe('Router — metadata handling', () => {
+  it('does not leak mutable route metadata across requests', async () => {
+    const { router, middleware } = makeRouter();
+
+    middleware.addBefore((ctx) => {
+      if (!ctx.metadata?.count) {
+        ctx.metadata = {
+          count: 0,
+        };
+      }
+
+      ctx.metadata.count += 1;
+    });
+
+    router.route(
+      {
+        method: 'GET',
+        path: '/metadata-leak',
+        expose: true,
+        metadata: { count: 0 },
+      },
+      async (req) => ({ count: req.metadata?.count })
+    );
+
+    const first = await router.handle(new Request('http://localhost/metadata-leak'));
+    const second = await router.handle(new Request('http://localhost/metadata-leak'));
+
+    expect(await first.json()).toEqual({ count: 1 });
+    expect(await second.json()).toEqual({ count: 1 });
+  });
+
+  it('allows before middleware to override context metadata', async () => {
+    const { router, middleware } = makeRouter();
+
+    middleware.addBefore((ctx) => {
+      ctx.metadata = { fromMiddleware: true };
+    });
+
+    router.route(
+      {
+        method: 'GET',
+        path: '/metadata-forward',
+        expose: true,
+        metadata: { fromRoute: true },
+      },
+      async (ctx) => ({
+        fromMiddleware: ctx.metadata?.fromMiddleware === true,
+        fromRoute: ctx.metadata?.fromRoute === true,
+      })
+    );
+
+    const response = await router.handle(new Request('http://localhost/metadata-forward'));
+
+    expect(await response.json()).toEqual({
+      fromMiddleware: true,
+      fromRoute: false,
+    });
   });
 });
 
@@ -188,7 +286,7 @@ describe('Router — schema validation', () => {
     });
   });
 
-  it('applies validated input output to request for handlers', async () => {
+  it('applies validated input output to handler context', async () => {
     const { router } = makeRouter();
     let validatedInput: any;
 
@@ -213,9 +311,9 @@ describe('Router — schema validation', () => {
         expose: true,
         schema: { input },
       },
-      async (req) => {
-        validatedInput = req.validatedInput;
-        return { normalized: req.content.name };
+      async (ctx) => {
+        validatedInput = ctx.validatedInput;
+        return { normalized: (ctx.validatedInput as any).body?.name, original: ctx.content.name };
       }
     );
 
@@ -226,7 +324,7 @@ describe('Router — schema validation', () => {
     );
 
     expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ normalized: 'ALICE' });
+    expect(await res.json()).toEqual({ normalized: 'ALICE', original: '  alice  ' });
     expect(validatedInput.body.name).toBe('ALICE');
   });
 
@@ -300,6 +398,7 @@ describe('Router — schema validation', () => {
   it('validates raw requests by default when schema.input exists', async () => {
     const { router } = makeRouter();
     let bodySeenByValidator: unknown;
+    let validatedSeenByHandler: any;
 
     const input = standardSchema(async (value) => {
       const payload = value as any;
@@ -323,6 +422,7 @@ describe('Router — schema validation', () => {
       },
       async (req) => {
         contentSeenByHandler = req.content;
+        validatedSeenByHandler = req.validatedInput;
         return { ok: true };
       }
     );
@@ -330,7 +430,127 @@ describe('Router — schema validation', () => {
     const res = await router.handle(jsonRequest('http://localhost/raw-validate', 'POST', { a: 1 }));
     expect(res.status).toBe(200);
     expect(typeof bodySeenByValidator).toBe('string');
-    expect(contentSeenByHandler).toEqual({ parsed: true });
+    expect(contentSeenByHandler).toBeUndefined();
+    expect(validatedSeenByHandler.body).toEqual({ parsed: true });
+  });
+
+  it('preserves non-checkpoint stream passthrough when only non-body fields are validated', async () => {
+    const { router } = makeRouter();
+    let validationCalls = 0;
+    let bodyUsedBeforeHandler = true;
+    let streamedBody = '';
+
+    const input = standardSchema(async (value) => {
+      const payload = value as any;
+      validationCalls += 1;
+      if (!payload.query?.token) {
+        return {
+          issues: [{ message: 'token required', path: ['query', 'token'] }],
+        };
+      }
+      return { value: payload };
+    });
+
+    router.route(
+      {
+        method: 'POST',
+        path: '/streaming-raw-non-body',
+        expose: true,
+        rawRequest: true,
+        schema: { input },
+      },
+      async (req) => {
+        bodyUsedBeforeHandler = req.request.bodyUsed;
+        streamedBody = await req.request.text();
+        return { ok: true };
+      }
+    );
+
+    const response = await router.handle(
+      new Request('http://localhost/streaming-raw-non-body?token=abc', {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/octet-stream',
+          'transfer-encoding': 'chunked',
+        },
+        body: createChunkedTextBody(['chunk-1', 'chunk-2']),
+        duplex: 'half',
+      } as any)
+    );
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ ok: true });
+    expect(validationCalls).toBe(1);
+    expect(bodyUsedBeforeHandler).toBe(false);
+    expect(streamedBody).toBe('chunk-1chunk-2');
+  });
+
+  it('defers then re-validates body for non-checkpoint streaming raw requests', async () => {
+    const { router } = makeRouter();
+    let validationCalls = 0;
+    let bodyUsedBeforeHandler = true;
+    let streamedBody = '';
+
+    const input = standardSchema(async (value) => {
+      const payload = value as any;
+      validationCalls += 1;
+
+      if (typeof payload.body !== 'string') {
+        return {
+          issues: [{ message: 'body required', path: ['body'] }],
+        };
+      }
+
+      let parsedBody: any;
+      try {
+        parsedBody = JSON.parse(payload.body);
+      } catch {
+        return {
+          issues: [{ message: 'body must be valid json', path: ['body'] }],
+        };
+      }
+
+      if (parsedBody.name !== 'alice') {
+        return {
+          issues: [{ message: 'name required', path: ['body', 'name'] }],
+        };
+      }
+
+      return { value: payload };
+    });
+
+    router.route(
+      {
+        method: 'POST',
+        path: '/streaming-raw-body',
+        expose: true,
+        rawRequest: true,
+        schema: { input },
+      },
+      async (req) => {
+        bodyUsedBeforeHandler = req.request.bodyUsed;
+        streamedBody = await req.request.text();
+        return { ok: true };
+      }
+    );
+
+    const response = await router.handle(
+      new Request('http://localhost/streaming-raw-body', {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          'transfer-encoding': 'chunked',
+        },
+        body: createChunkedTextBody(['{"name":"al', 'ice"}']),
+        duplex: 'half',
+      } as any)
+    );
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ ok: true });
+    expect(validationCalls).toBe(2);
+    expect(bodyUsedBeforeHandler).toBe(false);
+    expect(streamedBody).toBe('{"name":"alice"}');
   });
 
   it('maps thrown validation issues to 422', async () => {
@@ -616,7 +836,7 @@ describe('Router — schema validation', () => {
         schema: { input },
       },
       async (req) => {
-        seenHeaderFromReq = req.headers.get('authorization');
+        seenHeaderFromReq = req.request.headers.get('authorization');
         seenValidatedHeaders = (req.validatedInput as any)?.headers;
         return { ok: true };
       }
@@ -683,6 +903,7 @@ describe('Router — schema validation', () => {
   it('applies validator-provided body on GET requests', async () => {
     const { router } = makeRouter();
     let seenBody: any;
+    let seenValidated: any;
 
     const input = standardSchema(async (value) => {
       const payload = value as any;
@@ -703,13 +924,15 @@ describe('Router — schema validation', () => {
       },
       async (req) => {
         seenBody = req.content;
+        seenValidated = req.validatedInput;
         return { ok: true };
       }
     );
 
     const res = await router.handle(new Request('http://localhost/schema-get-injected-body?page=1'));
     expect(res.status).toBe(200);
-    expect(seenBody).toEqual({ injected: true, source: 'validator' });
+    expect(seenBody).toBeUndefined();
+    expect(seenValidated.body).toEqual({ injected: true, source: 'validator' });
   });
 
   it('does not fail when validated output targets readonly request fields', async () => {
@@ -735,11 +958,10 @@ describe('Router — schema validation', () => {
       },
       async (req) => {
         captured = {
-          params: req.params,
-          query: req.query,
-          cookies: req.cookies,
+          params: (req as any).params,
+          query: (req as any).query,
+          cookies: (req as any).cookies,
           content: req.content,
-          body: req.body,
           validatedInput: req.validatedInput,
         };
         return { ok: true };
@@ -766,8 +988,7 @@ describe('Router — schema validation', () => {
     expect(captured.params).toEqual({ id: '1' });
     expect(captured.query).toEqual({ page: '1' });
     expect(captured.cookies).toEqual({ session: 'abc' });
-    expect(captured.content).toBe('locked');
-    expect(typeof captured.body?.getReader).toBe('function');
+    expect(captured.content).toBeUndefined();
     expect(captured.validatedInput).toMatchObject({
       params: { id: '999' },
       query: { page: 2 },
@@ -801,10 +1022,10 @@ describe('Router — schema validation', () => {
         schema: { input },
       },
       async (req) => {
-        seenQuery = req.query;
-        seenCookies = req.cookies;
+        seenQuery = (req as any).query;
+        seenCookies = (req as any).cookies;
         seenBody = req.content;
-        return { id: req.params?.id };
+        return { id: (req.validatedInput as any)?.params?.id };
       }
     );
 
@@ -819,8 +1040,8 @@ describe('Router — schema validation', () => {
     const res = await router.handle(request);
 
     expect(res.status).toBe(200);
-    expect(seenQuery).toEqual({ page: 2 });
-    expect(seenCookies).toEqual({ session: 'ABC123' });
+    expect(seenQuery).toEqual({ page: '2' });
+    expect(seenCookies).toEqual({ session: 'abc123' });
     expect(seenBody).toEqual({ name: 'alice' });
   });
 
@@ -840,7 +1061,7 @@ describe('Router — schema validation', () => {
       async (req) => {
         captured = {
           validatedInput: req.validatedInput,
-          params: req.params,
+          params: (req as any).params,
           body: req.content,
         };
         return { ok: true };
@@ -895,6 +1116,21 @@ describe('Router — authentication integration', () => {
     const res = await router.handle(new Request('http://localhost/protected'));
     expect(res.status).toBe(200);
     expect(authUserOnRequest).toEqual({ id: '1' });
+  });
+
+  it('calls authenticate on enum auth routes', async () => {
+    const { router, auth } = makeRouter();
+    auth.setProtectedHandler(async () => ({ id: '2' }));
+
+    let authUserOnRequest: any;
+    router.route({ method: 'GET', path: '/protected-enum', expose: true, auth: AuthKind.HttpBasic }, async (req) => {
+      authUserOnRequest = req.authUser;
+      return { secret: true };
+    });
+
+    const res = await router.handle(new Request('http://localhost/protected-enum'));
+    expect(res.status).toBe(200);
+    expect(authUserOnRequest).toEqual({ id: '2' });
   });
 
   it('returns 401 when authenticate throws', async () => {
@@ -969,6 +1205,25 @@ describe('Router — caching integration', () => {
     expect(callCount).toBe(1);
   });
 
+  it('preserves binary response bodies when cached', async () => {
+    const { router } = makeRouter();
+    let callCount = 0;
+
+    router.route({ method: 'GET', path: '/cached-binary', expose: true, cache: { ttl: 60 } }, async () => {
+      callCount += 1;
+      return new Response(new Uint8Array([0, 255, 1, 2]), {
+        headers: { 'content-type': 'application/octet-stream' },
+      });
+    });
+
+    const first = await router.handle(new Request('http://localhost/cached-binary'));
+    const second = await router.handle(new Request('http://localhost/cached-binary'));
+
+    expect(callCount).toBe(1);
+    expect(Array.from(new Uint8Array(await first.arrayBuffer()))).toEqual([0, 255, 1, 2]);
+    expect(Array.from(new Uint8Array(await second.arrayBuffer()))).toEqual([0, 255, 1, 2]);
+  });
+
   it('does not cache when cache is undefined', async () => {
     const { router } = makeRouter();
     let callCount = 0;
@@ -982,6 +1237,417 @@ describe('Router — caching integration', () => {
     await router.handle(new Request('http://localhost/uncached'));
 
     expect(callCount).toBe(2);
+  });
+
+  it('applies cache to checkpoint-forwarded responses with version-isolated keys', async () => {
+    const { router, cache } = makeRouter();
+    const store = new Map<string, unknown>();
+    const seenKeys: string[] = [];
+    let liveCalls = 0;
+    let checkpointCalls = 0;
+
+    cache.setCacheHandler(async (key, factory) => {
+      seenKeys.push(key);
+      if (store.has(key)) {
+        return store.get(key);
+      }
+      const value = await factory();
+      store.set(key, value);
+      return value;
+    });
+
+    router.route({ method: 'GET', path: '/cached-checkpoint', expose: true, cache: 30 }, async () => {
+      liveCalls += 1;
+      return { source: 'live', call: liveCalls };
+    });
+
+    router.setCheckpointGateway({
+      handle: async (request: Request) => {
+        const version = request.headers.get('x-vector-checkpoint-version');
+        if (!version) {
+          return null;
+        }
+        checkpointCalls += 1;
+        return Response.json({ source: 'checkpoint', version, call: checkpointCalls });
+      },
+      getRequestedVersion: (request: Request) => request.headers.get('x-vector-checkpoint-version'),
+    } as any);
+
+    const live1 = await router.handle(new Request('http://localhost/cached-checkpoint'));
+    const live2 = await router.handle(new Request('http://localhost/cached-checkpoint'));
+    expect(await live1.json()).toEqual({ source: 'live', call: 1 });
+    expect(await live2.json()).toEqual({ source: 'live', call: 1 });
+    expect(liveCalls).toBe(1);
+
+    const tagged1 = await router.handle(
+      new Request('http://localhost/cached-checkpoint', {
+        headers: { 'x-vector-checkpoint-version': '1.0.0' },
+      })
+    );
+    const tagged2 = await router.handle(
+      new Request('http://localhost/cached-checkpoint', {
+        headers: { 'x-vector-checkpoint-version': '1.0.0' },
+      })
+    );
+    expect(await tagged1.json()).toEqual({ source: 'checkpoint', version: '1.0.0', call: 1 });
+    expect(await tagged2.json()).toEqual({ source: 'checkpoint', version: '1.0.0', call: 1 });
+    expect(checkpointCalls).toBe(1);
+
+    expect(seenKeys.some((key) => key.includes(':checkpoint=1.0.0'))).toBe(true);
+    expect(seenKeys.some((key) => !key.includes(':checkpoint='))).toBe(true);
+  });
+
+  it('overrides route cache.key with checkpoint header token when override is enabled', async () => {
+    const { router, cache } = makeRouter();
+    const store = new Map<string, unknown>();
+    const seenKeys: string[] = [];
+    let liveCalls = 0;
+    let checkpointCalls = 0;
+
+    cache.setCacheHandler(async (key, factory) => {
+      seenKeys.push(key);
+      if (store.has(key)) {
+        return store.get(key);
+      }
+      const value = await factory();
+      store.set(key, value);
+      return value;
+    });
+
+    router.route(
+      {
+        method: 'GET',
+        path: '/cache-key-override',
+        expose: true,
+        cache: { key: 'route-static-key', ttl: 30 },
+      },
+      async () => {
+        liveCalls += 1;
+        return { source: 'live', call: liveCalls };
+      }
+    );
+
+    router.setCheckpointGateway({
+      handle: async (request: Request) => {
+        const version = request.headers.get('x-vector-checkpoint-version');
+        if (!version) {
+          return null;
+        }
+        checkpointCalls += 1;
+        return Response.json({ source: 'checkpoint', version, call: checkpointCalls });
+      },
+      getRequestedVersion: (request: Request) => request.headers.get('x-vector-checkpoint-version'),
+      getCacheKeyOverrideValue: (request: Request) => {
+        const version = request.headers.get('x-vector-checkpoint-version');
+        return version ? `x-vector-checkpoint-version:${version}` : null;
+      },
+    } as any);
+
+    const live1 = await router.handle(new Request('http://localhost/cache-key-override'));
+    const live2 = await router.handle(new Request('http://localhost/cache-key-override'));
+    expect(await live1.json()).toEqual({ source: 'live', call: 1 });
+    expect(await live2.json()).toEqual({ source: 'live', call: 1 });
+    expect(liveCalls).toBe(1);
+
+    const tagged1 = await router.handle(
+      new Request('http://localhost/cache-key-override', {
+        headers: { 'x-vector-checkpoint-version': '1.0.0' },
+      })
+    );
+    const tagged2 = await router.handle(
+      new Request('http://localhost/cache-key-override', {
+        headers: { 'x-vector-checkpoint-version': '1.0.0' },
+      })
+    );
+    expect(await tagged1.json()).toEqual({ source: 'checkpoint', version: '1.0.0', call: 1 });
+    expect(await tagged2.json()).toEqual({ source: 'checkpoint', version: '1.0.0', call: 1 });
+    expect(checkpointCalls).toBe(1);
+
+    expect(seenKeys.filter((key) => key === 'route-static-key').length).toBe(2);
+    expect(seenKeys.filter((key) => key === 'x-vector-checkpoint-version:1.0.0').length).toBe(2);
+    expect(seenKeys.some((key) => key.includes(':checkpoint='))).toBe(false);
+  });
+
+  it('keeps route cache.key when override is disabled', async () => {
+    const { router, cache } = makeRouter();
+    const store = new Map<string, unknown>();
+    const seenKeys: string[] = [];
+    let checkpointCalls = 0;
+
+    cache.setCacheHandler(async (key, factory) => {
+      seenKeys.push(key);
+      if (store.has(key)) {
+        return store.get(key);
+      }
+      const value = await factory();
+      store.set(key, value);
+      return value;
+    });
+
+    router.route(
+      {
+        method: 'GET',
+        path: '/cache-key-no-override',
+        expose: true,
+        cache: { key: 'route-static-key', ttl: 30 },
+      },
+      async () => ({ source: 'live' })
+    );
+
+    router.setCheckpointGateway({
+      handle: async (request: Request) => {
+        const version = request.headers.get('x-vector-checkpoint-version');
+        if (!version) {
+          return null;
+        }
+        checkpointCalls += 1;
+        return Response.json({ source: 'checkpoint', version, call: checkpointCalls });
+      },
+      getRequestedVersion: (request: Request) => request.headers.get('x-vector-checkpoint-version'),
+      getCacheKeyOverrideValue: () => null,
+    } as any);
+
+    const tagged1 = await router.handle(
+      new Request('http://localhost/cache-key-no-override', {
+        headers: { 'x-vector-checkpoint-version': '1.0.0' },
+      })
+    );
+    const tagged2 = await router.handle(
+      new Request('http://localhost/cache-key-no-override', {
+        headers: { 'x-vector-checkpoint-version': '1.0.0' },
+      })
+    );
+    expect(await tagged1.json()).toEqual({ source: 'checkpoint', version: '1.0.0', call: 1 });
+    expect(await tagged2.json()).toEqual({ source: 'checkpoint', version: '1.0.0', call: 1 });
+    expect(checkpointCalls).toBe(1);
+    expect(seenKeys).toEqual(['route-static-key', 'route-static-key']);
+  });
+});
+
+describe('Router — response customization', () => {
+  it('supports createResponse options with all cookie fields on live routes', async () => {
+    const { router } = makeRouter();
+    const expiresAt = new Date('2030-01-01T00:00:00Z');
+
+    router.route({ method: 'GET', path: '/response-options-live', expose: true }, async () =>
+      createResponse(
+        201,
+        { ok: true },
+        {
+          contentType: 'application/json; charset=utf-8',
+          statusText: 'Created',
+          headers: {
+            'x-request-id': 'req-123',
+            'cache-control': 'no-store',
+          },
+          cookies: [
+            {
+              name: 'session',
+              value: 'token',
+              domain: 'example.com',
+              path: '/app',
+              maxAge: 3600,
+              expires: expiresAt,
+              httpOnly: true,
+              secure: true,
+              sameSite: 'None',
+              partitioned: true,
+              priority: 'High',
+            },
+          ],
+        }
+      )
+    );
+
+    const response = await router.handle(new Request('http://localhost/response-options-live'));
+
+    expect(response.status).toBe(201);
+    expect(response.statusText).toBe('Created');
+    expect(response.headers.get('content-type')).toBe('application/json; charset=utf-8');
+    expect(response.headers.get('x-request-id')).toBe('req-123');
+    expect(response.headers.get('cache-control')).toBe('no-store');
+    expect(await response.text()).toBe('{"ok":true}');
+
+    const cookies = response.headers.getSetCookie();
+    expect(cookies).toHaveLength(1);
+    const cookie = cookies[0];
+    expect(cookie).toContain('session=token');
+    expect(cookie).toContain('Domain=example.com');
+    expect(cookie).toContain('Path=/app');
+    expect(cookie).toContain('Max-Age=3600');
+    expect(cookie).toContain(`Expires=${expiresAt.toUTCString()}`);
+    expect(cookie).toContain('HttpOnly');
+    expect(cookie).toContain('Secure');
+    expect(cookie).toContain('SameSite=None');
+    expect(cookie).toContain('Partitioned');
+    expect(cookie).toContain('Priority=High');
+  });
+
+  it('ignores invalid cookie fallback fields but keeps valid attributes', async () => {
+    const { router } = makeRouter();
+
+    router.route({ method: 'GET', path: '/response-options-cookie-fallback', expose: true }, async () =>
+      createResponse(
+        200,
+        { ok: true },
+        {
+          cookies: [
+            {
+              name: 'session',
+              value: 'safe',
+              maxAge: Number.NaN,
+              expires: 'not-a-date',
+              sameSite: 'Lax',
+              path: '/',
+            },
+          ],
+        }
+      )
+    );
+
+    const response = await router.handle(new Request('http://localhost/response-options-cookie-fallback'));
+    expect(response.status).toBe(200);
+
+    const cookies = response.headers.getSetCookie();
+    expect(cookies).toHaveLength(1);
+    const cookie = cookies[0];
+    expect(cookie).toContain('session=safe');
+    expect(cookie).toContain('Path=/');
+    expect(cookie).toContain('SameSite=Lax');
+    expect(cookie).not.toContain('Max-Age=');
+    expect(cookie).not.toContain('Expires=');
+  });
+
+  it('supports streaming responses from createResponse on live routes', async () => {
+    const { router } = makeRouter();
+
+    router.route({ method: 'GET', path: '/stream-live-response-options', expose: true }, async () =>
+      createResponse(206, createChunkedTextBody(['live-', 'stream']), {
+        contentType: 'text/plain; charset=utf-8',
+        statusText: 'Partial Content',
+        headers: { 'x-live-stream': '1' },
+        cookies: ['live_stream=1; Path=/; HttpOnly'],
+      })
+    );
+
+    const response = await router.handle(new Request('http://localhost/stream-live-response-options'));
+
+    expect(response.status).toBe(206);
+    expect(response.statusText).toBe('Partial Content');
+    expect(response.headers.get('content-type')).toBe('text/plain; charset=utf-8');
+    expect(response.headers.get('x-live-stream')).toBe('1');
+    expect(await response.text()).toBe('live-stream');
+    expect(response.headers.getSetCookie()).toEqual(['live_stream=1; Path=/; HttpOnly']);
+  });
+
+  it('preserves createResponse options for checkpoint-tagged responses', async () => {
+    const { router } = makeRouter();
+    const expiresAt = new Date('2032-02-03T04:05:06Z');
+    let liveCalls = 0;
+
+    router.route({ method: 'GET', path: '/response-options-checkpoint', expose: true }, async () => {
+      liveCalls += 1;
+      return { source: 'live' };
+    });
+
+    router.setCheckpointGateway({
+      handle: async (request: Request) => {
+        const version = request.headers.get('x-vector-checkpoint-version');
+        if (!version) {
+          return null;
+        }
+
+        return createResponse(
+          202,
+          { source: 'checkpoint', version },
+          {
+            contentType: 'application/json; charset=utf-8',
+            statusText: 'Accepted',
+            headers: { 'x-checkpoint-source': 'gateway' },
+            cookies: [
+              {
+                name: 'checkpoint_session',
+                value: version,
+                path: '/',
+                maxAge: 120,
+                expires: expiresAt,
+                httpOnly: true,
+                secure: true,
+                sameSite: 'Lax',
+                priority: 'Medium',
+              },
+            ],
+          }
+        );
+      },
+      getRequestedVersion: (request: Request) => request.headers.get('x-vector-checkpoint-version'),
+    } as any);
+
+    const checkpointResponse = await router.handle(
+      new Request('http://localhost/response-options-checkpoint', {
+        headers: { 'x-vector-checkpoint-version': '1.0.0' },
+      })
+    );
+
+    expect(checkpointResponse.status).toBe(202);
+    expect(checkpointResponse.statusText).toBe('Accepted');
+    expect(checkpointResponse.headers.get('content-type')).toBe('application/json; charset=utf-8');
+    expect(checkpointResponse.headers.get('x-checkpoint-source')).toBe('gateway');
+    expect(await checkpointResponse.json()).toEqual({ source: 'checkpoint', version: '1.0.0' });
+
+    const checkpointCookies = checkpointResponse.headers.getSetCookie();
+    expect(checkpointCookies).toHaveLength(1);
+    const cookie = checkpointCookies[0];
+    expect(cookie).toContain('checkpoint_session=1.0.0');
+    expect(cookie).toContain('Path=/');
+    expect(cookie).toContain('Max-Age=120');
+    expect(cookie).toContain(`Expires=${expiresAt.toUTCString()}`);
+    expect(cookie).toContain('HttpOnly');
+    expect(cookie).toContain('Secure');
+    expect(cookie).toContain('SameSite=Lax');
+    expect(cookie).toContain('Priority=Medium');
+
+    const liveResponse = await router.handle(new Request('http://localhost/response-options-checkpoint'));
+    expect(liveResponse.status).toBe(200);
+    expect(await liveResponse.json()).toEqual({ source: 'live' });
+    expect(liveCalls).toBe(1);
+  });
+
+  it('preserves streaming responses for checkpoint-tagged requests', async () => {
+    const { router } = makeRouter();
+
+    router.route({ method: 'GET', path: '/stream-checkpoint-response-options', expose: true }, async () => ({
+      source: 'live',
+    }));
+
+    router.setCheckpointGateway({
+      handle: async (request: Request) => {
+        if (!request.headers.get('x-vector-checkpoint-version')) {
+          return null;
+        }
+
+        return createResponse(206, createChunkedTextBody(['checkpoint-', 'stream']), {
+          contentType: 'text/plain; charset=utf-8',
+          statusText: 'Partial Content',
+          headers: { 'x-checkpoint-stream': '1' },
+          cookies: ['checkpoint_stream=1; Path=/; HttpOnly'],
+        });
+      },
+      getRequestedVersion: (request: Request) => request.headers.get('x-vector-checkpoint-version'),
+    } as any);
+
+    const response = await router.handle(
+      new Request('http://localhost/stream-checkpoint-response-options', {
+        headers: { 'x-vector-checkpoint-version': '2.0.0' },
+      })
+    );
+
+    expect(response.status).toBe(206);
+    expect(response.statusText).toBe('Partial Content');
+    expect(response.headers.get('content-type')).toBe('text/plain; charset=utf-8');
+    expect(response.headers.get('x-checkpoint-stream')).toBe('1');
+    expect(await response.text()).toBe('checkpoint-stream');
+    expect(response.headers.getSetCookie()).toEqual(['checkpoint_stream=1; Path=/; HttpOnly']);
   });
 });
 

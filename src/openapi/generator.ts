@@ -1,16 +1,137 @@
 import type { RegisteredRouteDefinition } from '../core/router';
-import type { OpenAPIInfoOptions, RouteSchemaDefinition, StandardJSONSchemaCapable } from '../types';
+import { AuthKind, HttpAuthScheme, OpenApiSecuritySchemeType } from '../types';
+import type {
+  OpenAPIAuthOptions,
+  OpenAPIInfoOptions,
+  OpenAPISecurityScheme,
+  RouteSchemaDefinition,
+  StandardJSONSchemaCapable,
+} from '../types';
 
 type JsonSchema = Record<string, unknown>;
 
 export interface OpenAPIGenerationOptions {
   target: string;
   info?: OpenAPIInfoOptions;
+  auth?: OpenAPIAuthOptions;
 }
 
 export interface OpenAPIGenerationResult {
   document: Record<string, unknown>;
   warnings: string[];
+}
+
+const AUTH_KIND_VALUES = new Set<string>(Object.values(AuthKind));
+const DEFAULT_SECURITY_SCHEME_NAMES: Record<AuthKind, string> = {
+  [AuthKind.ApiKey]: 'apiKeyAuth',
+  [AuthKind.HttpBasic]: 'basicAuth',
+  [AuthKind.HttpBearer]: 'bearerAuth',
+  [AuthKind.HttpDigest]: 'digestAuth',
+  [AuthKind.OAuth2]: 'oauth2Auth',
+  [AuthKind.OpenIdConnect]: 'openIdConnectAuth',
+  [AuthKind.MutualTls]: 'mutualTlsAuth',
+};
+
+function isAuthKind(value: unknown): value is AuthKind {
+  return typeof value === 'string' && AUTH_KIND_VALUES.has(value);
+}
+
+function resolveRouteAuthKind(routeAuth: unknown, defaultAuthKind: AuthKind): AuthKind | null {
+  if (routeAuth === undefined || routeAuth === false || routeAuth === null) {
+    return null;
+  }
+
+  if (routeAuth === true) {
+    return defaultAuthKind;
+  }
+
+  if (isAuthKind(routeAuth)) {
+    return routeAuth;
+  }
+
+  // Preserve runtime behavior for unexpected truthy auth values.
+  return defaultAuthKind;
+}
+
+function resolveSecuritySchemeName(kind: AuthKind, authOptions?: OpenAPIAuthOptions): string {
+  const configuredName = authOptions?.securitySchemeNames?.[kind];
+  if (typeof configuredName === 'string' && configuredName.trim().length > 0) {
+    return configuredName.trim();
+  }
+  return DEFAULT_SECURITY_SCHEME_NAMES[kind];
+}
+
+function toOpenApiSecurityScheme(kind: AuthKind): OpenAPISecurityScheme {
+  switch (kind) {
+    case AuthKind.ApiKey:
+      return {
+        type: OpenApiSecuritySchemeType.ApiKey,
+        name: 'X-API-Key',
+        in: 'header',
+      };
+    case AuthKind.HttpBasic:
+      return {
+        type: OpenApiSecuritySchemeType.Http,
+        scheme: HttpAuthScheme.Basic,
+      };
+    case AuthKind.HttpBearer:
+      return {
+        type: OpenApiSecuritySchemeType.Http,
+        scheme: HttpAuthScheme.Bearer,
+        bearerFormat: 'JWT',
+      };
+    case AuthKind.HttpDigest:
+      return {
+        type: OpenApiSecuritySchemeType.Http,
+        scheme: HttpAuthScheme.Digest,
+      };
+    case AuthKind.OAuth2:
+      return {
+        type: OpenApiSecuritySchemeType.OAuth2,
+        flows: {
+          authorizationCode: {
+            authorizationUrl: 'https://example.com/oauth/authorize',
+            tokenUrl: 'https://example.com/oauth/token',
+            scopes: {},
+          },
+        },
+      };
+    case AuthKind.OpenIdConnect:
+      return {
+        type: OpenApiSecuritySchemeType.OpenIdConnect,
+        openIdConnectUrl: 'https://example.com/.well-known/openid-configuration',
+      };
+    case AuthKind.MutualTls:
+      return {
+        type: OpenApiSecuritySchemeType.MutualTls,
+      };
+    default: {
+      const exhaustiveCheck: never = kind;
+      return exhaustiveCheck;
+    }
+  }
+}
+
+function resolveSecurityScheme(kind: AuthKind, authOptions?: OpenAPIAuthOptions): OpenAPISecurityScheme {
+  const defaultScheme = toOpenApiSecurityScheme(kind);
+  const override = authOptions?.securitySchemes?.[kind];
+  if (!override) {
+    return defaultScheme;
+  }
+
+  const merged: OpenAPISecurityScheme = {
+    ...defaultScheme,
+    ...override,
+  };
+
+  if (isRecord(defaultScheme.flows) && isRecord(override.flows)) {
+    merged.flows = {
+      ...defaultScheme.flows,
+      ...override.flows,
+    };
+  }
+
+  return merged;
 }
 
 function isJSONSchemaCapable(schema: unknown): schema is StandardJSONSchemaCapable {
@@ -114,12 +235,89 @@ function isNoBodyResponseStatus(status: string): boolean {
 }
 
 function getResponseDescription(status: string): string {
-  if (status === '204') return 'No Content';
-  if (status === '205') return 'Reset Content';
-  if (status === '304') return 'Not Modified';
+  const knownDescriptions: Record<string, string> = {
+    '100': 'Continue',
+    '101': 'Switching Protocols',
+    '102': 'Processing',
+    '103': 'Early Hints',
+    '200': 'OK',
+    '201': 'Created',
+    '202': 'Accepted',
+    '203': 'Non-Authoritative Information',
+    '204': 'No Content',
+    '205': 'Reset Content',
+    '206': 'Partial Content',
+    '207': 'Multi-Status',
+    '208': 'Already Reported',
+    '226': 'IM Used',
+    '300': 'Multiple Choices',
+    '301': 'Moved Permanently',
+    '302': 'Found',
+    '303': 'See Other',
+    '304': 'Not Modified',
+    '305': 'Use Proxy',
+    '307': 'Temporary Redirect',
+    '308': 'Permanent Redirect',
+    '400': 'Bad Request',
+    '401': 'Unauthorized',
+    '402': 'Payment Required',
+    '403': 'Forbidden',
+    '404': 'Not Found',
+    '405': 'Method Not Allowed',
+    '406': 'Not Acceptable',
+    '407': 'Proxy Authentication Required',
+    '408': 'Request Timeout',
+    '409': 'Conflict',
+    '410': 'Gone',
+    '411': 'Length Required',
+    '412': 'Precondition Failed',
+    '413': 'Payload Too Large',
+    '414': 'URI Too Long',
+    '415': 'Unsupported Media Type',
+    '416': 'Range Not Satisfiable',
+    '417': 'Expectation Failed',
+    '418': "I'm a teapot",
+    '421': 'Misdirected Request',
+    '422': 'Unprocessable Content',
+    '423': 'Locked',
+    '424': 'Failed Dependency',
+    '425': 'Too Early',
+    '426': 'Upgrade Required',
+    '428': 'Precondition Required',
+    '429': 'Too Many Requests',
+    '431': 'Request Header Fields Too Large',
+    '451': 'Unavailable For Legal Reasons',
+    '500': 'Internal Server Error',
+    '501': 'Not Implemented',
+    '502': 'Bad Gateway',
+    '503': 'Service Unavailable',
+    '504': 'Gateway Timeout',
+    '505': 'HTTP Version Not Supported',
+    '506': 'Variant Also Negotiates',
+    '507': 'Insufficient Storage',
+    '508': 'Loop Detected',
+    '510': 'Not Extended',
+    '511': 'Network Authentication Required',
+  };
+  if (knownDescriptions[status]) {
+    return knownDescriptions[status];
+  }
+
   const numericStatus = Number(status);
   if (Number.isInteger(numericStatus) && numericStatus >= 100 && numericStatus < 200) {
-    return 'Informational';
+    return 'Informational Response';
+  }
+  if (Number.isInteger(numericStatus) && numericStatus >= 200 && numericStatus < 300) {
+    return 'Successful Response';
+  }
+  if (Number.isInteger(numericStatus) && numericStatus >= 300 && numericStatus < 400) {
+    return 'Redirection';
+  }
+  if (Number.isInteger(numericStatus) && numericStatus >= 400 && numericStatus < 500) {
+    return 'Client Error';
+  }
+  if (Number.isInteger(numericStatus) && numericStatus >= 500 && numericStatus < 600) {
+    return 'Server Error';
   }
   return 'OK';
 }
@@ -648,6 +846,8 @@ export function generateOpenAPIDocument(
 ): OpenAPIGenerationResult {
   const warnings: string[] = [];
   const paths: Record<string, Record<string, unknown>> = {};
+  const defaultAuthKind = AuthKind.HttpBearer;
+  const usedAuthKinds = new Set<AuthKind>();
 
   for (const route of routes) {
     if (route.options.expose === false) continue;
@@ -661,15 +861,64 @@ export function generateOpenAPIDocument(
       operationId: createOperationId(method, openapiPath),
       tags: [route.options.schema?.tag || inferTagFromPath(route.path)],
     };
+    if (typeof route.options.schema?.summary === 'string' && route.options.schema.summary.trim()) {
+      operation.summary = route.options.schema.summary.trim();
+    }
+    const routeSchemaDescription =
+      typeof route.options.schema?.description === 'string' && route.options.schema.description.trim()
+        ? route.options.schema.description.trim()
+        : typeof route.options.schema?.descrition === 'string' && route.options.schema.descrition.trim()
+          ? route.options.schema.descrition.trim()
+          : undefined;
+    if (routeSchemaDescription) {
+      operation.description = routeSchemaDescription;
+    }
+    if (route.options.deprecated === true) {
+      operation.deprecated = true;
+    }
+    const routeAuthKind = resolveRouteAuthKind(route.options.auth, defaultAuthKind);
+    if (routeAuthKind) {
+      usedAuthKinds.add(routeAuthKind);
+      const securitySchemeName = resolveSecuritySchemeName(routeAuthKind, options.auth);
+      operation.security = [{ [securitySchemeName]: [] }];
+    }
 
     const inputJSONSchema = convertInputSchema(route.path, route.options.schema?.input, options.target, warnings);
 
     if (inputJSONSchema) {
+      if (!operation.summary && typeof inputJSONSchema.title === 'string' && inputJSONSchema.title.trim()) {
+        operation.summary = inputJSONSchema.title.trim();
+      }
+      if (
+        !operation.description &&
+        typeof inputJSONSchema.description === 'string' &&
+        inputJSONSchema.description.trim()
+      ) {
+        operation.description = inputJSONSchema.description.trim();
+      }
       addStructuredInputToOperation(operation, inputJSONSchema);
     }
     addMissingPathParameters(operation, route.path);
 
     addOutputSchemasToOperation(operation, route.path, route.options.schema || {}, options.target, warnings);
+    if (!operation.summary || !operation.description) {
+      const responseEntries = Object.values(operation.responses || {}) as any[];
+      for (const response of responseEntries) {
+        const responseSchema = response?.content?.['application/json']?.schema;
+        if (!responseSchema || typeof responseSchema !== 'object') continue;
+        if (!operation.summary && typeof responseSchema.title === 'string' && responseSchema.title.trim()) {
+          operation.summary = responseSchema.title.trim();
+        }
+        if (
+          !operation.description &&
+          typeof responseSchema.description === 'string' &&
+          responseSchema.description.trim()
+        ) {
+          operation.description = responseSchema.description.trim();
+        }
+        if (operation.summary && operation.description) break;
+      }
+    }
 
     paths[openapiPath] ||= {};
     paths[openapiPath][method] = operation;
@@ -677,7 +926,7 @@ export function generateOpenAPIDocument(
 
   const openapiVersion = options.target === 'openapi-3.0' ? '3.0.3' : '3.1.0';
 
-  const document = {
+  const document: Record<string, unknown> = {
     openapi: openapiVersion,
     info: {
       title: options.info?.title || 'Vector API',
@@ -686,6 +935,16 @@ export function generateOpenAPIDocument(
     },
     paths,
   };
+  if (usedAuthKinds.size > 0) {
+    const securitySchemes: Record<string, OpenAPISecurityScheme> = {};
+    for (const authKind of usedAuthKinds) {
+      const name = resolveSecuritySchemeName(authKind, options.auth);
+      securitySchemes[name] = resolveSecurityScheme(authKind, options.auth);
+    }
+    document.components = {
+      securitySchemes,
+    };
+  }
 
   return {
     document,

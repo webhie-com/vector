@@ -88,6 +88,7 @@
     "test:load": "bun run tests/e2e/load.test.ts",
     "test:soak": "bun run tests/e2e/soak.test.ts",
     "test:benchmark": "bun run tests/e2e/benchmark.test.ts",
+    "test:benchmark:checkpoint": "bun run tests/e2e/checkpoint-raw-fetch-no-rate-limit.ts",
     "test:benchmark:io-schema": "bun run tests/e2e/concurrency-io-schema-benchmark.ts",
     "test:all": "bun test ./tests/**/*.test.ts",
     "test:perf": "bun run test:load && bun run test:soak && bun run test:benchmark",

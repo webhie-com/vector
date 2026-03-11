@@ -10,6 +10,14 @@ import type { StartedVectorApp } from '../types';
 // Compatibility layer for both Node and Bun
 const args = typeof Bun !== 'undefined' ? Bun.argv.slice(2) : process.argv.slice(2);
 
+// Handle checkpoint subcommand early — it has its own arg format
+// and would conflict with the main parseArgs strict mode.
+if (args[0] === 'checkpoint') {
+  const { runCheckpointCli } = await import('../checkpoint/cli');
+  await runCheckpointCli(args.slice(1));
+  process.exit(0);
+}
+
 const { values, positionals } = parseArgs({
   args,
   options: {
@@ -224,8 +232,9 @@ switch (command) {
 Usage: vector [command] [options]
 
 Commands:
-  dev     Start development server (default)
-  start   Start production server
+  dev       Start development server (default)
+  start     Start production server
+  checkpoint  Manage versioned checkpoints (publish, list, rollback, remove)
 
 Options:
   -p, --port <port>      Port to listen on (default: 3000)

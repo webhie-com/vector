@@ -7,7 +7,7 @@ import { VectorServer } from '../src/core/server';
 import { Vector, getVectorInstance } from '../src/core/vector';
 import { RouteScanner } from '../src/dev/route-scanner';
 import { MiddlewareManager } from '../src/middleware/manager';
-import type { LegacyRouteEntry, RouteBooleanDefaults } from '../src/types';
+import { AuthKind, type LegacyRouteEntry, type RouteBooleanDefaults } from '../src/types';
 
 describe('VectorRouter', () => {
   let router: VectorRouter;
@@ -120,6 +120,39 @@ describe('VectorRouter', () => {
       const response = await router.handle(request);
 
       expect(response.status).toBe(401);
+    });
+
+    it('should require auth when default auth kind is configured globally', async () => {
+      router.setRouteBooleanDefaults({ auth: AuthKind.HttpBasic });
+      router.route(
+        {
+          method: 'GET',
+          path: '/default-protected-kind',
+          expose: true,
+        },
+        async () => ({ ok: true })
+      );
+
+      const request = new Request('http://localhost/default-protected-kind', { method: 'GET' });
+      const response = await router.handle(request);
+
+      expect(response.status).toBe(401);
+    });
+
+    it('should normalize auth:true to the default auth kind when configured', () => {
+      router.setRouteBooleanDefaults({ auth: AuthKind.HttpDigest });
+      router.route(
+        {
+          method: 'GET',
+          path: '/default-kind-explicit-true',
+          expose: true,
+          auth: true,
+        },
+        async () => ({ ok: true })
+      );
+
+      const route = router.getRouteDefinitions().find((entry) => entry.path === '/default-kind-explicit-true');
+      expect(route?.options.auth).toBe(AuthKind.HttpDigest);
     });
 
     it('should allow route-level auth override when global auth default is enabled', async () => {
@@ -315,12 +348,40 @@ describe('VectorRouter', () => {
       expect(postResponse.status).toBe(200);
     });
 
-    it('should derive route params when native request does not provide params', async () => {
+    it('should not fall through OPTIONS to GET handlers', async () => {
+      let getCalled = false;
+
+      router.route({ method: 'GET', path: '/options-check', expose: true }, async () => {
+        getCalled = true;
+        return 'get';
+      });
+
+      const optionsResponse = await router.handle(new Request('http://localhost/options-check', { method: 'OPTIONS' }));
+
+      expect(optionsResponse.status).toBe(404);
+      expect(getCalled).toBe(false);
+    });
+
+    it('should allow HEAD to use GET handlers when HEAD is not defined', async () => {
+      let getCalled = false;
+
+      router.route({ method: 'GET', path: '/head-fallback', expose: true }, async () => {
+        getCalled = true;
+        return 'ok';
+      });
+
+      const headResponse = await router.handle(new Request('http://localhost/head-fallback', { method: 'HEAD' }));
+
+      expect(headResponse.status).toBe(200);
+      expect(getCalled).toBe(true);
+    });
+
+    it('does not mutate request with derived route params when native request does not provide params', async () => {
       let capturedParams: any;
 
-      router.route({ method: 'GET', path: '/native/:id', expose: true }, async (req) => {
-        capturedParams = req.params;
-        return { id: req.params?.id };
+      router.route({ method: 'GET', path: '/native/:id', expose: true }, async (ctx) => {
+        capturedParams = (ctx.request as any).params;
+        return { ok: true };
       });
 
       const routeTable = router.getRouteTable();
@@ -328,16 +389,16 @@ describe('VectorRouter', () => {
       const response = await methodMap.GET(new Request('http://localhost/native/123'));
 
       expect(response.status).toBe(200);
-      expect(capturedParams).toEqual({ id: '123' });
-      expect(await response.json()).toEqual({ id: '123' });
+      expect(capturedParams).toBeUndefined();
+      expect(await response.json()).toEqual({ ok: true });
     });
 
-    it('should derive multiple route params when native request does not provide params', async () => {
+    it('does not mutate request with multiple derived params when native request does not provide params', async () => {
       let capturedParams: any;
 
-      router.route({ method: 'GET', path: '/orgs/:orgId/users/:userId', expose: true }, async (req) => {
-        capturedParams = req.params;
-        return { orgId: req.params?.orgId, userId: req.params?.userId };
+      router.route({ method: 'GET', path: '/orgs/:orgId/users/:userId', expose: true }, async (ctx) => {
+        capturedParams = (ctx.request as any).params;
+        return { ok: true };
       });
 
       const routeTable = router.getRouteTable();
@@ -348,8 +409,8 @@ describe('VectorRouter', () => {
       const response = await methodMap.GET(new Request('http://localhost/orgs/acme/users/42'));
 
       expect(response.status).toBe(200);
-      expect(capturedParams).toEqual({ orgId: 'acme', userId: '42' });
-      expect(await response.json()).toEqual({ orgId: 'acme', userId: '42' });
+      expect(capturedParams).toBeUndefined();
+      expect(await response.json()).toEqual({ ok: true });
     });
   });
 
@@ -484,11 +545,11 @@ describe('VectorRouter', () => {
     });
 
     it('uses middleware-mutated request headers for dynamic CORS decisions', async () => {
-      middlewareManager.addBefore((req) => {
-        const headers = new Headers(req.headers);
+      middlewareManager.addBefore((ctx) => {
+        const headers = new Headers(ctx.request.headers);
         headers.set('origin', 'https://allowed.example');
-        return new Request(req.url, {
-          method: req.method,
+        ctx.request = new Request(ctx.request.url, {
+          method: ctx.request.method,
           headers,
         }) as any;
       });
@@ -511,6 +572,54 @@ describe('VectorRouter', () => {
 
       expect(response.headers.get('access-control-allow-origin')).toBe('https://allowed.example');
       expect(response.headers.get('access-control-allow-credentials')).toBe('true');
+    });
+
+    it('applies equivalent CORS headers for live and checkpoint requests on same route', async () => {
+      middlewareManager.addBefore((ctx) => {
+        const headers = new Headers(ctx.request.headers);
+        headers.set('origin', 'https://allowed.example');
+        ctx.request = new Request(ctx.request.url, {
+          method: ctx.request.method,
+          headers,
+        }) as any;
+      });
+
+      router.route({ method: 'GET', path: '/cors-parity', expose: true }, async () => ({ source: 'live' }));
+      router.setCheckpointGateway({
+        handle: async (request: Request) => {
+          if (!request.headers.get('x-vector-checkpoint-version')) {
+            return null;
+          }
+          return Response.json({ source: 'checkpoint' });
+        },
+      } as any);
+
+      new VectorServer(router, {
+        cors: {
+          origin: ['https://allowed.example'],
+          credentials: true,
+        },
+      });
+
+      const liveResponse = await router.handle(
+        new Request('http://localhost/cors-parity', {
+          headers: { origin: 'https://blocked.example' },
+        })
+      );
+
+      const checkpointResponse = await router.handle(
+        new Request('http://localhost/cors-parity', {
+          headers: {
+            origin: 'https://blocked.example',
+            'x-vector-checkpoint-version': '1.0.0',
+          },
+        })
+      );
+
+      expect(liveResponse.headers.get('access-control-allow-origin')).toBe('https://allowed.example');
+      expect(checkpointResponse.headers.get('access-control-allow-origin')).toBe('https://allowed.example');
+      expect(liveResponse.headers.get('access-control-allow-credentials')).toBe('true');
+      expect(checkpointResponse.headers.get('access-control-allow-credentials')).toBe('true');
     });
 
     it('applies CORS headers to fallback 404 responses', () => {

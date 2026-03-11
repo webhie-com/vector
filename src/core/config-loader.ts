@@ -29,8 +29,9 @@ export class ConfigLoader<TTypes extends VectorTypes = DefaultVectorTypes> {
     if (existsSync(this.configPath)) {
       try {
         // Use explicit file:// URL to ensure correct resolution
+        // Append cache-busting query to force re-import on dev reload
         const userConfigPath = toFileUrl(this.configPath);
-        const userConfig = await import(userConfigPath);
+        const userConfig = await import(`${userConfigPath}?t=${Date.now()}`);
         this.config = userConfig.default || userConfig;
         this.configSource = 'user';
       } catch (error: any) {
@@ -57,7 +58,7 @@ export class ConfigLoader<TTypes extends VectorTypes = DefaultVectorTypes> {
 
     // Direct mapping - schemas are now the same (flat)
     if (this.config) {
-      config.port = this.config.port;
+      config.port = this.normalizePort(this.config.port);
       config.hostname = this.config.hostname;
       config.reusePort = this.config.reusePort;
       config.development = this.config.development;
@@ -68,6 +69,7 @@ export class ConfigLoader<TTypes extends VectorTypes = DefaultVectorTypes> {
       config.openapi = this.config.openapi;
       config.startup = this.config.startup;
       config.shutdown = this.config.shutdown;
+      config.checkpoint = this.config.checkpoint;
     }
 
     // Always auto-discover routes
@@ -101,6 +103,13 @@ export class ConfigLoader<TTypes extends VectorTypes = DefaultVectorTypes> {
     }
 
     return config;
+  }
+
+  private normalizePort(port: number | string | undefined): number | undefined {
+    if (port === undefined) {
+      return undefined;
+    }
+    return Number(port);
   }
 
   async loadAuthHandler(): Promise<ProtectedHandler<TTypes> | null> {

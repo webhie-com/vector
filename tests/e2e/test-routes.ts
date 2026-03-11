@@ -1,5 +1,5 @@
 import { route, APIError } from '../../src';
-import type { VectorRequest } from '../../src/types';
+import type { VectorContext } from '../../src/types';
 
 // Mock data
 const products = [
@@ -46,9 +46,10 @@ export const getProduct = route(
     path: '/api/products/:id',
     expose: true,
   },
-  async (req: VectorRequest) => {
+  async (context: VectorContext) => {
     trackRequest();
-    const id = parseInt(req.params?.id as string);
+    const pathParts = new URL(context.request.url).pathname.split('/');
+    const id = Number(pathParts[pathParts.length - 1]);
     const product = products.find((p) => p.id === id);
 
     if (!product) {
@@ -67,7 +68,7 @@ export const getUser = route(
     expose: true,
     auth: true,
   },
-  async (_req: VectorRequest) => {
+  async (_context: VectorContext) => {
     trackRequest();
     // The auth middleware should have already validated the token
     // and attached the user to the request
@@ -90,9 +91,9 @@ export const createData = route(
     expose: true,
     auth: true,
   },
-  async (req: VectorRequest) => {
+  async (context: VectorContext) => {
     trackRequest();
-    const body = req.content as { name?: string; value?: number } | undefined;
+    const body = context.content as { name?: string; value?: number } | undefined;
 
     if (!body || !body.name) {
       throw APIError.badRequest('Name is required');
@@ -122,9 +123,9 @@ export const testError = route(
     path: '/api/error',
     expose: true,
   },
-  async (req: VectorRequest) => {
+  async (context: VectorContext) => {
     trackRequest();
-    const url = new URL(req.url);
+    const url = new URL(context.request.url);
     const errorType = url.searchParams.get('type');
 
     switch (errorType) {
@@ -155,9 +156,9 @@ export const compute = route(
     path: '/api/compute',
     expose: true,
   },
-  async (req: VectorRequest) => {
+  async (context: VectorContext) => {
     trackRequest();
-    const url = new URL(req.url);
+    const url = new URL(context.request.url);
     const iterations = parseInt(url.searchParams.get('iterations') || '1000');
 
     const startTime = Date.now();
@@ -185,9 +186,9 @@ export const slowResponse = route(
     path: '/api/slow',
     expose: true,
   },
-  async (req: VectorRequest) => {
+  async (context: VectorContext) => {
     trackRequest();
-    const url = new URL(req.url);
+    const url = new URL(context.request.url);
     const delay = parseInt(url.searchParams.get('delay') || '1000');
 
     await new Promise((resolve) => setTimeout(resolve, delay));

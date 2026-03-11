@@ -4,7 +4,9 @@ import type {
   DefaultVectorTypes,
   GetAuthType,
   InferRouteInputFromSchemaDefinition,
+  RouteAuthOption,
   RouteSchemaDefinition,
+  VectorContext,
   VectorRequest,
   VectorTypes,
 } from './types';
@@ -23,7 +25,7 @@ export interface RouteDefinition<
 > {
   entry: { method: string; path: string };
   options: ExtendedApiOptions<TSchemaDef>;
-  handler: (req: VectorRequest<TTypes, TValidatedInput>) => Promise<unknown> | unknown;
+  handler: (ctx: VectorContext<TTypes, TValidatedInput>) => Promise<unknown> | unknown;
 }
 
 export function route<
@@ -31,7 +33,7 @@ export function route<
   TSchemaDef extends RouteSchemaDefinition | undefined = RouteSchemaDefinition | undefined,
 >(
   options: ExtendedApiOptions<TSchemaDef>,
-  fn: (req: VectorRequest<TTypes, InferRouteInputFromSchemaDefinition<TSchemaDef>>) => Promise<unknown> | unknown
+  fn: (ctx: VectorContext<TTypes, InferRouteInputFromSchemaDefinition<TSchemaDef>>) => Promise<unknown> | unknown
 ): RouteDefinition<TTypes, InferRouteInputFromSchemaDefinition<TSchemaDef>, TSchemaDef> {
   return {
     entry: {
@@ -43,6 +45,22 @@ export function route<
   };
 }
 
+export function depRoute<
+  TTypes extends VectorTypes = DefaultVectorTypes,
+  TSchemaDef extends RouteSchemaDefinition | undefined = RouteSchemaDefinition | undefined,
+>(
+  options: ExtendedApiOptions<TSchemaDef>,
+  fn: (ctx: VectorContext<TTypes, InferRouteInputFromSchemaDefinition<TSchemaDef>>) => Promise<unknown> | unknown
+): RouteDefinition<TTypes, InferRouteInputFromSchemaDefinition<TSchemaDef>, TSchemaDef> {
+  return route<TTypes, TSchemaDef>(
+    {
+      ...options,
+      deprecated: true,
+    },
+    fn
+  );
+}
+
 function stringifyData(data: unknown): string {
   const val = data ?? null;
   try {
@@ -52,6 +70,93 @@ function stringifyData(data: unknown): string {
       return JSON.stringify(val, (_key, value) => (typeof value === 'bigint' ? value.toString() : value));
     }
     throw e;
+  }
+}
+
+export type ResponseCookieSameSite = 'Strict' | 'Lax' | 'None';
+export type ResponseCookiePriority = 'Low' | 'Medium' | 'High';
+
+export interface ResponseCookie {
+  name: string;
+  value: string;
+  domain?: string;
+  path?: string;
+  maxAge?: number;
+  expires?: Date | string;
+  httpOnly?: boolean;
+  secure?: boolean;
+  sameSite?: ResponseCookieSameSite;
+  partitioned?: boolean;
+  priority?: ResponseCookiePriority;
+}
+
+export type ResponseCookieInput = ResponseCookie | string;
+export type ResponseHeadersInit = Headers | Array<[string, string]> | Record<string, string>;
+
+export interface CreateResponseOptions {
+  contentType?: string;
+  headers?: ResponseHeadersInit;
+  cookies?: ResponseCookieInput[];
+  statusText?: string;
+}
+
+function isJsonContentType(contentType: string): boolean {
+  const mimeType = contentType.split(';', 1)[0] ?? contentType;
+  return mimeType.trim().toLowerCase() === CONTENT_TYPES.JSON;
+}
+
+function serializeCookie(cookie: ResponseCookie): string {
+  const segments = [`${cookie.name}=${cookie.value}`];
+
+  if (cookie.maxAge !== undefined && Number.isFinite(cookie.maxAge)) {
+    segments.push(`Max-Age=${Math.trunc(cookie.maxAge)}`);
+  }
+
+  if (cookie.domain) {
+    segments.push(`Domain=${cookie.domain}`);
+  }
+
+  if (cookie.path) {
+    segments.push(`Path=${cookie.path}`);
+  }
+
+  if (cookie.expires !== undefined) {
+    const expiresAt = cookie.expires instanceof Date ? cookie.expires : new Date(cookie.expires);
+    if (!Number.isNaN(expiresAt.getTime())) {
+      segments.push(`Expires=${expiresAt.toUTCString()}`);
+    }
+  }
+
+  if (cookie.httpOnly) {
+    segments.push('HttpOnly');
+  }
+
+  if (cookie.secure) {
+    segments.push('Secure');
+  }
+
+  if (cookie.sameSite) {
+    segments.push(`SameSite=${cookie.sameSite}`);
+  }
+
+  if (cookie.partitioned) {
+    segments.push('Partitioned');
+  }
+
+  if (cookie.priority) {
+    segments.push(`Priority=${cookie.priority}`);
+  }
+
+  return segments.join('; ');
+}
+
+function appendSetCookieHeaders(headers: Headers, cookies?: ResponseCookieInput[]): void {
+  if (!cookies || cookies.length === 0) {
+    return;
+  }
+
+  for (const cookie of cookies) {
+    headers.append('set-cookie', typeof cookie === 'string' ? cookie : serializeCookie(cookie));
   }
 }
 
@@ -177,17 +282,36 @@ export const APIError = {
   custom: (statusCode: number, msg: string, contentType?: string) => createErrorResponse(statusCode, msg, contentType),
 };
 
-export function createResponse(statusCode: number, data?: unknown, contentType: string = CONTENT_TYPES.JSON): Response {
-  const body = contentType === CONTENT_TYPES.JSON ? stringifyData(data) : data;
+export function createResponse(
+  statusCode: number,
+  data?: unknown,
+  optionsOrContentType: string | CreateResponseOptions = CONTENT_TYPES.JSON
+): Response {
+  const options =
+    typeof optionsOrContentType === 'string'
+      ? ({ contentType: optionsOrContentType } as CreateResponseOptions)
+      : (optionsOrContentType ?? {});
 
-  return new Response(body as string, {
+  const headers = new Headers(options.headers);
+  const contentType = options.contentType ?? headers.get('content-type') ?? CONTENT_TYPES.JSON;
+
+  if (options.contentType || !headers.has('content-type')) {
+    headers.set('content-type', contentType);
+  }
+
+  appendSetCookieHeaders(headers, options.cookies);
+
+  const body = isJsonContentType(contentType) ? stringifyData(data) : data;
+
+  return new Response(body as any, {
     status: statusCode,
-    headers: { 'content-type': contentType },
+    statusText: options.statusText,
+    headers,
   });
 }
 
 export const protectedRoute = async <TTypes extends VectorTypes = DefaultVectorTypes>(
-  request: VectorRequest<TTypes>,
+  context: VectorContext<TTypes>,
   responseContentType?: string
 ) => {
   const vector = getVectorInstance();
@@ -198,16 +322,17 @@ export const protectedRoute = async <TTypes extends VectorTypes = DefaultVectorT
   }
 
   try {
-    const authUser = await protectedHandler(request as any);
-    request.authUser = authUser as GetAuthType<TTypes>;
+    const authUser = await protectedHandler(context as any);
+    context.authUser = authUser as GetAuthType<TTypes>;
   } catch (error) {
     throw APIError.unauthorized(error instanceof Error ? error.message : 'Authentication failed', responseContentType);
   }
 };
 
 export interface ApiOptions<TSchemaDef extends RouteSchemaDefinition | undefined = RouteSchemaDefinition | undefined> {
-  auth?: boolean;
+  auth?: RouteAuthOption;
   expose?: boolean;
+  deprecated?: boolean;
   rawRequest?: boolean;
   validate?: boolean;
   rawResponse?: boolean;
@@ -218,7 +343,7 @@ export interface ApiOptions<TSchemaDef extends RouteSchemaDefinition | undefined
 
 export function api<TTypes extends VectorTypes = DefaultVectorTypes, TValidatedInput = undefined>(
   options: ApiOptions,
-  fn: (request: VectorRequest<TTypes, TValidatedInput>) => Promise<unknown> | unknown
+  fn: (context: VectorContext<TTypes, TValidatedInput>) => Promise<unknown> | unknown
 ) {
   const {
     auth = false,
@@ -229,7 +354,20 @@ export function api<TTypes extends VectorTypes = DefaultVectorTypes, TValidatedI
   } = options;
 
   return async (request: Request) => {
-    const req = request as unknown as VectorRequest<TTypes>;
+    const req = request as unknown as VectorRequest<TTypes, TValidatedInput>;
+    let query: Record<string, string | string[]> = {};
+    try {
+      query = parseQuery(new URL(request.url));
+    } catch {
+      query = {};
+    }
+    const ctx = {
+      request: req,
+      metadata: {} as any,
+      params: {} as any,
+      query: query as any,
+      cookies: parseCookies(request.headers.get('cookie')) as any,
+    } as VectorContext<TTypes, TValidatedInput>;
 
     if (!expose) {
       return APIError.forbidden('Forbidden');
@@ -237,27 +375,31 @@ export function api<TTypes extends VectorTypes = DefaultVectorTypes, TValidatedI
 
     try {
       if (auth) {
-        await protectedRoute(req, responseContentType);
+        await protectedRoute(ctx as unknown as VectorContext<TTypes>, responseContentType);
       }
 
       if (!rawRequest && req.method !== 'GET' && req.method !== 'HEAD') {
         try {
           const contentType = req.headers.get('content-type');
           if (contentType?.startsWith('application/json')) {
-            req.content = await req.json();
+            setContextField(ctx as unknown as Record<string, unknown>, 'content', await req.json());
           } else if (contentType?.startsWith('application/x-www-form-urlencoded')) {
-            req.content = Object.fromEntries(await req.formData());
+            setContextField(
+              ctx as unknown as Record<string, unknown>,
+              'content',
+              Object.fromEntries(await req.formData())
+            );
           } else if (contentType?.startsWith('multipart/form-data')) {
-            req.content = await req.formData();
+            setContextField(ctx as unknown as Record<string, unknown>, 'content', await req.formData());
           } else {
-            req.content = await req.text();
+            setContextField(ctx as unknown as Record<string, unknown>, 'content', await req.text());
           }
         } catch {
-          req.content = null;
+          setContextField(ctx as unknown as Record<string, unknown>, 'content', null);
         }
       }
 
-      const result = await fn(req as unknown as VectorRequest<TTypes, TValidatedInput>);
+      const result = await fn(ctx);
 
       return rawResponse ? result : ApiResponse.success(result, responseContentType);
     } catch (err: unknown) {
@@ -269,4 +411,62 @@ export function api<TTypes extends VectorTypes = DefaultVectorTypes, TValidatedI
   };
 }
 
+function setContextField(target: Record<string, unknown>, key: string, value: unknown): void {
+  const ownDescriptor = Object.getOwnPropertyDescriptor(target as object, key);
+  if (ownDescriptor && ownDescriptor.writable === false && typeof ownDescriptor.set !== 'function') {
+    return;
+  }
+
+  try {
+    target[key] = value;
+    return;
+  } catch {
+    // Fall back to defining an own property when inherited Request fields are readonly accessors.
+  }
+
+  try {
+    Object.defineProperty(target, key, {
+      value,
+      writable: true,
+      configurable: true,
+      enumerable: true,
+    });
+  } catch {
+    // Ignore when target is non-extensible.
+  }
+}
+
 export default ApiResponse;
+
+function parseQuery(url: URL): Record<string, string | string[]> {
+  const query: Record<string, string | string[]> = {};
+  for (const [key, value] of url.searchParams) {
+    if (key in query) {
+      const existing = query[key];
+      if (Array.isArray(existing)) {
+        existing.push(value);
+      } else {
+        query[key] = [existing as string, value];
+      }
+    } else {
+      query[key] = value;
+    }
+  }
+  return query;
+}
+
+function parseCookies(cookieHeader: string | null): Record<string, string> {
+  const cookies: Record<string, string> = {};
+  if (!cookieHeader) {
+    return cookies;
+  }
+
+  for (const pair of cookieHeader.split(';')) {
+    const idx = pair.indexOf('=');
+    if (idx > 0) {
+      cookies[pair.slice(0, idx).trim()] = pair.slice(idx + 1).trim();
+    }
+  }
+
+  return cookies;
+}

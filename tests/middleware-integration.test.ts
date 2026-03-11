@@ -12,10 +12,9 @@ describe('Middleware Integration with Auto-Discovery', () => {
   it('should execute before middleware for auto-discovered routes', async () => {
     let middlewareExecuted = false;
 
-    const beforeMiddleware: BeforeMiddlewareHandler = async (request) => {
+    const beforeMiddleware: BeforeMiddlewareHandler = async (context) => {
       middlewareExecuted = true;
-      request.context.fromMiddleware = 'test-value';
-      return request;
+      context.metadata.fromMiddleware = 'test-value';
     };
 
     const config: VectorConfig = {
@@ -133,22 +132,19 @@ describe('Middleware Integration with Auto-Discovery', () => {
   it('should execute multiple middleware in order', async () => {
     const executionOrder: string[] = [];
 
-    const middleware1: BeforeMiddlewareHandler = async (request) => {
+    const middleware1: BeforeMiddlewareHandler = async (context) => {
       executionOrder.push('first');
-      request.context.first = true;
-      return request;
+      context.metadata.first = true;
     };
 
-    const middleware2: BeforeMiddlewareHandler = async (request) => {
+    const middleware2: BeforeMiddlewareHandler = async (context) => {
       executionOrder.push('second');
-      request.context.second = true;
-      return request;
+      context.metadata.second = true;
     };
 
-    const middleware3: BeforeMiddlewareHandler = async (request) => {
+    const middleware3: BeforeMiddlewareHandler = async (context) => {
       executionOrder.push('third');
-      request.context.third = true;
-      return request;
+      context.metadata.third = true;
     };
 
     const config: VectorConfig = {
@@ -173,9 +169,8 @@ describe('Middleware Integration with Auto-Discovery', () => {
 
   it('should load middleware from config file', async () => {
     // Create a test config with middleware
-    const testMiddleware: BeforeMiddlewareHandler = async (request) => {
-      request.context.testMiddleware = true;
-      return request;
+    const testMiddleware: BeforeMiddlewareHandler = async (context) => {
+      context.metadata.testMiddleware = true;
     };
 
     const testAfterMiddleware: AfterMiddlewareHandler = async (response, _request) => {

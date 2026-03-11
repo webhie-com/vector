@@ -22,9 +22,7 @@ describe.skipIf(!DIST_EXISTS)('Package exports', () => {
     const missing: string[] = [];
 
     for (const [entrypoint, conditions] of Object.entries(pkg.exports)) {
-      for (const [condition, filePath] of Object.entries(
-        conditions as Record<string, string>
-      )) {
+      for (const [condition, filePath] of Object.entries(conditions as Record<string, string>)) {
         const abs = join(PACKAGE_ROOT, filePath);
         const exists = await Bun.file(abs).exists();
         if (!exists) {
@@ -47,9 +45,7 @@ describe.skipIf(!DIST_EXISTS)('Package exports', () => {
     for (const [entrypoint, conditions] of Object.entries(pkg.exports)) {
       const conds = conditions as Record<string, string>;
       if (conds.require && !conds.require.endsWith('.cjs')) {
-        violations.push(
-          `${entrypoint} require → ${conds.require} (expected .cjs)`
-        );
+        violations.push(`${entrypoint} require → ${conds.require} (expected .cjs)`);
       }
     }
 
@@ -66,14 +62,8 @@ describe.skipIf(!DIST_EXISTS)('Package exports', () => {
 
     for (const [entrypoint, conditions] of Object.entries(pkg.exports)) {
       const conds = conditions as Record<string, string>;
-      if (
-        conds.import &&
-        !conds.import.endsWith('.mjs') &&
-        !conds.import.endsWith('.js')
-      ) {
-        violations.push(
-          `${entrypoint} import → ${conds.import} (expected .mjs or .js)`
-        );
+      if (conds.import && !conds.import.endsWith('.mjs') && !conds.import.endsWith('.js')) {
+        violations.push(`${entrypoint} import → ${conds.import} (expected .mjs or .js)`);
       }
     }
 
@@ -95,15 +85,10 @@ describe.skipIf(!DIST_EXISTS)('Package exports', () => {
       const content = await Bun.file(abs).text();
 
       // Bun CJS bundles start with @bun-cjs marker or use module.exports
-      const isCJS =
-        content.includes('@bun-cjs') ||
-        content.includes('module.exports') ||
-        content.includes('exports.');
+      const isCJS = content.includes('@bun-cjs') || content.includes('module.exports') || content.includes('exports.');
 
       if (!isCJS) {
-        failures.push(
-          `${entrypoint} require → ${conds.require} does not contain CJS syntax`
-        );
+        failures.push(`${entrypoint} require → ${conds.require} does not contain CJS syntax`);
       }
     }
 
@@ -126,9 +111,7 @@ describe.skipIf(!DIST_EXISTS)('Package exports', () => {
       const content = await Bun.file(abs).text();
 
       if (content.includes('@bun-cjs')) {
-        failures.push(
-          `${entrypoint} ESM entry → ${esmPath} contains CJS wrapper`
-        );
+        failures.push(`${entrypoint} ESM entry → ${esmPath} contains CJS wrapper`);
       }
     }
 

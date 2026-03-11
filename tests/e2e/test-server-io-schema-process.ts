@@ -95,7 +95,7 @@ async function serve(config: VectorConfig): Promise<{ stop: () => void }> {
       schema: { input: createOrderSchema },
     },
     async (req) => {
-      const body = req.content;
+      const body = req.validatedInput?.body ?? req.content;
       if (!body) {
         throw APIError.badRequest('Missing validated body');
       }
@@ -132,8 +132,9 @@ async function serve(config: VectorConfig): Promise<{ stop: () => void }> {
       schema: { input: getOrderSchema },
     },
     async (req) => {
-      const id = Number(req.params?.id);
-      const includeItems = Boolean(req.query?.includeItems ?? false);
+      const validated = req.validatedInput;
+      const id = Number(validated?.params?.id);
+      const includeItems = Boolean(validated?.query?.includeItems ?? false);
 
       await sleep(2 + Math.floor(Math.random() * 4));
 
@@ -165,7 +166,7 @@ async function serve(config: VectorConfig): Promise<{ stop: () => void }> {
       schema: { input: listOrdersSchema },
     },
     async (req) => {
-      const query = req.query;
+      const query = req.validatedInput?.query;
       if (!query || typeof query.page !== 'number' || typeof query.pageSize !== 'number') {
         throw APIError.badRequest('Missing validated query');
       }

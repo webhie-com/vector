@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'bun:test';
 import { generateOpenAPIDocument } from '../src/openapi/generator';
 import type { RegisteredRouteDefinition } from '../src/core/router';
+import { AuthKind, OpenApiSecuritySchemeType } from '../src/types';
 import { z } from 'zod';
 
 function schemaWithJson(input: Record<string, unknown>, output?: Record<string, unknown>) {
@@ -187,6 +188,129 @@ describe('OpenAPI generator', () => {
       expect.objectContaining({ type: 'object' })
     );
     expect(paths['/short-output'].get.tags).toEqual(['short-output']);
+  });
+
+  it('sets operation.deprecated when the route is marked deprecated', () => {
+    const routes: RegisteredRouteDefinition[] = [
+      {
+        method: 'GET',
+        path: '/legacy-endpoint',
+        options: {
+          method: 'GET',
+          path: '/legacy-endpoint',
+          expose: true,
+          deprecated: true,
+        },
+      },
+      {
+        method: 'GET',
+        path: '/active-endpoint',
+        options: {
+          method: 'GET',
+          path: '/active-endpoint',
+          expose: true,
+        },
+      },
+    ];
+
+    const result = generateOpenAPIDocument(routes, {
+      target: 'openapi-3.0',
+    });
+
+    const paths = result.document.paths as Record<string, any>;
+    expect(paths['/legacy-endpoint'].get.deprecated).toBe(true);
+    expect(paths['/active-endpoint'].get.deprecated).toBeUndefined();
+  });
+
+  it('emits operation summary and description from route schema docs', () => {
+    const routes: RegisteredRouteDefinition[] = [
+      {
+        method: 'GET',
+        path: '/with-docs',
+        options: {
+          method: 'GET',
+          path: '/with-docs',
+          expose: true,
+          schema: {
+            summary: 'Get docs route',
+            description: 'Returns the route used to verify OpenAPI operation docs text.',
+          },
+        },
+      },
+    ];
+
+    const result = generateOpenAPIDocument(routes, {
+      target: 'openapi-3.0',
+    });
+
+    const paths = result.document.paths as Record<string, any>;
+    expect(paths['/with-docs'].get.summary).toBe('Get docs route');
+    expect(paths['/with-docs'].get.description).toBe('Returns the route used to verify OpenAPI operation docs text.');
+  });
+
+  it('supports schema.descrition alias for operation description', () => {
+    const routes: RegisteredRouteDefinition[] = [
+      {
+        method: 'GET',
+        path: '/with-descrition',
+        options: {
+          method: 'GET',
+          path: '/with-descrition',
+          expose: true,
+          schema: {
+            descrition: 'Alias spelling should still populate operation description.',
+          },
+        },
+      },
+    ];
+
+    const result = generateOpenAPIDocument(routes, {
+      target: 'openapi-3.0',
+    });
+
+    const paths = result.document.paths as Record<string, any>;
+    expect(paths['/with-descrition'].get.description).toBe(
+      'Alias spelling should still populate operation description.'
+    );
+  });
+
+  it('falls back operation docs from input schema title/description', () => {
+    const inputSchema = schemaWithJson({
+      type: 'object',
+      title: 'Create Widget',
+      description: 'Creates a widget from the request payload.',
+      properties: {
+        body: {
+          type: 'object',
+          properties: {
+            name: { type: 'string' },
+          },
+        },
+      },
+    });
+
+    const routes: RegisteredRouteDefinition[] = [
+      {
+        method: 'POST',
+        path: '/widgets',
+        options: {
+          method: 'POST',
+          path: '/widgets',
+          expose: true,
+          schema: {
+            input: inputSchema as any,
+          },
+        },
+      },
+    ];
+
+    const result = generateOpenAPIDocument(routes, {
+      target: 'openapi-3.0',
+    });
+
+    const paths = result.document.paths as Record<string, any>;
+    expect(paths['/widgets'].post.summary).toBe('Create Widget');
+    expect(paths['/widgets'].post.description).toBe('Creates a widget from the request payload.');
   });
 
   it('adds warning when json schema conversion throws', () => {
@@ -511,6 +635,47 @@ describe('OpenAPI generator', () => {
     expect(responses['304'].content).toBeUndefined();
   });
 
+  it('uses status-specific response descriptions for non-200 statuses', () => {
+    const outputSchema = schemaWithJson(
+      { type: 'object' },
+      {
+        type: 'object',
+        properties: {
+          ok: { type: 'boolean' },
+        },
+      }
+    );
+
+    const routes: RegisteredRouteDefinition[] = [
+      {
+        method: 'POST',
+        path: '/response-descriptions',
+        options: {
+          method: 'POST',
+          path: '/response-descriptions',
+          expose: true,
+          schema: {
+            output: {
+              201: outputSchema as any,
+              404: outputSchema as any,
+              503: outputSchema as any,
+            },
+          },
+        },
+      },
+    ];
+
+    const result = generateOpenAPIDocument(routes, {
+      target: 'openapi-3.0',
+    });
+
+    const paths = result.document.paths as Record<string, any>;
+    const responses = paths['/response-descriptions'].post.responses;
+    expect(responses['201'].description).toBe('Created');
+    expect(responses['404'].description).toBe('Not Found');
+    expect(responses['503'].description).toBe('Service Unavailable');
+  });
+
   it('emits openapi 3.0.3 for openapi-3.0 target and 3.1.0 for JSON Schema draft targets', () => {
     const routes: RegisteredRouteDefinition[] = [
       {
@@ -581,6 +746,112 @@ describe('OpenAPI generator', () => {
         expect.objectContaining({ name: 'wildcard', in: 'path', required: true }),
         expect.objectContaining({ name: 'wildcard2', in: 'path', required: true }),
       ])
+    );
+  });
+
+  it('emits security schemes and operation security from route auth settings', () => {
+    const routes: RegisteredRouteDefinition[] = [
+      {
+        method: 'GET',
+        path: '/bearer-default',
+        options: {
+          method: 'GET',
+          path: '/bearer-default',
+          expose: true,
+          auth: true,
+        },
+      },
+      {
+        method: 'GET',
+        path: '/api-key-auth',
+        options: {
+          method: 'GET',
+          path: '/api-key-auth',
+          expose: true,
+          auth: AuthKind.ApiKey,
+        },
+      },
+      {
+        method: 'GET',
+        path: '/public',
+        options: {
+          method: 'GET',
+          path: '/public',
+          expose: true,
+          auth: false,
+        },
+      },
+    ];
+
+    const result = generateOpenAPIDocument(routes, {
+      target: 'openapi-3.0',
+    });
+
+    const paths = result.document.paths as Record<string, any>;
+    const components = result.document.components as Record<string, any>;
+
+    expect(paths['/bearer-default'].get.security).toEqual([{ bearerAuth: [] }]);
+    expect(paths['/api-key-auth'].get.security).toEqual([{ apiKeyAuth: [] }]);
+    expect(paths['/public'].get.security).toBeUndefined();
+
+    expect(components.securitySchemes.bearerAuth).toEqual(
+      expect.objectContaining({
+        type: OpenApiSecuritySchemeType.Http,
+        scheme: 'bearer',
+        bearerFormat: 'JWT',
+      })
+    );
+    expect(components.securitySchemes.apiKeyAuth).toEqual(
+      expect.objectContaining({
+        type: OpenApiSecuritySchemeType.ApiKey,
+        name: 'X-API-Key',
+        in: 'header',
+      })
+    );
+  });
+
+  it('supports custom security scheme names and overrides', () => {
+    const routes: RegisteredRouteDefinition[] = [
+      {
+        method: 'GET',
+        path: '/jwt-auth',
+        options: {
+          method: 'GET',
+          path: '/jwt-auth',
+          expose: true,
+          auth: AuthKind.HttpBearer,
+        },
+      },
+    ];
+
+    const result = generateOpenAPIDocument(routes, {
+      target: 'openapi-3.0',
+      auth: {
+        securitySchemeNames: {
+          [AuthKind.HttpBearer]: 'jwtAuth',
+        },
+        securitySchemes: {
+          [AuthKind.HttpBearer]: {
+            type: OpenApiSecuritySchemeType.Http,
+            scheme: 'bearer',
+            bearerFormat: 'AccessToken',
+            description: 'Custom bearer auth',
+          },
+        },
+      },
+    });
+
+    const paths = result.document.paths as Record<string, any>;
+    const components = result.document.components as Record<string, any>;
+
+    expect(paths['/jwt-auth'].get.security).toEqual([{ jwtAuth: [] }]);
+    expect(components.securitySchemes.jwtAuth).toEqual(
+      expect.objectContaining({
+        type: OpenApiSecuritySchemeType.Http,
+        scheme: 'bearer',
+        bearerFormat: 'AccessToken',
+        description: 'Custom bearer auth',
+      })
     );
   });
 });
