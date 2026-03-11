@@ -4,12 +4,8 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: 'Version to publish (e.g., 1.0.0)'
+        description: "Version to publish (e.g., 1.0.0)"
         required: true
-        type: string
-      release_notes:
-        description: 'Release notes (optional)'
-        required: false
         type: string
 
 jobs:
@@ -21,27 +17,27 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          fetch-depth: 0  # Fetch all history for tags and release notes
+          fetch-depth: 0 # Fetch all history for tags and release notes
           token: ${{ secrets.GITHUB_TOKEN }}
-      
+
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: latest
-      
+
       - name: Configure Git
         run: |
           git config --global user.name "GitHub Actions"
           git config --global user.email "actions@github.com"
-      
+
       - name: Install dependencies
         run: bun install
-      
+
       - name: Run tests
         run: bun test
-      
+
       - name: Build package
         run: bun run build:lib
-      
+
       - name: Update version in package.json
         run: |
           CURRENT_VERSION=$(node -p "require('./package.json').version")
@@ -53,7 +49,7 @@ jobs:
           else
             echo "Version already set to ${{ github.event.inputs.version }}"
           fi
-      
+
       - name: Create and push tag
         run: |
           # Check if tag already exists
@@ -64,76 +60,12 @@ jobs:
             git push origin "v${{ github.event.inputs.version }}"
           fi
 
-      - name: Generate Release Notes
-        id: release_notes
-        run: |
-          # Get the previous tag (excluding the one we just created)
-          PREVIOUS_TAG=$(git describe --tags --abbrev=0 "v${{ github.event.inputs.version }}^" 2>/dev/null || echo "")
-          
-          echo "## Release v${{ github.event.inputs.version }}" > release_notes.md
-          echo "" >> release_notes.md
-          
-          # Add custom release notes if provided
-          if [ -n "${{ github.event.inputs.release_notes }}" ]; then
-            echo "${{ github.event.inputs.release_notes }}" >> release_notes.md
-            echo "" >> release_notes.md
-          fi
-          
-          # Add PR history
-          echo "### Changes" >> release_notes.md
-          echo "" >> release_notes.md
-          
-          if [ -n "$PREVIOUS_TAG" ]; then
-            # Get merged PRs between the two tags by checking merge commit dates
-            echo "#### Pull Requests" >> release_notes.md
-
-            # Get the date of the previous tag and current HEAD
-            PREVIOUS_TAG_DATE=$(git log -1 --format=%aI $PREVIOUS_TAG)
-            CURRENT_HEAD_DATE=$(git log -1 --format=%aI HEAD)
-
-            # Find PRs merged between the two dates using gh api
-            gh api \
-              -H "Accept: application/vnd.github+json" \
-              "/repos/${{ github.repository }}/pulls?state=closed&sort=updated&direction=desc&per_page=100" \
-              --jq ".[] | select(.merged_at != null) | select(.merged_at > \"${PREVIOUS_TAG_DATE}\") | select(.merged_at <= \"${CURRENT_HEAD_DATE}\") | \"- #\\(.number): \\(.title) (@\\(.user.login))\"" \
-              >> release_notes.md || echo "No PRs found" >> release_notes.md
-
-            echo "" >> release_notes.md
-            echo "#### Commits" >> release_notes.md
-            git log ${PREVIOUS_TAG}..HEAD --pretty=format:"- %s (%an)" >> release_notes.md
-          else
-            # First release - show recent merged PRs
-            echo "#### Pull Requests" >> release_notes.md
-            gh api \
-              -H "Accept: application/vnd.github+json" \
-              "/repos/${{ github.repository }}/pulls?state=closed&sort=updated&direction=desc&per_page=20" \
-              --jq '.[] | select(.merged_at != null) | "- #\(.number): \(.title) (@\(.user.login))"' \
-              >> release_notes.md || echo "No PRs found" >> release_notes.md
-
-            echo "" >> release_notes.md
-            echo "#### Commits" >> release_notes.md
-            git log --pretty=format:"- %s (%an)" --max-count=50 >> release_notes.md
-          fi
-          
-
-          # Save release notes to output using a random delimiter (GitHub recommended approach)
-          delimiter="ghadelimiter_$(uuidgen || echo $RANDOM)"
-          {
-            echo "RELEASE_NOTES<<${delimiter}"
-            cat release_notes.md
-            echo ""
-            echo "${delimiter}"
-          } >> $GITHUB_OUTPUT
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
       - name: Create GitHub Release
-        uses: softprops/action-gh-release@v1
+        uses: softprops/action-gh-release@v2
         with:
           tag_name: v${{ github.event.inputs.version }}
           name: Release v${{ github.event.inputs.version }}
-          body: ${{ steps.release_notes.outputs.RELEASE_NOTES }}
+          generate_release_notes: true
           draft: false
           prerelease: false
           token: ${{ secrets.GITHUB_TOKEN }}
-
