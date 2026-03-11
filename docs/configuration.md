@@ -7,7 +7,7 @@ Vector apps are configured with `vector.config.ts` using `VectorConfigSchema`.
 ```ts
 interface VectorConfigSchema {
   // Server
-  port?: number;
+  port?: number | string;
   hostname?: string;
   reusePort?: boolean;
   development?: boolean;
@@ -154,7 +154,8 @@ Example precedence:
 - Use `context.request` for the native `Request`.
 - Use `context.params`, `context.query`, and `context.cookies` for baseline route/query/cookie access.
 - Use `context.content`, `context.validatedInput`, `context.authUser`, and `context.metadata` for framework values (`metadata` always exists and defaults to `{}`).
-- Do not mutate `context.request`; put custom per-request data on `context` itself (for example, `context.startTime`).
+- Do not mutate `context.request`; store custom per-request values in `context.metadata` (for example, `context.metadata.startTime`).
+- For checkpoint compatibility, avoid adding custom top-level fields on `context`; checkpoint forwarding preserves `metadata`, `content`, `validatedInput`, and `authUser`.
 
 ## Example Configuration
 
@@ -162,8 +163,8 @@ Example precedence:
 import type { VectorConfigSchema } from "vector-framework";
 
 const config: VectorConfigSchema = {
-  // number: TCP port for Bun.serve
-  port: Number(process.env.PORT ?? 3000),
+  // number | string: TCP port for Bun.serve (string is coerced with Number() at runtime)
+  port: process.env.PORT ?? 3000,
   // string: host/interface to bind
   hostname: "0.0.0.0",
   // boolean: toggles development-mode defaults
@@ -231,9 +232,26 @@ const config: VectorConfigSchema = {
       description: "Internal API",
     },
     auth: {
-      // Partial<Record<AuthKind, string>>
+      // Optional: OpenAPI auth customization only (does not enforce runtime auth).
+      // Optional: rename the key used in components.securitySchemes.
+      // This is only a label/reference name (like a variable name), not the auth behavior itself.
+      // Most projects can keep defaults and omit this.
       securitySchemeNames: {
         HttpBearer: "BearerAuth",
+      },
+      // Optional: define what the OpenAPI scheme actually is for each AuthKind.
+      // Use this when defaults are not enough (common for OAuth2/OpenID URLs or custom bearer format).
+      securitySchemes: {
+        HttpBearer: {
+          // OpenAPI security scheme type
+          type: "http",
+          // HTTP auth scheme
+          scheme: "bearer",
+          // Optional hint shown in docs/clients
+          bearerFormat: "JWT",
+          // Optional docs text for users
+          description: "Paste an access token in the Authorization header.",
+        },
       },
     },
   },
@@ -254,15 +272,18 @@ const config: VectorConfigSchema = {
   },
 
   // () => Promise<void> | void
+  // Runs once before route discovery and before the server starts listening.
   startup: async () => {
     await loadOramaDatastore();
   },
   // () => Promise<void> | void
+  // Runs during graceful shutdown (SIGINT/SIGTERM) before process exit.
   shutdown: async () => {
     await closeOramaDatastore();
   },
 
   // (context) => Promise<AuthUser> | AuthUser
+  // Runtime auth resolver for protected routes; return user-like data for context.authUser.
   auth: async (context) => {
     const token = context.request.headers
       .get("Authorization")
@@ -272,6 +293,7 @@ const config: VectorConfigSchema = {
   },
 
   // (key, factory, ttlSeconds) => Promise<unknown>
+  // Global cache adapter used by route-level caching; call factory() on cache miss.
   cache: async (key, factory, ttl) => {
     const cached = await redis.get(key);
     if (cached) return JSON.parse(cached);
@@ -281,16 +303,23 @@ const config: VectorConfigSchema = {
     return value;
   },
 
+  // Array of middleware run before route handlers.
   before: [
     // (context) => void | Response
+    // Return a Response to short-circuit the request.
     async (context) => {
-      context.startTime = Date.now();
+      context.metadata.startTime = Date.now();
     },
   ],
+  // Array of middleware run after handlers; receives handler response.
   after: [
     // (response, context) => Response
+    // Must return the Response to be sent to the client.
     async (response, context) => {
-      const start = context.startTime ?? Date.now();
+      const start =
+        typeof context.metadata.startTime === "number"
+          ? context.metadata.startTime
+          : Date.now();
       response.headers.set("x-response-time", `${Date.now() - start}ms`);
       return response;
     },

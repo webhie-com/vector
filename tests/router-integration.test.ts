@@ -37,6 +37,18 @@ function standardSchema<TOutput = unknown>(
   };
 }
 
+function createChunkedTextBody(chunks: string[]): ReadableStream<Uint8Array> {
+  const encoder = new TextEncoder();
+  return new ReadableStream({
+    start(controller) {
+      for (const chunk of chunks) {
+        controller.enqueue(encoder.encode(chunk));
+      }
+      controller.close();
+    },
+  });
+}
+
 describe('Router — request body parsing', () => {
   it('exposes params/query/cookies on context for non-schema routes', async () => {
     const { router } = makeRouter();
@@ -419,6 +431,125 @@ describe('Router — schema validation', () => {
     expect(typeof bodySeenByValidator).toBe('string');
     expect(contentSeenByHandler).toBeUndefined();
     expect(validatedSeenByHandler.body).toEqual({ parsed: true });
+  });
+
+  it('preserves non-checkpoint stream passthrough when only non-body fields are validated', async () => {
+    const { router } = makeRouter();
+    let validationCalls = 0;
+    let bodyUsedBeforeHandler = true;
+    let streamedBody = '';
+
+    const input = standardSchema(async (value) => {
+      const payload = value as any;
+      validationCalls += 1;
+      if (!payload.query?.token) {
+        return {
+          issues: [{ message: 'token required', path: ['query', 'token'] }],
+        };
+      }
+      return { value: payload };
+    });
+
+    router.route(
+      {
+        method: 'POST',
+        path: '/streaming-raw-non-body',
+        expose: true,
+        rawRequest: true,
+        schema: { input },
+      },
+      async (req) => {
+        bodyUsedBeforeHandler = req.request.bodyUsed;
+        streamedBody = await req.request.text();
+        return { ok: true };
+      }
+    );
+
+    const response = await router.handle(
+      new Request('http://localhost/streaming-raw-non-body?token=abc', {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/octet-stream',
+          'transfer-encoding': 'chunked',
+        },
+        body: createChunkedTextBody(['chunk-1', 'chunk-2']),
+        duplex: 'half',
+      } as any)
+    );
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ ok: true });
+    expect(validationCalls).toBe(1);
+    expect(bodyUsedBeforeHandler).toBe(false);
+    expect(streamedBody).toBe('chunk-1chunk-2');
+  });
+
+  it('defers then re-validates body for non-checkpoint streaming raw requests', async () => {
+    const { router } = makeRouter();
+    let validationCalls = 0;
+    let bodyUsedBeforeHandler = true;
+    let streamedBody = '';
+
+    const input = standardSchema(async (value) => {
+      const payload = value as any;
+      validationCalls += 1;
+
+      if (typeof payload.body !== 'string') {
+        return {
+          issues: [{ message: 'body required', path: ['body'] }],
+        };
+      }
+
+      let parsedBody: any;
+      try {
+        parsedBody = JSON.parse(payload.body);
+      } catch {
+        return {
+          issues: [{ message: 'body must be valid json', path: ['body'] }],
+        };
+      }
+
+      if (parsedBody.name !== 'alice') {
+        return {
+          issues: [{ message: 'name required', path: ['body', 'name'] }],
+        };
+      }
+
+      return { value: payload };
+    });
+
+    router.route(
+      {
+        method: 'POST',
+        path: '/streaming-raw-body',
+        expose: true,
+        rawRequest: true,
+        schema: { input },
+      },
+      async (req) => {
+        bodyUsedBeforeHandler = req.request.bodyUsed;
+        streamedBody = await req.request.text();
+        return { ok: true };
+      }
+    );
+
+    const response = await router.handle(
+      new Request('http://localhost/streaming-raw-body', {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          'transfer-encoding': 'chunked',
+        },
+        body: createChunkedTextBody(['{"name":"al', 'ice"}']),
+        duplex: 'half',
+      } as any)
+    );
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ ok: true });
+    expect(validationCalls).toBe(2);
+    expect(bodyUsedBeforeHandler).toBe(false);
+    expect(streamedBody).toBe('{"name":"alice"}');
   });
 
   it('maps thrown validation issues to 422', async () => {

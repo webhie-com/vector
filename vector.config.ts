@@ -4,7 +4,7 @@ import type { VectorConfigSchema, VectorContext } from './src/types';
 // This file replaces all programmatic API calls
 const config: VectorConfigSchema = {
   // Server configuration
-  port: 3000,
+  port: process.env.PORT ?? 3000,
   hostname: 'localhost',
   reusePort: true,
   development: process.env.NODE_ENV !== 'production',

@@ -29,8 +29,8 @@ Requirements:
 import type { VectorConfigSchema } from "vector-framework";
 
 const config: VectorConfigSchema = {
-  // number: TCP port for Bun.serve
-  port: 3000,
+  // number | string: TCP port for Bun.serve (string is coerced with Number() at runtime)
+  port: process.env.PORT ?? 3000,
   // string: host/interface to bind
   hostname: "localhost",
   // boolean: enables dev-oriented defaults (OpenAPI JSON on by default)

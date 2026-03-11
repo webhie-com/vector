@@ -135,7 +135,19 @@ describe('Checkpoint config hooks', () => {
 
   it('forwards only supported checkpoint context fields (metadata/content/validatedInput/authUser)', async () => {
     const { router, middleware } = makeRouter();
-    let capturedPayload: Record<string, unknown> | null = null;
+    type CapturedCheckpointPayload = {
+      request?: unknown;
+      traceId?: unknown;
+      metadata?: Record<string, unknown>;
+      validatedInput?: {
+        query?: {
+          id?: string;
+        };
+      };
+      query?: unknown;
+    };
+
+    let capturedPayload: CapturedCheckpointPayload | undefined;
     let liveHandlerCalls = 0;
 
     middleware.addBefore(async (ctx) => {
@@ -177,7 +189,7 @@ describe('Checkpoint config hooks', () => {
 
     router.setCheckpointGateway({
       handle: async (_request: Request, payload?: Record<string, unknown>) => {
-        capturedPayload = payload ?? null;
+        capturedPayload = payload as CapturedCheckpointPayload | undefined;
         return Response.json({ source: 'checkpoint' });
       },
     } as any);
@@ -191,12 +203,17 @@ describe('Checkpoint config hooks', () => {
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual({ source: 'checkpoint' });
     expect(liveHandlerCalls).toBe(0);
-    expect(capturedPayload).not.toBeNull();
-    expect(capturedPayload?.request).toBeUndefined();
-    expect(capturedPayload?.traceId).toBeUndefined();
-    expect(capturedPayload?.metadata).toMatchObject({ fromBefore: true });
-    expect((capturedPayload?.validatedInput as any)?.query?.id).toBe('validated-123');
-    expect(capturedPayload?.query).toBeUndefined();
+    expect(capturedPayload).toBeDefined();
+
+    if (!capturedPayload) {
+      throw new Error('Expected checkpoint payload to be forwarded');
+    }
+
+    expect(capturedPayload.request).toBeUndefined();
+    expect(capturedPayload.traceId).toBeUndefined();
+    expect(capturedPayload.metadata).toMatchObject({ fromBefore: true });
+    expect(capturedPayload.validatedInput?.query?.id).toBe('validated-123');
+    expect(capturedPayload.query).toBeUndefined();
   });
 
   it('short-circuits in before hook for both live and checkpoint requests', async () => {
@@ -413,5 +430,372 @@ describe('Checkpoint config hooks', () => {
 
     expect(cacheKeys.some((key) => key.includes(':checkpoint=1.0.0'))).toBe(true);
     expect(cacheKeys.some((key) => !key.includes(':checkpoint='))).toBe(true);
+  });
+
+  it('validates non-body fields and preserves stream passthrough for checkpoint-tagged streaming requests', async () => {
+    const { router } = makeRouter();
+    let validationCalls = 0;
+    let gatewayCalls = 0;
+    let bodyUsedBeforeForward = true;
+    let forwardedBody = '';
+
+    const inputSchema = {
+      '~standard': {
+        version: 1,
+        vendor: 'test',
+        validate: async (value: unknown) => {
+          const payload = value as any;
+          validationCalls += 1;
+          if (!payload.query?.token) {
+            return {
+              issues: [{ message: 'token required', path: ['query', 'token'] }],
+            };
+          }
+
+          return {
+            value: payload,
+          };
+        },
+      },
+    } as any;
+
+    router.route(
+      {
+        method: 'POST',
+        path: '/checkpoint-stream',
+        expose: true,
+        schema: { input: inputSchema },
+      },
+      async () => ({ source: 'live' })
+    );
+
+    router.setCheckpointGateway({
+      handle: async (request: Request) => {
+        if (!request.headers.get('x-vector-checkpoint-version')) {
+          return null;
+        }
+        gatewayCalls += 1;
+        bodyUsedBeforeForward = request.bodyUsed;
+        forwardedBody = await request.text();
+        return Response.json({ source: 'checkpoint' });
+      },
+    } as any);
+
+    const requestBody = new ReadableStream({
+      async start(controller) {
+        controller.enqueue(new TextEncoder().encode('chunk-1'));
+        await Bun.sleep(5);
+        controller.enqueue(new TextEncoder().encode('chunk-2'));
+        controller.close();
+      },
+    });
+
+    const response = await router.handle(
+      new Request('http://localhost/checkpoint-stream?token=abc', {
+        method: 'POST',
+        headers: {
+          'x-vector-checkpoint-version': '1.0.0',
+          'content-type': 'application/octet-stream',
+          'transfer-encoding': 'chunked',
+        },
+        body: requestBody,
+        duplex: 'half',
+      } as any)
+    );
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ source: 'checkpoint' });
+    expect(gatewayCalls).toBe(1);
+    expect(validationCalls).toBe(1);
+    expect(bodyUsedBeforeForward).toBe(false);
+    expect(forwardedBody).toBe('chunk-1chunk-2');
+  });
+
+  it('reads body for checkpoint-tagged streaming requests when schema validates body', async () => {
+    const { router } = makeRouter();
+    let validationCalls = 0;
+    let gatewayCalls = 0;
+    let bodyUsedBeforeForward = true;
+    let forwardedBody = '';
+
+    const inputSchema = {
+      '~standard': {
+        version: 1,
+        vendor: 'test',
+        validate: async (value: unknown) => {
+          const payload = value as any;
+          validationCalls += 1;
+          if (!payload.body || payload.body.name !== 'alice') {
+            return {
+              issues: [{ message: 'name required', path: ['body', 'name'] }],
+            };
+          }
+
+          return {
+            value: payload,
+          };
+        },
+      },
+    } as any;
+
+    router.route(
+      {
+        method: 'POST',
+        path: '/checkpoint-stream-body',
+        expose: true,
+        schema: { input: inputSchema },
+      },
+      async () => ({ source: 'live' })
+    );
+
+    router.setCheckpointGateway({
+      handle: async (request: Request) => {
+        if (!request.headers.get('x-vector-checkpoint-version')) {
+          return null;
+        }
+        gatewayCalls += 1;
+        bodyUsedBeforeForward = request.bodyUsed;
+        forwardedBody = await request.text();
+        return Response.json({ source: 'checkpoint' });
+      },
+    } as any);
+
+    const requestBody = new ReadableStream({
+      async start(controller) {
+        controller.enqueue(new TextEncoder().encode('{"name":"al'));
+        await Bun.sleep(5);
+        controller.enqueue(new TextEncoder().encode('ice"}'));
+        controller.close();
+      },
+    });
+
+    const response = await router.handle(
+      new Request('http://localhost/checkpoint-stream-body?token=abc', {
+        method: 'POST',
+        headers: {
+          'x-vector-checkpoint-version': '1.0.0',
+          'content-type': 'application/json',
+          'transfer-encoding': 'chunked',
+        },
+        body: requestBody,
+        duplex: 'half',
+      } as any)
+    );
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ source: 'checkpoint' });
+    expect(gatewayCalls).toBe(1);
+    expect(validationCalls).toBe(2);
+    expect(bodyUsedBeforeForward).toBe(false);
+    expect(forwardedBody).toBe('{"name":"alice"}');
+  });
+
+  it('returns 422 without forwarding when non-body validation fails for checkpoint-tagged streaming requests', async () => {
+    const { router } = makeRouter();
+    let validationCalls = 0;
+    let gatewayCalls = 0;
+
+    const inputSchema = {
+      '~standard': {
+        version: 1,
+        vendor: 'test',
+        validate: async (value: unknown) => {
+          const payload = value as any;
+          validationCalls += 1;
+          if (!payload.query?.token) {
+            return {
+              issues: [{ message: 'token required', path: ['query', 'token'] }],
+            };
+          }
+          return { value: payload };
+        },
+      },
+    } as any;
+
+    router.route(
+      {
+        method: 'POST',
+        path: '/checkpoint-stream-non-body-fail',
+        expose: true,
+        schema: { input: inputSchema },
+      },
+      async () => ({ source: 'live' })
+    );
+
+    router.setCheckpointGateway({
+      handle: async (request: Request) => {
+        if (!request.headers.get('x-vector-checkpoint-version')) {
+          return null;
+        }
+        gatewayCalls += 1;
+        return Response.json({ source: 'checkpoint' });
+      },
+    } as any);
+
+    const request = new Request('http://localhost/checkpoint-stream-non-body-fail', {
+      method: 'POST',
+      headers: {
+        'x-vector-checkpoint-version': '1.0.0',
+        'content-type': 'application/octet-stream',
+        'transfer-encoding': 'chunked',
+      },
+      body: new ReadableStream({
+        start(controller) {
+          controller.enqueue(new TextEncoder().encode('raw-stream-data'));
+          controller.close();
+        },
+      }),
+      duplex: 'half',
+    } as any);
+
+    const response = await router.handle(request);
+    const body = await response.json();
+
+    expect(response.status).toBe(422);
+    expect(body.message).toBe('Validation failed');
+    expect(body.issues[0]).toMatchObject({ path: ['query', 'token'] });
+    expect(validationCalls).toBe(1);
+    expect(gatewayCalls).toBe(0);
+    expect(request.bodyUsed).toBe(false);
+  });
+
+  it('defers then re-validates when validator throws body-path issues for checkpoint streaming', async () => {
+    const { router } = makeRouter();
+    let validationCalls = 0;
+    let gatewayCalls = 0;
+    let bodyUsedBeforeForward = true;
+    let forwardedBody = '';
+
+    const inputSchema = {
+      '~standard': {
+        version: 1,
+        vendor: 'test',
+        validate: async (value: unknown) => {
+          const payload = value as any;
+          validationCalls += 1;
+          if (!payload.body) {
+            throw {
+              issues: [{ message: 'body required', path: ['body'] }],
+            };
+          }
+          return { value: payload };
+        },
+      },
+    } as any;
+
+    router.route(
+      {
+        method: 'POST',
+        path: '/checkpoint-stream-body-throw',
+        expose: true,
+        schema: { input: inputSchema },
+      },
+      async () => ({ source: 'live' })
+    );
+
+    router.setCheckpointGateway({
+      handle: async (request: Request) => {
+        if (!request.headers.get('x-vector-checkpoint-version')) {
+          return null;
+        }
+        gatewayCalls += 1;
+        bodyUsedBeforeForward = request.bodyUsed;
+        forwardedBody = await request.text();
+        return Response.json({ source: 'checkpoint' });
+      },
+    } as any);
+
+    const request = new Request('http://localhost/checkpoint-stream-body-throw', {
+      method: 'POST',
+      headers: {
+        'x-vector-checkpoint-version': '1.0.0',
+        'content-type': 'application/json',
+        'transfer-encoding': 'chunked',
+      },
+      body: new ReadableStream({
+        start(controller) {
+          controller.enqueue(new TextEncoder().encode('{"ok":true}'));
+          controller.close();
+        },
+      }),
+      duplex: 'half',
+    } as any);
+
+    const response = await router.handle(request);
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ source: 'checkpoint' });
+    expect(validationCalls).toBe(2);
+    expect(gatewayCalls).toBe(1);
+    expect(bodyUsedBeforeForward).toBe(false);
+    expect(forwardedBody).toBe('{"ok":true}');
+  });
+
+  it('defers when validator returns pathless issues and request has body', async () => {
+    const { router } = makeRouter();
+    let validationCalls = 0;
+    let gatewayCalls = 0;
+    let forwardedBody = '';
+
+    const inputSchema = {
+      '~standard': {
+        version: 1,
+        vendor: 'test',
+        validate: async (value: unknown) => {
+          const payload = value as any;
+          validationCalls += 1;
+          if (!payload.body) {
+            return {
+              issues: [{ message: 'invalid request' }],
+            };
+          }
+          return { value: payload };
+        },
+      },
+    } as any;
+
+    router.route(
+      {
+        method: 'POST',
+        path: '/checkpoint-stream-body-pathless',
+        expose: true,
+        schema: { input: inputSchema },
+      },
+      async () => ({ source: 'live' })
+    );
+
+    router.setCheckpointGateway({
+      handle: async (request: Request) => {
+        if (!request.headers.get('x-vector-checkpoint-version')) {
+          return null;
+        }
+        gatewayCalls += 1;
+        forwardedBody = await request.text();
+        return Response.json({ source: 'checkpoint' });
+      },
+    } as any);
+
+    const response = await router.handle(
+      new Request('http://localhost/checkpoint-stream-body-pathless', {
+        method: 'POST',
+        headers: {
+          'x-vector-checkpoint-version': '1.0.0',
+          'content-type': 'application/json',
+          'transfer-encoding': 'chunked',
+        },
+        body: new ReadableStream({
+          start(controller) {
+            controller.enqueue(new TextEncoder().encode('{"x":1}'));
+            controller.close();
+          },
+        }),
+        duplex: 'half',
+      } as any)
+    );
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ source: 'checkpoint' });
+    expect(validationCalls).toBe(2);
+    expect(gatewayCalls).toBe(1);
+    expect(forwardedBody).toBe('{"x":1}');
   });
 });

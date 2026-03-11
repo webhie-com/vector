@@ -20,16 +20,18 @@ export function validateConfig(config: VectorConfig): VectorConfig {
   return validatedConfig;
 }
 
-function validatePort(port?: number): number {
+function validatePort(port?: number | string): number {
   if (port === undefined) {
     return DEFAULT_CONFIG.PORT;
   }
 
-  if (!Number.isInteger(port) || port < 1 || port > 65535) {
+  const normalizedPort = Number(port);
+
+  if (!Number.isInteger(normalizedPort) || normalizedPort < 1 || normalizedPort > 65535) {
     throw new Error(`Invalid port: ${port}. Port must be between 1 and 65535.`);
   }
 
-  return port;
+  return normalizedPort;
 }
 
 function validateCorsOptions(cors: CorsOptions | boolean): CorsOptions | undefined {

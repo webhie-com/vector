@@ -6,6 +6,7 @@ import { AssetStore } from './asset-store';
 import { CheckpointBundler } from './bundler';
 import { CheckpointEntrypointGenerator } from './entrypoint-generator';
 import { CheckpointPackager } from './artifacts/packager';
+import { resolveCheckpointSocketPath } from './socket-path';
 
 const DEFAULT_STORAGE_DIR = '.vector/checkpoints';
 const ACTIVE_POINTER_FILE = 'active.json';
@@ -28,7 +29,7 @@ export class CheckpointManager {
   }
 
   socketPath(version: string): string {
-    return join(this.versionDir(version), 'run.sock');
+    return resolveCheckpointSocketPath(this.storageDir, version);
   }
 
   async ensureStorageDir(): Promise<void> {

@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it } from 'bun:test';
 import { rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { ConfigLoader } from '../src/core/config-loader';
+import { AuthKind } from '../src/types';
 
 const tempFiles: string[] = [];
 
@@ -33,6 +34,26 @@ describe('ConfigLoader', () => {
 
     expect(config.routesDir).toBe('./src/controllers');
     expect(config.routeExcludePatterns).toEqual(['*.spec.ts', '*.spec.pause.ts']);
+  });
+
+  it('coerces string port values to numbers', async () => {
+    const tempPath = join(process.cwd(), `.tmp.vector.config.port-string.${Date.now()}.mjs`);
+    tempFiles.push(tempPath);
+
+    await Bun.write(
+      tempPath,
+      `
+      export default {
+        port: "4321"
+      };
+    `
+    );
+
+    const loader = new ConfigLoader(tempPath);
+    const config = await loader.load();
+
+    expect(config.port).toBe(4321);
+    expect(typeof config.port).toBe('number');
   });
 
   it('maps all major config fields from VectorConfigSchema', async () => {
@@ -118,7 +139,7 @@ describe('ConfigLoader', () => {
     expect(config.defaults).toEqual({
       route: {
         expose: false,
-        auth: 'HttpBearer',
+        auth: AuthKind.HttpBearer,
         rawRequest: true,
         validate: false,
         rawResponse: true,
@@ -140,7 +161,7 @@ describe('ConfigLoader', () => {
       target: 'openapi-3.0',
       auth: {
         securitySchemeNames: {
-          HttpBearer: 'jwtAuth',
+          [AuthKind.HttpBearer]: 'jwtAuth',
         },
       },
       docs: {

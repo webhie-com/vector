@@ -46,6 +46,11 @@ interface RouteMatcher {
   specificity: number;
 }
 
+interface InputValidationResult {
+  response: Response | null;
+  requiresBody: boolean;
+}
+
 export class VectorRouter<TTypes extends VectorTypes = DefaultVectorTypes> {
   private middlewareManager: MiddlewareManager<TTypes>;
   private authManager: AuthManager<TTypes>;
@@ -202,15 +207,18 @@ export class VectorRouter<TTypes extends VectorTypes = DefaultVectorTypes> {
       return APIError.badRequest('Malformed request URL');
     }
     const pathname = url.pathname;
-    const directRoute = this.routeTable[pathname];
+    // Fast path: exact route lookup avoids scanning regex matchers for common static/method routes.
+    const exactPathRoute = this.routeTable[pathname];
 
-    if (directRoute) {
-      if (directRoute instanceof Response) {
-        return this.applyCorsResponse(directRoute.clone() as unknown as Response, request);
+    if (exactPathRoute) {
+      if (exactPathRoute instanceof Response) {
+        // Route table stores a shared Response instance for static routes; clone per request.
+        return this.applyCorsResponse(exactPathRoute.clone() as unknown as Response, request);
       }
 
-      const methodMap = directRoute as BunMethodMap;
-      const handler = methodMap[request.method] ?? (request.method === 'HEAD' ? methodMap['GET'] : undefined);
+      const exactPathMethodMap = exactPathRoute as BunMethodMap;
+      const handler =
+        exactPathMethodMap[request.method] ?? (request.method === 'HEAD' ? exactPathMethodMap['GET'] : undefined);
 
       if (handler) {
         const response = await handler(request);
@@ -222,15 +230,16 @@ export class VectorRouter<TTypes extends VectorTypes = DefaultVectorTypes> {
 
     for (const matcher of this.routeMatchers) {
       const path = matcher.path;
-      const value = this.routeTable[path];
-      if (!value) continue;
-      if (value instanceof Response) {
+      const routeEntry = this.routeTable[path];
+      if (!routeEntry) continue;
+      if (routeEntry instanceof Response) {
         if (pathname === path) {
-          return this.applyCorsResponse(value.clone() as unknown as Response, request);
+          // Same reason as exact-path static route handling above.
+          return this.applyCorsResponse(routeEntry.clone() as unknown as Response, request);
         }
         continue;
       }
-      const methodMap = value as BunMethodMap;
+      const methodMap = routeEntry as BunMethodMap;
       const handler = methodMap[request.method] ?? (request.method === 'HEAD' ? methodMap['GET'] : undefined);
       if (!handler) {
         continue;
@@ -245,6 +254,7 @@ export class VectorRouter<TTypes extends VectorTypes = DefaultVectorTypes> {
       if (response) return response;
     }
 
+    // STATIC_RESPONSES are shared singletons; clone before per-request header mutation.
     return this.applyCorsResponse(STATIC_RESPONSES.NOT_FOUND.clone() as unknown as Response, request);
   }
 
@@ -391,6 +401,56 @@ export class VectorRouter<TTypes extends VectorTypes = DefaultVectorTypes> {
     return override;
   }
 
+  private async parseRequestBodyForContext(
+    context: VectorContext<TTypes>,
+    request: Request,
+    checkpointRequested: boolean
+  ): Promise<void> {
+    let parsedContent: unknown = null;
+    try {
+      // For checkpoint requests we may forward the original stream later, so parse from a clone.
+      const bodyReadRequest = checkpointRequested ? request.clone() : request;
+      const contentType = bodyReadRequest.headers.get('content-type');
+      if (contentType?.startsWith('application/json')) {
+        parsedContent = await bodyReadRequest.json();
+      } else if (contentType?.startsWith('application/x-www-form-urlencoded')) {
+        parsedContent = Object.fromEntries(await bodyReadRequest.formData());
+      } else if (contentType?.startsWith('multipart/form-data')) {
+        parsedContent = await bodyReadRequest.formData();
+      } else {
+        parsedContent = await bodyReadRequest.text();
+      }
+    } catch {
+      parsedContent = null;
+    }
+
+    this.setContextField(context, 'content', parsedContent);
+  }
+
+  private isLikelyStreamingBodyRequest(request: Request): boolean {
+    if (request.method === 'GET' || request.method === 'HEAD') {
+      return false;
+    }
+
+    if (!request.body) {
+      return false;
+    }
+
+    if ((request as { duplex?: unknown }).duplex === 'half') {
+      return true;
+    }
+
+    const transferEncoding = request.headers.get('transfer-encoding');
+    if (transferEncoding) {
+      const hasChunked = transferEncoding.split(',').some((value) => value.trim().toLowerCase() === 'chunked');
+      if (hasChunked) {
+        return true;
+      }
+    }
+
+    return false;
+  }
+
   private wrapHandler(options: RouteOptions<TTypes>, handler: RouteHandler<TTypes>) {
     const routePath = options.path;
     const routeMatcher = routePath.includes(':') ? buildRouteRegex(routePath) : null;
@@ -434,29 +494,43 @@ export class VectorRouter<TTypes extends VectorTypes = DefaultVectorTypes> {
 
         const executeRoute = async (): Promise<unknown> => {
           const req = context.request;
+          const requestForRoute = req as unknown as Request;
+          const checkpointRequested = this.getRequestedCheckpointVersion(requestForRoute) !== null;
+          // Library-wide behavior: applies to any streaming request with input schema validation enabled,
+          // regardless of whether checkpoint routing is in play.
+          const shouldDeferStreamingValidation =
+            this.isLikelyStreamingBodyRequest(requestForRoute) &&
+            options.schema?.input !== undefined &&
+            options.validate !== false;
 
-          if (!options.rawRequest && req.method !== 'GET' && req.method !== 'HEAD') {
-            let parsedContent: unknown = null;
-            try {
-              const contentType = req.headers.get('content-type');
-              if (contentType?.startsWith('application/json')) {
-                parsedContent = await req.json();
-              } else if (contentType?.startsWith('application/x-www-form-urlencoded')) {
-                parsedContent = Object.fromEntries(await req.formData());
-              } else if (contentType?.startsWith('multipart/form-data')) {
-                parsedContent = await req.formData();
-              } else {
-                parsedContent = await req.text();
-              }
-            } catch {
-              parsedContent = null;
-            }
-            this.setContextField(context, 'content', parsedContent);
+          if (!options.rawRequest && req.method !== 'GET' && req.method !== 'HEAD' && !shouldDeferStreamingValidation) {
+            await this.parseRequestBodyForContext(context, requestForRoute, checkpointRequested);
           }
 
-          const inputValidationResponse = await this.validateInputSchema(context, options, fallbackParams);
-          if (inputValidationResponse) {
-            return inputValidationResponse;
+          if (shouldDeferStreamingValidation) {
+            const validationWithoutBody = await this.validateInputSchema(context, options, fallbackParams, {
+              includeBody: false,
+              allowBodyDeferral: true,
+            });
+            if (validationWithoutBody.response) {
+              return validationWithoutBody.response;
+            }
+
+            if (validationWithoutBody.requiresBody) {
+              if (!options.rawRequest && req.method !== 'GET' && req.method !== 'HEAD') {
+                await this.parseRequestBodyForContext(context, requestForRoute, checkpointRequested);
+              }
+
+              const fullValidation = await this.validateInputSchema(context, options, fallbackParams);
+              if (fullValidation.response) {
+                return fullValidation.response;
+              }
+            }
+          } else {
+            const inputValidation = await this.validateInputSchema(context, options, fallbackParams);
+            if (inputValidation.response) {
+              return inputValidation.response;
+            }
           }
 
           if (this.checkpointGateway) {
@@ -503,6 +577,7 @@ export class VectorRouter<TTypes extends VectorTypes = DefaultVectorTypes> {
         }
 
         if (result instanceof Response && !!cacheOptions) {
+          // Cache layers can return shared Response instances; clone before per-request mutations.
           result = result.clone();
         }
 
@@ -542,13 +617,16 @@ export class VectorRouter<TTypes extends VectorTypes = DefaultVectorTypes> {
   private async buildInputValidationPayload(
     context: VectorContext<TTypes>,
     options: RouteOptions<TTypes>,
-    fallbackParams?: Record<string, string>
+    fallbackParams?: Record<string, string>,
+    validationOptions?: { includeBody?: boolean }
   ): Promise<Record<string, unknown>> {
     const request = context.request;
-    let body = this.hasOwnContextField(context, 'content') ? context.content : undefined;
+    const includeBody = validationOptions?.includeBody !== false;
+    let body = includeBody && this.hasOwnContextField(context, 'content') ? context.content : undefined;
 
-    if (options.rawRequest && request.method !== 'GET' && request.method !== 'HEAD') {
+    if (includeBody && options.rawRequest && request.method !== 'GET' && request.method !== 'HEAD') {
       try {
+        // Read raw body from a clone so handlers/checkpoint forwarding can still consume the original stream.
         body = await (request as unknown as Request).clone().text();
       } catch {
         body = null;
@@ -606,48 +684,144 @@ export class VectorRouter<TTypes extends VectorTypes = DefaultVectorTypes> {
     this.setContextField(context, 'validatedInput', validatedValue as any);
   }
 
+  private issueHasBodyPath(issue: unknown): boolean {
+    if (!issue || typeof issue !== 'object' || !('path' in (issue as Record<string, unknown>))) {
+      return false;
+    }
+
+    const path = (issue as { path?: unknown }).path;
+    if (!Array.isArray(path) || path.length === 0) {
+      return false;
+    }
+
+    const segment = path[0];
+    if (segment && typeof segment === 'object' && 'key' in (segment as Record<string, unknown>)) {
+      return (segment as { key?: unknown }).key === 'body';
+    }
+    return segment === 'body';
+  }
+
+  private issueHasExplicitNonBodyPath(issue: unknown): boolean {
+    if (!issue || typeof issue !== 'object' || !('path' in (issue as Record<string, unknown>))) {
+      return false;
+    }
+
+    const path = (issue as { path?: unknown }).path;
+    if (!Array.isArray(path) || path.length === 0) {
+      return false;
+    }
+
+    const segment = path[0];
+    if (segment && typeof segment === 'object' && 'key' in (segment as Record<string, unknown>)) {
+      return (segment as { key?: unknown }).key !== 'body';
+    }
+    return segment !== 'body';
+  }
+
+  private issueHasUnknownPath(issue: unknown): boolean {
+    if (!issue || typeof issue !== 'object' || !('path' in (issue as Record<string, unknown>))) {
+      return true;
+    }
+
+    const path = (issue as { path?: unknown }).path;
+    if (!Array.isArray(path)) {
+      return true;
+    }
+
+    return path.length === 0;
+  }
+
+  private shouldDeferBodyValidation(
+    issues: readonly unknown[],
+    context: VectorContext<TTypes>,
+    validationOptions?: { includeBody?: boolean; allowBodyDeferral?: boolean }
+  ): boolean {
+    if (!(validationOptions?.allowBodyDeferral === true && validationOptions?.includeBody === false)) {
+      return false;
+    }
+
+    const request = context.request as unknown as Request;
+    const mayHaveRequestBody = request.method !== 'GET' && request.method !== 'HEAD' && request.body !== null;
+    if (!mayHaveRequestBody || issues.length === 0) {
+      return false;
+    }
+
+    if (issues.some((issue) => this.issueHasBodyPath(issue))) {
+      return true;
+    }
+
+    // Conservative fallback: if issues do not identify a non-body target and at least one issue
+    // has unknown/empty path, retry once with body included.
+    const hasExplicitNonBodyPath = issues.some((issue) => this.issueHasExplicitNonBodyPath(issue));
+    const hasUnknownPath = issues.some((issue) => this.issueHasUnknownPath(issue));
+    return !hasExplicitNonBodyPath && hasUnknownPath;
+  }
+
   private async validateInputSchema(
     context: VectorContext<TTypes>,
     options: RouteOptions<TTypes>,
-    fallbackParams?: Record<string, string>
-  ): Promise<Response | null> {
+    fallbackParams?: Record<string, string>,
+    validationOptions?: { includeBody?: boolean; allowBodyDeferral?: boolean }
+  ): Promise<InputValidationResult> {
     const inputSchema = options.schema?.input;
 
     if (!inputSchema) {
-      return null;
+      return { response: null, requiresBody: false };
     }
 
     if (options.validate === false) {
-      return null;
+      return { response: null, requiresBody: false };
     }
 
     if (!isStandardRouteSchema(inputSchema)) {
-      return APIError.internalServerError('Invalid route schema configuration', options.responseContentType);
+      return {
+        response: APIError.internalServerError('Invalid route schema configuration', options.responseContentType),
+        requiresBody: false,
+      };
     }
 
     const includeRawIssues = this.isDevelopmentMode();
-    const payload = await this.buildInputValidationPayload(context, options, fallbackParams);
+    const payload = await this.buildInputValidationPayload(context, options, fallbackParams, {
+      includeBody: validationOptions?.includeBody,
+    });
 
     try {
       const validation = await runStandardValidation(inputSchema, payload);
       if (validation.success === false) {
+        if (this.shouldDeferBodyValidation(validation.issues, context, validationOptions)) {
+          return { response: null, requiresBody: true };
+        }
+
         const issues = normalizeValidationIssues(validation.issues, includeRawIssues);
-        return createResponse(422, createValidationErrorPayload('input', issues), options.responseContentType);
+        return {
+          response: createResponse(422, createValidationErrorPayload('input', issues), options.responseContentType),
+          requiresBody: false,
+        };
       }
 
       this.applyValidatedInput(context, validation.value);
-      return null;
+      return { response: null, requiresBody: false };
     } catch (error) {
       const thrownIssues = extractThrownIssues(error);
       if (thrownIssues) {
+        if (this.shouldDeferBodyValidation(thrownIssues, context, validationOptions)) {
+          return { response: null, requiresBody: true };
+        }
+
         const issues = normalizeValidationIssues(thrownIssues, includeRawIssues);
-        return createResponse(422, createValidationErrorPayload('input', issues), options.responseContentType);
+        return {
+          response: createResponse(422, createValidationErrorPayload('input', issues), options.responseContentType),
+          requiresBody: false,
+        };
       }
 
-      return APIError.internalServerError(
-        error instanceof Error ? error.message : 'Validation failed',
-        options.responseContentType
-      );
+      return {
+        response: APIError.internalServerError(
+          error instanceof Error ? error.message : 'Validation failed',
+          options.responseContentType
+        ),
+        requiresBody: false,
+      };
     }
   }
 

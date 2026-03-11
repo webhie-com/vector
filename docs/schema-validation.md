@@ -44,6 +44,12 @@ If `rawRequest: true`:
 - Validation still runs by default when `schema.input` exists
 - `validate: false` also skips validation in raw mode
 
+Performance note:
+
+- If your schema validates `body`, Vector must read the body to validate it.
+- For streaming requests with validation enabled, Vector validates non-body fields first; if body validation is required, it re-validates with body included.
+- For true stream passthrough, avoid body validation (or set `validate: false`).
+
 ## Output Schemas
 
 `schema.output` can be:

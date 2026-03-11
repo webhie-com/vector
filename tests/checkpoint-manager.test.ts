@@ -86,6 +86,22 @@ describe('CheckpointManager', () => {
       const manager = createManager();
       expect(manager.socketPath('1.0.0')).toBe(join(TEST_STORAGE_DIR, '1.0.0', 'run.sock'));
     });
+
+    it('falls back to a short socket path when default path is too long', () => {
+      const longStorageDir = join(TEST_STORAGE_DIR, 'a'.repeat(120), 'b'.repeat(120));
+      const manager = new CheckpointManager({ storageDir: longStorageDir });
+      const defaultPath = join(longStorageDir, '1.0.0', 'run.sock');
+      const socketPath = manager.socketPath('1.0.0');
+
+      if (process.platform === 'win32') {
+        expect(socketPath).toBe(defaultPath);
+        return;
+      }
+
+      expect(socketPath).not.toBe(defaultPath);
+      expect(Buffer.byteLength(socketPath, 'utf8')).toBeLessThanOrEqual(103);
+      expect(socketPath.endsWith('.sock')).toBe(true);
+    });
   });
 
   describe('listVersions', () => {

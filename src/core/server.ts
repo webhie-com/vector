@@ -210,11 +210,25 @@ const OPENAPI_FAVICON_ASSETS = [
 const DOCS_HTML_CACHE_CONTROL = 'public, max-age=0, must-revalidate';
 const DOCS_ASSET_CACHE_CONTROL = 'public, max-age=31536000, immutable';
 const DOCS_ASSET_ERROR_CACHE_CONTROL = 'no-store';
+const DEFAULT_PORT = 3000;
 
 interface OpenAPIDocsHtmlCacheEntry {
   html: string;
   gzip: Uint8Array;
   etag: string;
+}
+
+function normalizePort(port: number | string | undefined): number {
+  if (port === undefined) {
+    return DEFAULT_PORT;
+  }
+
+  const normalized = Number(port);
+  if (!Number.isInteger(normalized) || normalized < 0 || normalized > 65535) {
+    throw new Error(`Invalid port: ${String(port)}. Port must be an integer between 0 and 65535.`);
+  }
+
+  return normalized;
 }
 
 function escapeRegex(value: string): string {
@@ -661,7 +675,7 @@ export class VectorServer<TTypes extends VectorTypes = DefaultVectorTypes> {
   }
 
   async start(): Promise<Server> {
-    const port = this.config.port ?? 3000;
+    const port = normalizePort(this.config.port);
     const hostname = this.config.hostname || 'localhost';
 
     this.validateReservedOpenAPIPaths();
@@ -737,7 +751,7 @@ export class VectorServer<TTypes extends VectorTypes = DefaultVectorTypes> {
   }
 
   getPort(): number {
-    return this.server?.port ?? this.config.port ?? 3000;
+    return this.server?.port ?? normalizePort(this.config.port);
   }
 
   getHostname(): string {

@@ -1,10 +1,10 @@
 import { existsSync, promises as fs } from 'node:fs';
 import { dirname, extname, join, relative } from 'node:path';
 import type { CheckpointAssetRecord, CheckpointManifest } from '../types';
-import { decompressBytes } from './compressor';
 import { sha256Hex } from './hasher';
 import { computeAssetFingerprint, isAbsolutePathPortable, normalizeLogicalPath } from './manifest';
 import type { CheckpointArtifactMaterializerOptions } from './types';
+import { CheckpointWorkerDecompressor } from './worker-decompressor';
 
 const DEFAULT_MATERIALIZED_DIR = '_materialized';
 const DEFAULT_LOCK_TIMEOUT_MS = 15_000;
@@ -46,9 +46,14 @@ export class CheckpointArtifactMaterializer {
       await fs.rm(materializedRoot, { recursive: true, force: true });
       await fs.mkdir(materializedRoot, { recursive: true });
 
-      for (const asset of manifest.assets) {
-        const result = await this.materializeAsset(asset, storageDir, versionDir, materializedRoot);
-        asset.materializedPath = result;
+      const decompressor = new CheckpointWorkerDecompressor();
+      try {
+        for (const asset of manifest.assets) {
+          const result = await this.materializeAsset(asset, storageDir, versionDir, materializedRoot, decompressor);
+          asset.materializedPath = result;
+        }
+      } finally {
+        await decompressor.dispose();
       }
 
       const marker: MaterializedMarker = {
@@ -65,7 +70,8 @@ export class CheckpointArtifactMaterializer {
     asset: CheckpointAssetRecord,
     storageDir: string,
     versionDir: string,
-    root: string
+    root: string,
+    decompressor: CheckpointWorkerDecompressor
   ): Promise<string> {
     const sourcePath = this.resolveSourcePath(asset, storageDir);
     if (!existsSync(sourcePath)) {
@@ -80,7 +86,7 @@ export class CheckpointArtifactMaterializer {
     }
 
     const codec = asset.codec ?? (asset.blobHash ? 'gzip' : 'none');
-    const contentBytes = decompressBytes(blobBytes, codec);
+    const contentBytes = await decompressor.decompress(blobBytes, codec);
     const expectedContentHash = asset.contentHash ?? asset.hash;
     if (this.verifyChecksums && expectedContentHash && sha256Hex(contentBytes) !== expectedContentHash) {
       throw new Error(`Checkpoint asset content checksum mismatch for ${asset.logicalPath}`);

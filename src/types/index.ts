@@ -186,7 +186,7 @@ export interface VectorDefaults {
 
 // Legacy config interface - will be deprecated
 export interface VectorConfig<TTypes extends VectorTypes = DefaultVectorTypes> {
-  port?: number;
+  port?: number | string;
   hostname?: string;
   reusePort?: boolean;
   development?: boolean;
@@ -230,7 +230,7 @@ export interface StartedVectorApp<TTypes extends VectorTypes = DefaultVectorType
 // New config-driven schema - flat structure
 export interface VectorConfigSchema<TTypes extends VectorTypes = DefaultVectorTypes> {
   // Server configuration
-  port?: number;
+  port?: number | string;
   hostname?: string;
   reusePort?: boolean;
   development?: boolean;

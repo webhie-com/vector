@@ -1,8 +1,9 @@
-import { join } from 'node:path';
-import { existsSync, unlinkSync } from 'node:fs';
+import { existsSync, promises as fs, unlinkSync } from 'node:fs';
+import { dirname, join } from 'node:path';
 import type { CheckpointManifest } from './types';
 import { waitForReady } from './ipc';
 import { CheckpointArtifactMaterializer } from './artifacts/materializer';
+import { resolveCheckpointSocketPath } from './socket-path';
 
 export interface SpawnedCheckpoint {
   version: string;
@@ -30,16 +31,15 @@ export class CheckpointProcessManager {
   private materializer: CheckpointArtifactMaterializer;
 
   constructor(options: number | CheckpointProcessManagerOptions = DEFAULT_READY_TIMEOUT_MS) {
-    this.materializer = new CheckpointArtifactMaterializer();
-
     if (typeof options === 'number') {
       this.readyTimeoutMs = options;
       this.idleTimeoutMs = DEFAULT_IDLE_TIMEOUT_MS;
-      return;
+    } else {
+      this.readyTimeoutMs = options.readyTimeoutMs ?? DEFAULT_READY_TIMEOUT_MS;
+      this.idleTimeoutMs = options.idleTimeoutMs ?? DEFAULT_IDLE_TIMEOUT_MS;
     }
 
-    this.readyTimeoutMs = options.readyTimeoutMs ?? DEFAULT_READY_TIMEOUT_MS;
-    this.idleTimeoutMs = options.idleTimeoutMs ?? DEFAULT_IDLE_TIMEOUT_MS;
+    this.materializer = new CheckpointArtifactMaterializer();
   }
 
   async spawn(manifest: CheckpointManifest, storageDir: string): Promise<SpawnedCheckpoint> {
@@ -67,7 +67,7 @@ export class CheckpointProcessManager {
   private async doSpawn(manifest: CheckpointManifest, storageDir: string): Promise<SpawnedCheckpoint> {
     const versionDir = join(storageDir, manifest.version);
     const bundlePath = join(versionDir, manifest.entrypoint);
-    const socketPath = join(versionDir, 'run.sock');
+    const socketPath = resolveCheckpointSocketPath(storageDir, manifest.version);
 
     if (!existsSync(bundlePath)) {
       throw new Error(`Checkpoint bundle not found: ${bundlePath}`);
@@ -75,6 +75,9 @@ export class CheckpointProcessManager {
 
     // Materialize declared assets into the checkpoint version directory before boot.
     await this.materializer.materialize(manifest, storageDir);
+
+    // Ensure socket parent exists when fallback roots are used.
+    await fs.mkdir(dirname(socketPath), { recursive: true });
 
     // Clean up stale socket file if it exists
     this.tryUnlinkSocket(socketPath);

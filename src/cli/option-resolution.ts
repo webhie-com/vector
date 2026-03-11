@@ -20,7 +20,11 @@ function parseAndValidatePort(value: unknown): number {
   return parsed;
 }
 
-export function resolvePort(configPort: number | null | undefined, hasPortOption: boolean, cliPort: string): number {
+export function resolvePort(
+  configPort: string | number | null | undefined,
+  hasPortOption: boolean,
+  cliPort: string
+): number {
   if (hasPortOption) {
     return parseAndValidatePort(cliPort);
   }

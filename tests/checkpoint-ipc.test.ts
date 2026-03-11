@@ -108,6 +108,17 @@ describe('waitForReady', () => {
     await expect(waitForReady(stream, 1000)).resolves.toBeUndefined();
   });
 
+  it('resolves when READY arrives without trailing newline before close', async () => {
+    const stream = new ReadableStream({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode('READY'));
+        controller.close();
+      },
+    });
+
+    await expect(waitForReady(stream, 1000)).resolves.toBeUndefined();
+  });
+
   it('ignores non-error JSON messages before READY', async () => {
     const stream = new ReadableStream({
       start(controller) {
@@ -129,5 +140,16 @@ describe('waitForReady', () => {
     });
 
     await expect(waitForReady(stream, 1)).rejects.toThrow('did not become ready');
+  });
+
+  it('rejects when startup output grows beyond the pending buffer guard', async () => {
+    const oversizedLine = 'x'.repeat(1_048_577);
+    const stream = new ReadableStream({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode(oversizedLine));
+      },
+    });
+
+    await expect(waitForReady(stream, 1000)).rejects.toThrow('stdout exceeded 1048576 chars before READY');
   });
 });
