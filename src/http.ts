@@ -73,6 +73,93 @@ function stringifyData(data: unknown): string {
   }
 }
 
+export type ResponseCookieSameSite = 'Strict' | 'Lax' | 'None';
+export type ResponseCookiePriority = 'Low' | 'Medium' | 'High';
+
+export interface ResponseCookie {
+  name: string;
+  value: string;
+  domain?: string;
+  path?: string;
+  maxAge?: number;
+  expires?: Date | string;
+  httpOnly?: boolean;
+  secure?: boolean;
+  sameSite?: ResponseCookieSameSite;
+  partitioned?: boolean;
+  priority?: ResponseCookiePriority;
+}
+
+export type ResponseCookieInput = ResponseCookie | string;
+export type ResponseHeadersInit = Headers | Array<[string, string]> | Record<string, string>;
+
+export interface CreateResponseOptions {
+  contentType?: string;
+  headers?: ResponseHeadersInit;
+  cookies?: ResponseCookieInput[];
+  statusText?: string;
+}
+
+function isJsonContentType(contentType: string): boolean {
+  const mimeType = contentType.split(';', 1)[0] ?? contentType;
+  return mimeType.trim().toLowerCase() === CONTENT_TYPES.JSON;
+}
+
+function serializeCookie(cookie: ResponseCookie): string {
+  const segments = [`${cookie.name}=${cookie.value}`];
+
+  if (cookie.maxAge !== undefined && Number.isFinite(cookie.maxAge)) {
+    segments.push(`Max-Age=${Math.trunc(cookie.maxAge)}`);
+  }
+
+  if (cookie.domain) {
+    segments.push(`Domain=${cookie.domain}`);
+  }
+
+  if (cookie.path) {
+    segments.push(`Path=${cookie.path}`);
+  }
+
+  if (cookie.expires !== undefined) {
+    const expiresAt = cookie.expires instanceof Date ? cookie.expires : new Date(cookie.expires);
+    if (!Number.isNaN(expiresAt.getTime())) {
+      segments.push(`Expires=${expiresAt.toUTCString()}`);
+    }
+  }
+
+  if (cookie.httpOnly) {
+    segments.push('HttpOnly');
+  }
+
+  if (cookie.secure) {
+    segments.push('Secure');
+  }
+
+  if (cookie.sameSite) {
+    segments.push(`SameSite=${cookie.sameSite}`);
+  }
+
+  if (cookie.partitioned) {
+    segments.push('Partitioned');
+  }
+
+  if (cookie.priority) {
+    segments.push(`Priority=${cookie.priority}`);
+  }
+
+  return segments.join('; ');
+}
+
+function appendSetCookieHeaders(headers: Headers, cookies?: ResponseCookieInput[]): void {
+  if (!cookies || cookies.length === 0) {
+    return;
+  }
+
+  for (const cookie of cookies) {
+    headers.append('set-cookie', typeof cookie === 'string' ? cookie : serializeCookie(cookie));
+  }
+}
+
 const ApiResponse = {
   success: <T>(data: T, contentType?: string) => createResponse(HTTP_STATUS.OK, data, contentType),
   created: <T>(data: T, contentType?: string) => createResponse(HTTP_STATUS.CREATED, data, contentType),
@@ -195,12 +282,31 @@ export const APIError = {
   custom: (statusCode: number, msg: string, contentType?: string) => createErrorResponse(statusCode, msg, contentType),
 };
 
-export function createResponse(statusCode: number, data?: unknown, contentType: string = CONTENT_TYPES.JSON): Response {
-  const body = contentType === CONTENT_TYPES.JSON ? stringifyData(data) : data;
+export function createResponse(
+  statusCode: number,
+  data?: unknown,
+  optionsOrContentType: string | CreateResponseOptions = CONTENT_TYPES.JSON
+): Response {
+  const options =
+    typeof optionsOrContentType === 'string'
+      ? ({ contentType: optionsOrContentType } as CreateResponseOptions)
+      : (optionsOrContentType ?? {});
 
-  return new Response(body as string, {
+  const headers = new Headers(options.headers);
+  const contentType = options.contentType ?? headers.get('content-type') ?? CONTENT_TYPES.JSON;
+
+  if (options.contentType || !headers.has('content-type')) {
+    headers.set('content-type', contentType);
+  }
+
+  appendSetCookieHeaders(headers, options.cookies);
+
+  const body = isJsonContentType(contentType) ? stringifyData(data) : data;
+
+  return new Response(body as any, {
     status: statusCode,
-    headers: { 'content-type': contentType },
+    statusText: options.statusText,
+    headers,
   });
 }
 

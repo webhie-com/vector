@@ -11,6 +11,19 @@ import { resolveCheckpointSocketPath } from './socket-path';
 const DEFAULT_STORAGE_DIR = '.vector/checkpoints';
 const ACTIVE_POINTER_FILE = 'active.json';
 
+function inferLegacyAssetCodec(asset: {
+  codec?: 'none' | 'gzip';
+  blobPath?: string;
+  storedPath?: string;
+}): 'none' | 'gzip' {
+  if (asset.codec) {
+    return asset.codec;
+  }
+
+  const rawPath = (asset.blobPath ?? asset.storedPath ?? '').trim().toLowerCase();
+  return rawPath.endsWith('.gz') ? 'gzip' : 'none';
+}
+
 export class CheckpointManager {
   private storageDir: string;
   private maxCheckpoints: number;
@@ -220,7 +233,7 @@ export class CheckpointManager {
       blobPath: asset.blobPath ?? asset.storedPath,
       blobHash: asset.blobHash,
       blobSize: asset.blobSize,
-      codec: asset.codec ?? 'none',
+      codec: inferLegacyAssetCodec(asset),
     }));
 
     return {

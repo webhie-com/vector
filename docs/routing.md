@@ -67,6 +67,47 @@ Each handler receives a `VectorContext` object:
 - `rawResponse: true` returns raw handler output (no JSON wrapping).
 - `validate: false` disables `schema.input` validation for the route (raw and non-raw requests).
 
+## Custom Response Headers and Cookies
+
+Use `createResponse()` when you need to attach headers, cookies, or custom status text:
+
+```ts
+import { createResponse, route } from "vector-framework";
+
+export const signIn = route(
+  { method: "POST", path: "/sign-in", expose: true },
+  async () => {
+    return createResponse(
+      200,
+      { ok: true },
+      {
+        headers: {
+          "x-request-id": "req-123",
+        },
+        cookies: [
+          {
+            name: "session",
+            value: "token-value",
+            path: "/",
+            httpOnly: true,
+            secure: true,
+            sameSite: "Lax",
+            maxAge: 60 * 60 * 24,
+          },
+        ],
+      },
+    );
+  },
+);
+```
+
+`createResponse` options support:
+
+- `contentType`
+- `headers`
+- `cookies` (array of cookie strings or cookie objects)
+- `statusText`
+
 ## Params, Query, Cookies
 
 - `ctx.params`, `ctx.query`, and `ctx.cookies` are always available on context.

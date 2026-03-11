@@ -8,6 +8,7 @@ export { startVector };
 
 // Export utilities for route handlers
 export { APIError, createResponse } from './http';
+export type { CreateResponseOptions, ResponseCookie, ResponseCookieInput } from './http';
 
 // Export types for TypeScript users
 export * from './types';

@@ -129,6 +129,63 @@ describe('createResponse', () => {
 
     expect(() => createResponse(200, circular)).toThrow(TypeError);
   });
+
+  it('supports response options with headers and status text', async () => {
+    const response = createResponse(
+      201,
+      { created: true },
+      {
+        statusText: 'Created',
+        headers: { 'x-request-id': 'req-123' },
+      }
+    );
+
+    expect(response.status).toBe(201);
+    expect(response.statusText).toBe('Created');
+    expect(response.headers.get('x-request-id')).toBe('req-123');
+    expect(response.headers.get('content-type')).toBe('application/json');
+    expect(await response.json()).toEqual({ created: true });
+  });
+
+  it('appends multiple Set-Cookie headers from response options', () => {
+    const response = createResponse(
+      200,
+      { ok: true },
+      {
+        cookies: [
+          {
+            name: 'session',
+            value: 'abc',
+            path: '/',
+            httpOnly: true,
+            sameSite: 'Lax',
+          },
+          'theme=dark; Path=/; Max-Age=3600',
+        ],
+      }
+    );
+
+    const cookies = response.headers.getSetCookie();
+    expect(cookies).toHaveLength(2);
+    expect(cookies[0]).toContain('session=abc');
+    expect(cookies[0]).toContain('Path=/');
+    expect(cookies[0]).toContain('HttpOnly');
+    expect(cookies[0]).toContain('SameSite=Lax');
+    expect(cookies[1]).toBe('theme=dark; Path=/; Max-Age=3600');
+  });
+
+  it('treats application/json with charset as JSON content', async () => {
+    const response = createResponse(
+      200,
+      { ok: true },
+      {
+        headers: { 'content-type': 'application/json; charset=utf-8' },
+      }
+    );
+
+    expect(response.headers.get('content-type')).toBe('application/json; charset=utf-8');
+    expect(await response.text()).toBe('{"ok":true}');
+  });
 });
 
 describe('route helper', () => {

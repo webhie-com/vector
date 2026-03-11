@@ -2,6 +2,7 @@ import { describe, expect, it } from 'bun:test';
 import { AuthManager } from '../src/auth/protected';
 import { CacheManager } from '../src/cache/manager';
 import { VectorRouter } from '../src/core/router';
+import { createResponse } from '../src/http';
 import { MiddlewareManager } from '../src/middleware/manager';
 import { AuthKind, type StandardSchemaV1 } from '../src/types';
 
@@ -1420,6 +1421,233 @@ describe('Router — caching integration', () => {
     expect(await tagged2.json()).toEqual({ source: 'checkpoint', version: '1.0.0', call: 1 });
     expect(checkpointCalls).toBe(1);
     expect(seenKeys).toEqual(['route-static-key', 'route-static-key']);
+  });
+});
+
+describe('Router — response customization', () => {
+  it('supports createResponse options with all cookie fields on live routes', async () => {
+    const { router } = makeRouter();
+    const expiresAt = new Date('2030-01-01T00:00:00Z');
+
+    router.route({ method: 'GET', path: '/response-options-live', expose: true }, async () =>
+      createResponse(
+        201,
+        { ok: true },
+        {
+          contentType: 'application/json; charset=utf-8',
+          statusText: 'Created',
+          headers: {
+            'x-request-id': 'req-123',
+            'cache-control': 'no-store',
+          },
+          cookies: [
+            {
+              name: 'session',
+              value: 'token',
+              domain: 'example.com',
+              path: '/app',
+              maxAge: 3600,
+              expires: expiresAt,
+              httpOnly: true,
+              secure: true,
+              sameSite: 'None',
+              partitioned: true,
+              priority: 'High',
+            },
+          ],
+        }
+      )
+    );
+
+    const response = await router.handle(new Request('http://localhost/response-options-live'));
+
+    expect(response.status).toBe(201);
+    expect(response.statusText).toBe('Created');
+    expect(response.headers.get('content-type')).toBe('application/json; charset=utf-8');
+    expect(response.headers.get('x-request-id')).toBe('req-123');
+    expect(response.headers.get('cache-control')).toBe('no-store');
+    expect(await response.text()).toBe('{"ok":true}');
+
+    const cookies = response.headers.getSetCookie();
+    expect(cookies).toHaveLength(1);
+    const cookie = cookies[0];
+    expect(cookie).toContain('session=token');
+    expect(cookie).toContain('Domain=example.com');
+    expect(cookie).toContain('Path=/app');
+    expect(cookie).toContain('Max-Age=3600');
+    expect(cookie).toContain(`Expires=${expiresAt.toUTCString()}`);
+    expect(cookie).toContain('HttpOnly');
+    expect(cookie).toContain('Secure');
+    expect(cookie).toContain('SameSite=None');
+    expect(cookie).toContain('Partitioned');
+    expect(cookie).toContain('Priority=High');
+  });
+
+  it('ignores invalid cookie fallback fields but keeps valid attributes', async () => {
+    const { router } = makeRouter();
+
+    router.route({ method: 'GET', path: '/response-options-cookie-fallback', expose: true }, async () =>
+      createResponse(
+        200,
+        { ok: true },
+        {
+          cookies: [
+            {
+              name: 'session',
+              value: 'safe',
+              maxAge: Number.NaN,
+              expires: 'not-a-date',
+              sameSite: 'Lax',
+              path: '/',
+            },
+          ],
+        }
+      )
+    );
+
+    const response = await router.handle(new Request('http://localhost/response-options-cookie-fallback'));
+    expect(response.status).toBe(200);
+
+    const cookies = response.headers.getSetCookie();
+    expect(cookies).toHaveLength(1);
+    const cookie = cookies[0];
+    expect(cookie).toContain('session=safe');
+    expect(cookie).toContain('Path=/');
+    expect(cookie).toContain('SameSite=Lax');
+    expect(cookie).not.toContain('Max-Age=');
+    expect(cookie).not.toContain('Expires=');
+  });
+
+  it('supports streaming responses from createResponse on live routes', async () => {
+    const { router } = makeRouter();
+
+    router.route({ method: 'GET', path: '/stream-live-response-options', expose: true }, async () =>
+      createResponse(206, createChunkedTextBody(['live-', 'stream']), {
+        contentType: 'text/plain; charset=utf-8',
+        statusText: 'Partial Content',
+        headers: { 'x-live-stream': '1' },
+        cookies: ['live_stream=1; Path=/; HttpOnly'],
+      })
+    );
+
+    const response = await router.handle(new Request('http://localhost/stream-live-response-options'));
+
+    expect(response.status).toBe(206);
+    expect(response.statusText).toBe('Partial Content');
+    expect(response.headers.get('content-type')).toBe('text/plain; charset=utf-8');
+    expect(response.headers.get('x-live-stream')).toBe('1');
+    expect(await response.text()).toBe('live-stream');
+    expect(response.headers.getSetCookie()).toEqual(['live_stream=1; Path=/; HttpOnly']);
+  });
+
+  it('preserves createResponse options for checkpoint-tagged responses', async () => {
+    const { router } = makeRouter();
+    const expiresAt = new Date('2032-02-03T04:05:06Z');
+    let liveCalls = 0;
+
+    router.route({ method: 'GET', path: '/response-options-checkpoint', expose: true }, async () => {
+      liveCalls += 1;
+      return { source: 'live' };
+    });
+
+    router.setCheckpointGateway({
+      handle: async (request: Request) => {
+        const version = request.headers.get('x-vector-checkpoint-version');
+        if (!version) {
+          return null;
+        }
+
+        return createResponse(
+          202,
+          { source: 'checkpoint', version },
+          {
+            contentType: 'application/json; charset=utf-8',
+            statusText: 'Accepted',
+            headers: { 'x-checkpoint-source': 'gateway' },
+            cookies: [
+              {
+                name: 'checkpoint_session',
+                value: version,
+                path: '/',
+                maxAge: 120,
+                expires: expiresAt,
+                httpOnly: true,
+                secure: true,
+                sameSite: 'Lax',
+                priority: 'Medium',
+              },
+            ],
+          }
+        );
+      },
+      getRequestedVersion: (request: Request) => request.headers.get('x-vector-checkpoint-version'),
+    } as any);
+
+    const checkpointResponse = await router.handle(
+      new Request('http://localhost/response-options-checkpoint', {
+        headers: { 'x-vector-checkpoint-version': '1.0.0' },
+      })
+    );
+
+    expect(checkpointResponse.status).toBe(202);
+    expect(checkpointResponse.statusText).toBe('Accepted');
+    expect(checkpointResponse.headers.get('content-type')).toBe('application/json; charset=utf-8');
+    expect(checkpointResponse.headers.get('x-checkpoint-source')).toBe('gateway');
+    expect(await checkpointResponse.json()).toEqual({ source: 'checkpoint', version: '1.0.0' });
+
+    const checkpointCookies = checkpointResponse.headers.getSetCookie();
+    expect(checkpointCookies).toHaveLength(1);
+    const cookie = checkpointCookies[0];
+    expect(cookie).toContain('checkpoint_session=1.0.0');
+    expect(cookie).toContain('Path=/');
+    expect(cookie).toContain('Max-Age=120');
+    expect(cookie).toContain(`Expires=${expiresAt.toUTCString()}`);
+    expect(cookie).toContain('HttpOnly');
+    expect(cookie).toContain('Secure');
+    expect(cookie).toContain('SameSite=Lax');
+    expect(cookie).toContain('Priority=Medium');
+
+    const liveResponse = await router.handle(new Request('http://localhost/response-options-checkpoint'));
+    expect(liveResponse.status).toBe(200);
+    expect(await liveResponse.json()).toEqual({ source: 'live' });
+    expect(liveCalls).toBe(1);
+  });
+
+  it('preserves streaming responses for checkpoint-tagged requests', async () => {
+    const { router } = makeRouter();
+
+    router.route({ method: 'GET', path: '/stream-checkpoint-response-options', expose: true }, async () => ({
+      source: 'live',
+    }));
+
+    router.setCheckpointGateway({
+      handle: async (request: Request) => {
+        if (!request.headers.get('x-vector-checkpoint-version')) {
+          return null;
+        }
+
+        return createResponse(206, createChunkedTextBody(['checkpoint-', 'stream']), {
+          contentType: 'text/plain; charset=utf-8',
+          statusText: 'Partial Content',
+          headers: { 'x-checkpoint-stream': '1' },
+          cookies: ['checkpoint_stream=1; Path=/; HttpOnly'],
+        });
+      },
+      getRequestedVersion: (request: Request) => request.headers.get('x-vector-checkpoint-version'),
+    } as any);
+
+    const response = await router.handle(
+      new Request('http://localhost/stream-checkpoint-response-options', {
+        headers: { 'x-vector-checkpoint-version': '2.0.0' },
+      })
+    );
+
+    expect(response.status).toBe(206);
+    expect(response.statusText).toBe('Partial Content');
+    expect(response.headers.get('content-type')).toBe('text/plain; charset=utf-8');
+    expect(response.headers.get('x-checkpoint-stream')).toBe('1');
+    expect(await response.text()).toBe('checkpoint-stream');
+    expect(response.headers.getSetCookie()).toEqual(['checkpoint_stream=1; Path=/; HttpOnly']);
   });
 });
 

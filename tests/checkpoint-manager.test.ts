@@ -180,6 +180,78 @@ describe('CheckpointManager', () => {
       const read = await manager.readManifest('legacy-1');
       expect(read.formatVersion).toBe(1);
     });
+
+    it('infers gzip codec for legacy assets when blob path ends with .gz', async () => {
+      const manager = createManager();
+      const versionDir = manager.versionDir('legacy-codec-gzip');
+      await fs.mkdir(versionDir, { recursive: true });
+
+      await fs.writeFile(
+        join(versionDir, 'manifest.json'),
+        JSON.stringify(
+          {
+            version: 'legacy-codec-gzip',
+            createdAt: '2024-01-01T00:00:00.000Z',
+            entrypoint: 'checkpoint.js',
+            routes: [],
+            assets: [
+              {
+                type: 'embedded',
+                logicalPath: 'fixtures/test.json',
+                storedPath: '/tmp/blobs/abc123.gz',
+                hash: 'abc123',
+                size: 123,
+              },
+            ],
+            bundleHash: 'legacy',
+            bundleSize: 123,
+          },
+          null,
+          2
+        ),
+        'utf-8'
+      );
+
+      const read = await manager.readManifest('legacy-codec-gzip');
+      expect(read.assets).toHaveLength(1);
+      expect(read.assets[0].codec).toBe('gzip');
+    });
+
+    it('defaults codec to none for legacy assets without .gz blob paths', async () => {
+      const manager = createManager();
+      const versionDir = manager.versionDir('legacy-codec-none');
+      await fs.mkdir(versionDir, { recursive: true });
+
+      await fs.writeFile(
+        join(versionDir, 'manifest.json'),
+        JSON.stringify(
+          {
+            version: 'legacy-codec-none',
+            createdAt: '2024-01-01T00:00:00.000Z',
+            entrypoint: 'checkpoint.js',
+            routes: [],
+            assets: [
+              {
+                type: 'embedded',
+                logicalPath: 'fixtures/test.json',
+                storedPath: '/tmp/blobs/abc123',
+                hash: 'abc123',
+                size: 123,
+              },
+            ],
+            bundleHash: 'legacy',
+            bundleSize: 123,
+          },
+          null,
+          2
+        ),
+        'utf-8'
+      );
+
+      const read = await manager.readManifest('legacy-codec-none');
+      expect(read.assets).toHaveLength(1);
+      expect(read.assets[0].codec).toBe('none');
+    });
   });
 
   describe('setActive / getActive', () => {

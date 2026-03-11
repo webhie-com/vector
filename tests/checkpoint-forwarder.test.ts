@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'bun:test';
 import { existsSync, promises as fs, unlinkSync } from 'node:fs';
 import { join } from 'node:path';
 import { CHECKPOINT_CONTEXT_HEADER, CheckpointForwarder } from '../src/checkpoint/forwarder';
+import { createResponse } from '../src/http';
 
 const TEST_DIR = join(process.cwd(), '.vector/test-forwarder');
 const SOCKET_PATH = join(TEST_DIR, 'test.sock');
@@ -10,6 +11,18 @@ async function cleanup() {
   if (existsSync(TEST_DIR)) {
     await fs.rm(TEST_DIR, { recursive: true, force: true });
   }
+}
+
+function createChunkedTextBody(chunks: string[]): ReadableStream<Uint8Array> {
+  const encoder = new TextEncoder();
+  return new ReadableStream({
+    start(controller) {
+      for (const chunk of chunks) {
+        controller.enqueue(encoder.encode(chunk));
+      }
+      controller.close();
+    },
+  });
 }
 
 describe('CheckpointForwarder', () => {
@@ -210,6 +223,53 @@ describe('CheckpointForwarder', () => {
     expect(response.status).toBe(201);
     const body = await response.json();
     expect(body.id).toBe(1);
+  });
+
+  it('preserves checkpoint streaming body, statusText, and set-cookie headers', async () => {
+    if (existsSync(SOCKET_PATH)) unlinkSync(SOCKET_PATH);
+
+    server = Bun.serve({
+      unix: SOCKET_PATH,
+      routes: {
+        '/stream-options': {
+          GET: () =>
+            createResponse(206, createChunkedTextBody(['cp-', 'stream']), {
+              contentType: 'text/plain; charset=utf-8',
+              statusText: 'Partial Content',
+              headers: { 'x-checkpoint-stream': '1' },
+              cookies: [
+                {
+                  name: 'checkpoint_session',
+                  value: 'abc',
+                  path: '/',
+                  httpOnly: true,
+                  sameSite: 'Lax',
+                },
+                'theme=dark; Path=/; Max-Age=60',
+              ],
+            }),
+        },
+      },
+      fetch() {
+        return Response.json({ error: 'not found' }, { status: 404 });
+      },
+    });
+
+    const response = await forwarder.forward(new Request('http://localhost/stream-options'), SOCKET_PATH);
+
+    expect(response.status).toBe(206);
+    expect(response.statusText).toBe('Partial Content');
+    expect(response.headers.get('content-type')).toBe('text/plain; charset=utf-8');
+    expect(response.headers.get('x-checkpoint-stream')).toBe('1');
+    expect(await response.text()).toBe('cp-stream');
+
+    const cookies = response.headers.getSetCookie();
+    expect(cookies).toHaveLength(2);
+    expect(cookies[0]).toContain('checkpoint_session=abc');
+    expect(cookies[0]).toContain('Path=/');
+    expect(cookies[0]).toContain('HttpOnly');
+    expect(cookies[0]).toContain('SameSite=Lax');
+    expect(cookies[1]).toBe('theme=dark; Path=/; Max-Age=60');
   });
 
   it('adds serialized checkpoint context header when payload is provided', async () => {
