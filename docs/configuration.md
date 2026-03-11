@@ -285,10 +285,20 @@ const config: VectorConfigSchema = {
   // (context) => Promise<AuthUser> | AuthUser
   // Runtime auth resolver for protected routes; return user-like data for context.authUser.
   auth: async (context) => {
-    const token = context.request.headers
-      .get("Authorization")
-      ?.replace("Bearer ", "");
-    if (!token) throw new Error("Unauthorized");
+    const authHeader = context.request.headers.get("Authorization") ?? "";
+    const token = authHeader.startsWith("Bearer ")
+      ? authHeader.slice("Bearer ".length)
+      : "";
+
+    if (!token) {
+      throw new Error("Unauthorized");
+    }
+
+    // Example only: replace this with real token/session verification.
+    // For example, verify a JWT and load the user from your database or auth provider.
+    if (token !== "dev-token") {
+      throw new Error("Unauthorized");
+    }
     return { id: "user-1", email: "user@example.com" };
   },
 
