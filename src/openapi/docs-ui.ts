@@ -562,6 +562,7 @@ export function renderOpenAPIDocsHtml(
     let selected = operations[0] || null;
     const operationParamValues = new Map();
     const operationBodyDrafts = new Map();
+    const authAutoPreferenceByOperation = {};
     const requestHeaders = loadSavedHeaders();
     let expandModalMode = null;
     let isMobileSidebarOpen = false;
@@ -1432,14 +1433,17 @@ export function renderOpenAPIDocsHtml(
         }
       }
       const manual = {};
+      const authHeaderNames = Object.keys(auth).map((key) => key.toLowerCase());
       for (const entry of requestHeaders) {
         const key = String(entry.key || "").trim();
         const value = String(entry.value || "").trim();
         if (!key || !value) continue;
+        if (authHeaderNames.includes(key.toLowerCase())) continue;
         manual[key] = value;
       }
-      // Auth provides defaults; manual headers win on conflict
-      return Object.assign({}, auth, manual);
+      // Keep auth-derived headers authoritative for matching names to ensure
+      // auth panel inputs and outgoing requests stay in sync.
+      return Object.assign({}, manual, auth);
     }
 
     function buildCurl(op, headers, body, requestPath) {
@@ -2076,6 +2080,26 @@ export function renderOpenAPIDocsHtml(
       return selectedScheme;
     }
 
+    function getAutoPreferredAuthSchemeForOperation(op) {
+      const selectionKey = getAuthSelectionKeyForOperation(op);
+      if (!selectionKey) return null;
+      const hintedScheme = authAutoPreferenceByOperation[selectionKey];
+      if (!hintedScheme || typeof hintedScheme !== "string") return null;
+      if (!Object.prototype.hasOwnProperty.call(authSchemes, hintedScheme)) {
+        delete authAutoPreferenceByOperation[selectionKey];
+        return null;
+      }
+      return hintedScheme;
+    }
+
+    function rememberAutoAuthPreference(op, schemeName) {
+      if (!op || !schemeName) return;
+      const selectionKey = getAuthSelectionKeyForOperation(op);
+      if (!selectionKey) return;
+      if (authSelectionState[selectionKey]) return;
+      authAutoPreferenceByOperation[selectionKey] = schemeName;
+    }
+
     function setSelectedAuthSchemeForOperation(op, schemeName) {
       const selectionKey = getAuthSelectionKeyForOperation(op);
       if (!selectionKey) return;
@@ -2084,6 +2108,7 @@ export function renderOpenAPIDocsHtml(
         delete authSelectionState[selectionKey];
       } else {
         authSelectionState[selectionKey] = schemeName;
+        delete authAutoPreferenceByOperation[selectionKey];
       }
       saveAuthSelectionState();
     }
@@ -2128,6 +2153,9 @@ export function renderOpenAPIDocsHtml(
 
       let bestRequirement = null;
       let bestScore = -1;
+      const autoPreferredScheme = getAutoPreferredAuthSchemeForOperation(op);
+      const hasPreferredState = autoPreferredScheme ? hasAuthStateForScheme(autoPreferredScheme) : false;
+      let bestMatchesAutoPreferred = false;
 
       for (const requirement of requirements) {
         const schemeNames = Object.keys(requirement).filter((schemeName) =>
@@ -2138,10 +2166,15 @@ export function renderOpenAPIDocsHtml(
         const providedCount = schemeNames.filter((schemeName) => hasAuthStateForScheme(schemeName)).length;
         const isComplete = providedCount === schemeNames.length;
         const score = isComplete ? 1000 + providedCount : providedCount;
+        const matchesAutoPreferred =
+          hasPreferredState &&
+          autoPreferredScheme &&
+          Object.prototype.hasOwnProperty.call(requirement, autoPreferredScheme);
 
-        if (score > bestScore) {
+        if (score > bestScore || (score === bestScore && matchesAutoPreferred && !bestMatchesAutoPreferred)) {
           bestScore = score;
           bestRequirement = requirement;
+          bestMatchesAutoPreferred = Boolean(matchesAutoPreferred);
         }
       }
 
@@ -2375,15 +2408,19 @@ export function renderOpenAPIDocsHtml(
         const type = (scheme.type || "").toLowerCase();
         const httpScheme = (scheme.scheme || "").toLowerCase();
         const card = makeSchemeCard(getAuthSchemeDisplayLabel(schemeName), schemeName);
+        const persistAuthChange = function(nextValue) {
+          rememberAutoAuthPreference(op, schemeName);
+          return nextValue;
+        };
 
         if (type === "http" && httpScheme === "basic") {
           card.appendChild(makeField("Username", makeInput("Username", state.username, function(e) {
-            authState[schemeName].username = e.target.value;
+            authState[schemeName].username = persistAuthChange(e.target.value);
             saveAuthState();
             updateRequestPreview();
           })));
           card.appendChild(makeField("Password", makeInput("Password", state.password, function(e) {
-            authState[schemeName].password = e.target.value;
+            authState[schemeName].password = persistAuthChange(e.target.value);
             saveAuthState();
             updateRequestPreview();
           }, "password")));
@@ -2391,31 +2428,31 @@ export function renderOpenAPIDocsHtml(
           const paramName = scheme.name || "key";
           const location = (scheme.in || "header").toLowerCase();
           card.appendChild(makeField("API Key", makeInput(paramName + " (" + location + ")", state.value, function(e) {
-            authState[schemeName].value = e.target.value;
+            authState[schemeName].value = persistAuthChange(e.target.value);
             saveAuthState();
             updateRequestPreview();
           })));
         } else if (type === "oauth2") {
           card.appendChild(makeField("Access Token", makeInput("OAuth2 access token…", state.token, function(e) {
-            authState[schemeName].token = e.target.value;
+            authState[schemeName].token = persistAuthChange(e.target.value);
             saveAuthState();
             updateRequestPreview();
           })));
         } else if (type === "openidconnect") {
           card.appendChild(makeField("ID Token / Access Token", makeInput("OpenID Connect token…", state.token, function(e) {
-            authState[schemeName].token = e.target.value;
+            authState[schemeName].token = persistAuthChange(e.target.value);
             saveAuthState();
             updateRequestPreview();
           })));
         } else if (type === "http" && httpScheme === "digest") {
           card.appendChild(makeField("Digest Credential", makeInput("Digest token…", state.token, function(e) {
-            authState[schemeName].token = e.target.value;
+            authState[schemeName].token = persistAuthChange(e.target.value);
             saveAuthState();
             updateRequestPreview();
           })));
         } else if (type === "http" && httpScheme === "bearer") {
           card.appendChild(makeField("Bearer Token", makeInput("Bearer token…", state.token, function(e) {
-            authState[schemeName].token = e.target.value;
+            authState[schemeName].token = persistAuthChange(e.target.value);
             saveAuthState();
             updateRequestPreview();
           })));
@@ -2426,7 +2463,7 @@ export function renderOpenAPIDocsHtml(
           card.appendChild(hint);
         } else {
           card.appendChild(makeField("Token", makeInput("Token…", state.token, function(e) {
-            authState[schemeName].token = e.target.value;
+            authState[schemeName].token = persistAuthChange(e.target.value);
             saveAuthState();
             updateRequestPreview();
           })));
