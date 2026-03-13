@@ -470,6 +470,10 @@ export class VectorRouter<TTypes extends VectorTypes = DefaultVectorTypes> {
         query: this.getRequestQuery(request),
         cookies: this.getRequestCookies(request),
       });
+      const finalizeResponse = async (response: Response): Promise<Response> => {
+        const finalized = await this.middlewareManager.executeFinally(response, context);
+        return this.applyCorsResponse(finalized, context.request as unknown as Request);
+      };
 
       try {
         if (options.expose === false) {
@@ -588,18 +592,18 @@ export class VectorRouter<TTypes extends VectorTypes = DefaultVectorTypes> {
           response = createResponse(200, result, options.responseContentType);
         }
 
-        response = await this.middlewareManager.executeFinally(response, context);
-
-        return this.applyCorsResponse(response, context.request as unknown as Request);
+        return await finalizeResponse(response);
       } catch (error) {
         if (error instanceof Response) {
-          return error;
+          return await finalizeResponse(error);
         }
 
         console.error('Route handler error:', error);
-        return APIError.internalServerError(
-          error instanceof Error ? error.message : String(error),
-          options.responseContentType
+        return await finalizeResponse(
+          APIError.internalServerError(
+            error instanceof Error ? error.message : String(error),
+            options.responseContentType
+          )
         );
       }
     };

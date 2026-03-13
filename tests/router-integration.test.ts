@@ -1666,6 +1666,25 @@ describe('Router — error handling', () => {
     expect(body.message).toContain('something broke');
   });
 
+  it('applies finally middleware and CORS when handler throws an Error', async () => {
+    const { router, middleware } = makeRouter();
+
+    middleware.addFinally((response) => {
+      response.headers.set('x-after-ran', '1');
+      return response;
+    });
+    router.setCorsHeaders([['access-control-allow-origin', '*']]);
+
+    router.route({ method: 'GET', path: '/boom-with-finally', expose: true }, async () => {
+      throw new Error('something broke');
+    });
+
+    const res = await router.handle(new Request('http://localhost/boom-with-finally'));
+    expect(res.status).toBe(500);
+    expect(res.headers.get('x-after-ran')).toBe('1');
+    expect(res.headers.get('access-control-allow-origin')).toBe('*');
+  });
+
   it('returns the thrown Response directly', async () => {
     const { router } = makeRouter();
 
@@ -1675,6 +1694,51 @@ describe('Router — error handling', () => {
 
     const res = await router.handle(new Request('http://localhost/early'));
     expect(res.status).toBe(418);
+  });
+
+  it('applies finally middleware and CORS when handler throws a Response', async () => {
+    const { router, middleware } = makeRouter();
+
+    middleware.addFinally((response) => {
+      response.headers.set('x-after-ran', '1');
+      return response;
+    });
+    router.setCorsHeaders([['access-control-allow-origin', '*']]);
+
+    router.route({ method: 'GET', path: '/early-with-finally', expose: true }, async () => {
+      throw new Response('early exit', { status: 418 });
+    });
+
+    const res = await router.handle(new Request('http://localhost/early-with-finally'));
+    expect(res.status).toBe(418);
+    expect(res.headers.get('x-after-ran')).toBe('1');
+    expect(res.headers.get('access-control-allow-origin')).toBe('*');
+  });
+
+  it('applies finally middleware and CORS when checkpoint gateway throws', async () => {
+    const { router, middleware } = makeRouter();
+
+    middleware.addFinally((response) => {
+      response.headers.set('x-after-ran', '1');
+      return response;
+    });
+    router.setCorsHeaders([['access-control-allow-origin', '*']]);
+
+    router.route({ method: 'GET', path: '/checkpoint-throw', expose: true }, async () => ({ source: 'live' }));
+    router.setCheckpointGateway({
+      handle: async () => {
+        throw new Error('checkpoint failure');
+      },
+    } as any);
+
+    const res = await router.handle(
+      new Request('http://localhost/checkpoint-throw', {
+        headers: { 'x-vector-checkpoint-version': '9.9.9' },
+      })
+    );
+    expect(res.status).toBe(500);
+    expect(res.headers.get('x-after-ran')).toBe('1');
+    expect(res.headers.get('access-control-allow-origin')).toBe('*');
   });
 
   it('returns rawResponse when option is set', async () => {
