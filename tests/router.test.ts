@@ -654,6 +654,116 @@ describe('VectorRouter', () => {
       expect(response.headers.get('access-control-allow-origin')).toBe('https://app.example.com');
       expect(response.headers.get('access-control-allow-credentials')).toBe('true');
     });
+
+    it('applies CORS headers when auth fails without running finally middleware', async () => {
+      let finallyExecuted = false;
+      middlewareManager.addFinally((response) => {
+        finallyExecuted = true;
+        response.headers.set('x-after-ran', '1');
+        return response;
+      });
+      authManager.setProtectedHandler(async () => {
+        throw new Error('Invalid token');
+      });
+
+      router.route({ method: 'GET', path: '/cors-auth-fail', expose: true, auth: true }, async () => ({
+        ok: true,
+      }));
+      new VectorServer(router, {
+        cors: {
+          origin: ['https://app.example.com'],
+          credentials: true,
+        },
+      });
+
+      const response = await router.handle(
+        new Request('http://localhost/cors-auth-fail', {
+          headers: { origin: 'https://app.example.com' },
+        })
+      );
+
+      expect(response.status).toBe(401);
+      expect(response.headers.get('access-control-allow-origin')).toBe('https://app.example.com');
+      expect(response.headers.get('access-control-allow-credentials')).toBe('true');
+      expect(response.headers.get('x-after-ran')).toBeNull();
+      expect(finallyExecuted).toBe(false);
+    });
+
+    it('applies CORS headers when before middleware short-circuits without running finally middleware', async () => {
+      let finallyExecuted = false;
+      middlewareManager.addBefore(() => new Response('blocked', { status: 429 }));
+      middlewareManager.addFinally((response) => {
+        finallyExecuted = true;
+        response.headers.set('x-after-ran', '1');
+        return response;
+      });
+
+      router.route({ method: 'GET', path: '/cors-before-block', expose: true }, async () => ({
+        ok: true,
+      }));
+      new VectorServer(router, {
+        cors: {
+          origin: ['https://app.example.com'],
+          credentials: true,
+        },
+      });
+
+      const response = await router.handle(
+        new Request('http://localhost/cors-before-block', {
+          headers: { origin: 'https://app.example.com' },
+        })
+      );
+
+      expect(response.status).toBe(429);
+      expect(await response.text()).toBe('blocked');
+      expect(response.headers.get('access-control-allow-origin')).toBe('https://app.example.com');
+      expect(response.headers.get('access-control-allow-credentials')).toBe('true');
+      expect(response.headers.get('x-after-ran')).toBeNull();
+      expect(finallyExecuted).toBe(false);
+    });
+
+    it('applies CORS headers when route exposure rejects the request', async () => {
+      router.route({ method: 'GET', path: '/cors-hidden', expose: false }, async () => ({
+        ok: true,
+      }));
+      new VectorServer(router, {
+        cors: {
+          origin: ['https://app.example.com'],
+          credentials: true,
+        },
+      });
+
+      const response = await router.handle(
+        new Request('http://localhost/cors-hidden', {
+          headers: { origin: 'https://app.example.com' },
+        })
+      );
+
+      expect(response.status).toBe(403);
+      expect(response.headers.get('access-control-allow-origin')).toBe('https://app.example.com');
+      expect(response.headers.get('access-control-allow-credentials')).toBe('true');
+    });
+
+    it('applies CORS headers to malformed URL bad-request responses', async () => {
+      new VectorServer(router, {
+        cors: {
+          origin: 'https://app.example.com',
+          credentials: true,
+        },
+      });
+
+      const malformedRequest = {
+        url: 'http://%',
+        method: 'GET',
+        headers: new Headers({ origin: 'https://app.example.com' }),
+      } as unknown as Request;
+
+      const response = await router.handle(malformedRequest);
+
+      expect(response.status).toBe(400);
+      expect(response.headers.get('access-control-allow-origin')).toBe('https://app.example.com');
+      expect(response.headers.get('access-control-allow-credentials')).toBe('true');
+    });
   });
 
   describe('Route safety and matching behavior', () => {

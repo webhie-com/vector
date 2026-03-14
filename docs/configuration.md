@@ -157,6 +157,14 @@ Example precedence:
 - Do not mutate `context.request`; store custom per-request values in `context.metadata` (for example, `context.metadata.startTime`).
 - For checkpoint compatibility, avoid adding custom top-level fields on `context`; checkpoint forwarding preserves `metadata`, `content`, `validatedInput`, and `authUser`.
 
+## Hook Execution Semantics
+
+- Per-request order is: `before` -> `auth` (when enabled) -> handler/checkpoint -> `after`.
+- `after` runs for responses produced during handler/checkpoint execution, including validation failures and thrown errors/responses.
+- `after` does not run for early short-circuit responses: `before` returning `Response`, auth failures (`401`), or `expose: false` route rejections (`403`).
+- With CORS enabled, CORS headers are still applied to these short-circuit responses.
+- Observability tip: if you need logs for denied/short-circuit requests, instrument `before` and/or `auth` (not only `after`).
+
 ## Example Configuration
 
 ```ts
