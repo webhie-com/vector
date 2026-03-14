@@ -125,5 +125,6 @@ When `auth` is truthy (`true` or an `AuthKind` enum value), Vector invokes your 
 If `defaults.route.auth` is an `AuthKind`, `auth: true` routes inherit that kind for OpenAPI security generation.
 
 If auth fails, a `401` response is returned.
+Auth-failure `401` responses are early short-circuit responses, so route `after` middleware does not run for them.
 
 `AuthKind` also controls OpenAPI `securitySchemes` generation for the route.

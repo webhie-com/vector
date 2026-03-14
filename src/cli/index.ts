@@ -4,6 +4,11 @@ import { watch } from 'node:fs';
 import { parseArgs } from 'node:util';
 import { resolveHost, resolvePort, resolveRoutesDir } from './option-resolution';
 import { installGracefulShutdownHandlers } from './graceful-shutdown';
+import {
+  decideUnknownChangeReload,
+  shouldTrackKnownFilenameChange,
+  UNKNOWN_FILENAME_EVENT_COOLDOWN_MS,
+} from './watch-reload-policy';
 import { startVector } from '../start-vector';
 import type { StartedVectorApp } from '../types';
 
@@ -139,62 +144,81 @@ async function runDev() {
         let reloadTimeout: any = null;
         let isReloading = false;
         const changedFiles = new Set<string>();
-        let lastReloadTime = 0;
+        let pendingUnknownChange = false;
+        let unknownChangeCooldownUntil = 0;
 
-        // Watch entire project directory for changes
-        watch(process.cwd(), { recursive: true }, async (_, filename) => {
-          // Skip if already reloading or if it's too soon after last reload
-          const now = Date.now();
-          if (isReloading || now - lastReloadTime < 1000) return;
+        const scheduleReload = () => {
+          if (reloadTimeout) {
+            clearTimeout(reloadTimeout);
+          }
 
-          const segments = filename ? filename.split(/[/\\]/) : [];
-          const excluded = segments.some((s) => ['node_modules', '.git', '.vector', 'dist'].includes(s));
-          if (
-            filename &&
-            (filename.endsWith('.ts') || filename.endsWith('.js') || filename.endsWith('.json')) &&
-            !excluded &&
-            !filename.includes('bun.lockb') && // Ignore lock files
-            !filename.endsWith('.generated.ts') // Ignore generated files
-          ) {
-            // Track changed files
-            changedFiles.add(filename);
-
-            // Debounce reload to avoid multiple restarts
-            if (reloadTimeout) {
-              clearTimeout(reloadTimeout);
+          reloadTimeout = setTimeout(async () => {
+            // If a reload is in-flight, keep the intent and try again shortly.
+            if (isReloading) {
+              scheduleReload();
+              return;
             }
 
-            reloadTimeout = setTimeout(async () => {
-              if (isReloading || changedFiles.size === 0) return;
+            if (changedFiles.size === 0 && !pendingUnknownChange) {
+              return;
+            }
 
-              isReloading = true;
-              lastReloadTime = Date.now();
+            isReloading = true;
+            changedFiles.clear();
+            pendingUnknownChange = false;
 
-              // Clear changed files
-              changedFiles.clear();
+            // Stop the current server
+            if (app) {
+              app.stop();
+            }
 
-              // Stop the current server
-              if (app) {
-                app.stop();
+            // Small delay to ensure file system operations complete
+            await new Promise((resolve) => setTimeout(resolve, 100));
+
+            // Restart the server
+            try {
+              const result = await startServer();
+              server = result.server;
+              app = result.app;
+            } catch (error: any) {
+              console.error('\n[Reload Error]', error.message || error);
+              // Don't exit the process on reload failures, just continue watching
+            } finally {
+              isReloading = false;
+
+              // If anything changed while reloading, trigger another pass.
+              if (changedFiles.size > 0 || pendingUnknownChange) {
+                scheduleReload();
               }
+            }
+          }, 500);
+        };
 
-              // Small delay to ensure file system operations complete
-              await new Promise((resolve) => setTimeout(resolve, 100));
+        // Watch entire project directory for changes
+        watch(process.cwd(), { recursive: true }, (eventType, filename) => {
+          if (!filename) {
+            // Some platforms/watch backends emit null filenames for create/rename.
+            // Keep fallback reload behavior but throttle noisy unknown-path bursts.
+            const decision = decideUnknownChangeReload({
+              eventType,
+              pendingUnknownChange,
+              now: Date.now(),
+              cooldownUntil: unknownChangeCooldownUntil,
+              cooldownMs: UNKNOWN_FILENAME_EVENT_COOLDOWN_MS,
+            });
+            pendingUnknownChange = decision.nextPendingUnknownChange;
+            unknownChangeCooldownUntil = decision.nextCooldownUntil;
 
-              // Restart the server
-              try {
-                const result = await startServer();
-                server = result.server;
-                app = result.app;
-              } catch (error: any) {
-                console.error('\n[Reload Error]', error.message || error);
-                // Don't exit the process on reload failures, just continue watching
-              } finally {
-                // Reset flag immediately after reload completes
-                // The lastReloadTime check provides additional protection
-                isReloading = false;
-              }
-            }, 500); // Increased debounce to 500ms
+            if (decision.shouldSchedule) {
+              scheduleReload();
+            }
+            return;
+          }
+
+          if (shouldTrackKnownFilenameChange(filename)) {
+            // Track changed files
+            changedFiles.add(filename);
+            scheduleReload();
           }
         });
       } catch {

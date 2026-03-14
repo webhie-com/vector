@@ -204,7 +204,7 @@ export class VectorRouter<TTypes extends VectorTypes = DefaultVectorTypes> {
     try {
       url = new URL(request.url);
     } catch {
-      return APIError.badRequest('Malformed request URL');
+      return this.applyCorsResponse(APIError.badRequest('Malformed request URL'), request);
     }
     const pathname = url.pathname;
     // Fast path: exact route lookup avoids scanning regex matchers for common static/method routes.
@@ -477,21 +477,24 @@ export class VectorRouter<TTypes extends VectorTypes = DefaultVectorTypes> {
 
       try {
         if (options.expose === false) {
-          return APIError.forbidden('Forbidden');
+          return this.applyCorsResponse(APIError.forbidden('Forbidden'), context.request as unknown as Request);
         }
 
         const beforeResponse = await this.middlewareManager.executeBefore(context);
         if (beforeResponse instanceof Response) {
-          return beforeResponse;
+          return this.applyCorsResponse(beforeResponse, context.request as unknown as Request);
         }
 
         if (options.auth) {
           try {
             await this.authManager.authenticate(context);
           } catch (error) {
-            return APIError.unauthorized(
-              error instanceof Error ? error.message : 'Authentication failed',
-              options.responseContentType
+            return this.applyCorsResponse(
+              APIError.unauthorized(
+                error instanceof Error ? error.message : 'Authentication failed',
+                options.responseContentType
+              ),
+              context.request as unknown as Request
             );
           }
         }
