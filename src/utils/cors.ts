@@ -72,6 +72,12 @@ function mergeVary(existing: string | null, nextValue: string): string {
 }
 
 export function cors(config: CorsConfig) {
+  // Everything except the allowed origin and Vary is the same for every response.
+  const staticHeaderEntries = Object.entries(buildCorsHeaders('*', config, false)).filter(
+    ([name]) => name !== 'access-control-allow-origin'
+  );
+  const varyByOriginConfig = shouldVaryByOrigin(config);
+
   return {
     preflight(request: Request): Response {
       const origin = request.headers.get('origin') ?? undefined;
@@ -86,14 +92,13 @@ export function cors(config: CorsConfig) {
       const origin = request.headers.get('origin') ?? undefined;
       const allowed = getAllowedOrigin(origin, config);
       if (!allowed) return response;
-      const varyByOrigin = Boolean(origin && shouldVaryByOrigin(config));
-      const headers = buildCorsHeaders(allowed, config, varyByOrigin);
-      for (const [k, v] of Object.entries(headers)) {
-        if (k === 'vary') {
-          response.headers.set('vary', mergeVary(response.headers.get('vary'), v));
-          continue;
-        }
-        response.headers.set(k, v);
+      const headers = response.headers;
+      headers.set('access-control-allow-origin', allowed);
+      for (const [name, value] of staticHeaderEntries) {
+        headers.set(name, value);
+      }
+      if (origin && varyByOriginConfig) {
+        headers.set('vary', mergeVary(headers.get('vary'), 'Origin'));
       }
       return response;
     },

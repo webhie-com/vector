@@ -287,10 +287,17 @@ export function createResponse(
   data?: unknown,
   optionsOrContentType: string | CreateResponseOptions = CONTENT_TYPES.JSON
 ): Response {
-  const options =
-    typeof optionsOrContentType === 'string'
-      ? ({ contentType: optionsOrContentType } as CreateResponseOptions)
-      : (optionsOrContentType ?? {});
+  // Common case (the router's): only a content type, so no Headers object or cookies to merge.
+  if (typeof optionsOrContentType === 'string') {
+    const contentType = optionsOrContentType || CONTENT_TYPES.JSON;
+    const body = isJsonContentType(contentType) ? stringifyData(data) : data;
+    return new Response(body as any, {
+      status: statusCode,
+      headers: { 'content-type': contentType },
+    });
+  }
+
+  const options = optionsOrContentType ?? {};
 
   const headers = new Headers(options.headers);
   const contentType = options.contentType ?? headers.get('content-type') ?? CONTENT_TYPES.JSON;

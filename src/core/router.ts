@@ -6,6 +6,7 @@ import { STATIC_RESPONSES } from '../constants';
 import { AuthKind } from '../types';
 import { buildRouteRegex } from '../utils/path';
 import type { CheckpointGateway } from '../checkpoint/gateway';
+import { routeSpecificityScore, selectNativePaths } from './native-routes';
 import type {
   BunMethodMap,
   BunRouteTable,
@@ -46,6 +47,12 @@ interface RouteMatcher {
   specificity: number;
 }
 
+interface RequestInputs {
+  params: Record<string, string>;
+  query: Record<string, string | string[]>;
+  cookies: Record<string, string>;
+}
+
 interface InputValidationResult {
   response: Response | null;
   requiresBody: boolean;
@@ -63,6 +70,10 @@ export class VectorRouter<TTypes extends VectorTypes = DefaultVectorTypes> {
   private corsHeadersEntries: [string, string][] | null = null;
   private corsHandler: ((response: Response, request: Request) => Response) | null = null;
   private checkpointGateway: CheckpointGateway | null = null;
+  // Handlers built by wrapHandler always resolve to a Response, so Bun may call them directly.
+  // Legacy route entries can resolve to nothing to fall through, which only the JS router supports.
+  private nativeEligibleHandlers = new WeakSet<object>();
+  private routesChangedListener: (() => void) | null = null;
 
   constructor(
     middlewareManager: MiddlewareManager<TTypes>,
@@ -124,6 +135,7 @@ export class VectorRouter<TTypes extends VectorTypes = DefaultVectorTypes> {
     const method = resolvedOptions.method.toUpperCase();
     const path = resolvedOptions.path;
     const wrappedHandler = this.wrapHandler(resolvedOptions, handler);
+    this.nativeEligibleHandlers.add(wrappedHandler);
     const methodMap = this.getOrCreateMethodMap(path);
     methodMap[method] = wrappedHandler;
 
@@ -132,6 +144,64 @@ export class VectorRouter<TTypes extends VectorTypes = DefaultVectorTypes> {
       path,
       options: resolvedOptions,
     });
+    this.notifyRoutesChanged();
+  }
+
+  /**
+   * Called whenever the route table changes, so a running server can refresh its native routes.
+   * Returns an unsubscribe function that only removes this listener, so a stopped server cannot
+   * detach the listener of a server started after it.
+   */
+  onRoutesChanged(listener: () => void): () => void {
+    this.routesChangedListener = listener;
+    return () => {
+      if (this.routesChangedListener === listener) {
+        this.routesChangedListener = null;
+      }
+    };
+  }
+
+  private notifyRoutesChanged(): void {
+    this.routesChangedListener?.();
+  }
+
+  /**
+   * The routes to hand to Bun.serve's native router. Requests it does not match natively fall
+   * through to `fetch`, which must call {@link handle}; see ./native-routes.ts for why the
+   * selected subset always resolves to the route the JS router would pick.
+   */
+  getNativeRoutes(options: { corsEnabled: boolean }): BunRouteTable {
+    const nativeRoutes = Object.create(null) as BunRouteTable;
+    const selectedPaths = selectNativePaths(Object.keys(this.routeTable));
+
+    for (const path of selectedPaths) {
+      const entry = this.routeTable[path];
+      if (entry instanceof Response) {
+        // The JS router adds CORS headers to static responses; Bun would serve them untouched.
+        if (!options.corsEnabled) {
+          nativeRoutes[path] = entry;
+        }
+        continue;
+      }
+
+      const methods = Object.create(null) as BunMethodMap;
+      for (const [method, handler] of Object.entries(entry as BunMethodMap)) {
+        if (!this.nativeEligibleHandlers.has(handler)) {
+          continue;
+        }
+        // With CORS on, the server answers every OPTIONS request with a preflight first.
+        if (method === 'OPTIONS' && options.corsEnabled) {
+          continue;
+        }
+        methods[method] = handler;
+      }
+
+      if (Object.keys(methods).length > 0) {
+        nativeRoutes[path] = methods;
+      }
+    }
+
+    return nativeRoutes;
   }
 
   addRoute(entry: LegacyRouteEntry): void {
@@ -150,6 +220,7 @@ export class VectorRouter<TTypes extends VectorTypes = DefaultVectorTypes> {
         expose: true,
       } as RouteOptions<TTypes>,
     });
+    this.notifyRoutesChanged();
   }
 
   bulkAddRoutes(entries: LegacyRouteEntry[]): void {
@@ -165,6 +236,7 @@ export class VectorRouter<TTypes extends VectorTypes = DefaultVectorTypes> {
     }
     this.routeTable[path] = response;
     this.removeRouteMatcher(path);
+    this.notifyRoutesChanged();
   }
 
   getRouteTable(): BunRouteTable {
@@ -193,6 +265,7 @@ export class VectorRouter<TTypes extends VectorTypes = DefaultVectorTypes> {
     this.routeTable = Object.create(null) as BunRouteTable;
     this.routeMatchers = [];
     this.routeDefinitions = [];
+    this.notifyRoutesChanged();
   }
 
   // Legacy shim — no-op (Bun handles route priority natively)
@@ -330,7 +403,30 @@ export class VectorRouter<TTypes extends VectorTypes = DefaultVectorTypes> {
       return undefined;
     }
 
-    return matched.groups as Record<string, string>;
+    // Decode like Bun's native router does, so a param has the same value however it was routed.
+    const params: Record<string, string> = {};
+    for (const [key, value] of Object.entries(matched.groups)) {
+      if (value === undefined) {
+        continue;
+      }
+      try {
+        params[key] = decodeURIComponent(value);
+      } catch {
+        params[key] = value;
+      }
+    }
+    return params;
+  }
+
+  private hasNativeParams(request: Request): boolean {
+    const params = this.readRequestObjectField(request, 'params');
+    if (!params) {
+      return false;
+    }
+    for (const _ in params) {
+      return true;
+    }
+    return false;
   }
 
   private getRequestedCheckpointVersion(request: Request): string | null {
@@ -457,18 +553,28 @@ export class VectorRouter<TTypes extends VectorTypes = DefaultVectorTypes> {
 
     return async (request: Request) => {
       const vectorRequest = request as unknown as VectorRequest<TTypes>;
-      let pathname = '';
-      try {
-        pathname = new URL(request.url).pathname;
-      } catch {
-        // Ignore malformed URLs here; router.handle() already guards route matching.
+      // Bun's native router sets request.params; only requests routed in JS need the regex.
+      let fallbackParams: Record<string, string> | undefined;
+      if (routeMatcher && !this.hasNativeParams(request)) {
+        let pathname = '';
+        try {
+          pathname = new URL(request.url).pathname;
+        } catch {
+          // Ignore malformed URLs here; router.handle() already guards route matching.
+        }
+        fallbackParams = this.resolveFallbackParams(pathname, routeMatcher);
       }
-      const fallbackParams = this.resolveFallbackParams(pathname, routeMatcher);
-      const context = this.createContext(vectorRequest, {
-        metadata: options.metadata,
+      // Parsed once per request and shared by the context and input validation.
+      const requestInputs: RequestInputs = {
         params: this.getRequestParams(request, fallbackParams),
         query: this.getRequestQuery(request),
         cookies: this.getRequestCookies(request),
+      };
+      const context = this.createContext(vectorRequest, {
+        metadata: options.metadata,
+        params: requestInputs.params,
+        query: requestInputs.query,
+        cookies: requestInputs.cookies,
       });
       const finalizeResponse = async (response: Response): Promise<Response> => {
         const finalized = await this.middlewareManager.executeFinally(response, context);
@@ -515,7 +621,7 @@ export class VectorRouter<TTypes extends VectorTypes = DefaultVectorTypes> {
           }
 
           if (shouldDeferStreamingValidation) {
-            const validationWithoutBody = await this.validateInputSchema(context, options, fallbackParams, {
+            const validationWithoutBody = await this.validateInputSchema(context, options, requestInputs, {
               includeBody: false,
               allowBodyDeferral: true,
             });
@@ -528,13 +634,13 @@ export class VectorRouter<TTypes extends VectorTypes = DefaultVectorTypes> {
                 await this.parseRequestBodyForContext(context, requestForRoute, checkpointRequested);
               }
 
-              const fullValidation = await this.validateInputSchema(context, options, fallbackParams);
+              const fullValidation = await this.validateInputSchema(context, options, requestInputs);
               if (fullValidation.response) {
                 return fullValidation.response;
               }
             }
           } else {
-            const inputValidation = await this.validateInputSchema(context, options, fallbackParams);
+            const inputValidation = await this.validateInputSchema(context, options, requestInputs);
             if (inputValidation.response) {
               return inputValidation.response;
             }
@@ -624,7 +730,7 @@ export class VectorRouter<TTypes extends VectorTypes = DefaultVectorTypes> {
   private async buildInputValidationPayload(
     context: VectorContext<TTypes>,
     options: RouteOptions<TTypes>,
-    fallbackParams?: Record<string, string>,
+    requestInputs: RequestInputs,
     validationOptions?: { includeBody?: boolean }
   ): Promise<Record<string, unknown>> {
     const request = context.request;
@@ -641,10 +747,10 @@ export class VectorRouter<TTypes extends VectorTypes = DefaultVectorTypes> {
     }
 
     return {
-      params: this.getRequestParams(request as unknown as Request, fallbackParams),
-      query: this.getRequestQuery(request as unknown as Request),
+      params: requestInputs.params,
+      query: requestInputs.query,
       headers: Object.fromEntries(request.headers.entries()),
-      cookies: this.getRequestCookies(request as unknown as Request),
+      cookies: requestInputs.cookies,
       body,
     };
   }
@@ -663,16 +769,21 @@ export class VectorRouter<TTypes extends VectorTypes = DefaultVectorTypes> {
       return nativeQuery as Record<string, string | string[]>;
     }
 
-    try {
-      return VectorRouter.parseQuery(new URL(request.url));
-    } catch {
+    // request.url never carries a fragment, so everything after the first '?' is the query.
+    const url = request.url;
+    const queryStart = url.indexOf('?');
+    if (queryStart === -1 || queryStart === url.length - 1) {
       return {};
     }
+    return VectorRouter.parseQuery(new URLSearchParams(url.slice(queryStart + 1)));
   }
 
   private getRequestCookies(request: Request): Record<string, string> {
     const nativeCookies = this.readRequestObjectField(request, 'cookies');
-    if (nativeCookies) {
+    // Bun's native router sets request.cookies to a CookieMap (values behind .get()), which decodes
+    // values and keeps the first duplicate. Parse the header instead so cookies look the same
+    // however the request was routed.
+    if (nativeCookies && typeof (nativeCookies as { get?: unknown }).get !== 'function') {
       return nativeCookies as Record<string, string>;
     }
 
@@ -767,7 +878,7 @@ export class VectorRouter<TTypes extends VectorTypes = DefaultVectorTypes> {
   private async validateInputSchema(
     context: VectorContext<TTypes>,
     options: RouteOptions<TTypes>,
-    fallbackParams?: Record<string, string>,
+    requestInputs: RequestInputs,
     validationOptions?: { includeBody?: boolean; allowBodyDeferral?: boolean }
   ): Promise<InputValidationResult> {
     const inputSchema = options.schema?.input;
@@ -788,7 +899,7 @@ export class VectorRouter<TTypes extends VectorTypes = DefaultVectorTypes> {
     }
 
     const includeRawIssues = this.isDevelopmentMode();
-    const payload = await this.buildInputValidationPayload(context, options, fallbackParams, {
+    const payload = await this.buildInputValidationPayload(context, options, requestInputs, {
       includeBody: validationOptions?.includeBody,
     });
 
@@ -855,7 +966,7 @@ export class VectorRouter<TTypes extends VectorTypes = DefaultVectorTypes> {
     this.routeMatchers.push({
       path,
       regex: buildRouteRegex(path),
-      specificity: this.routeSpecificityScore(path),
+      specificity: routeSpecificityScore(path),
     });
 
     this.routeMatchers.sort((a, b) => {
@@ -870,9 +981,9 @@ export class VectorRouter<TTypes extends VectorTypes = DefaultVectorTypes> {
     this.routeMatchers = this.routeMatchers.filter((matcher) => matcher.path !== path);
   }
 
-  private static parseQuery(url: URL): Record<string, string | string[]> {
+  private static parseQuery(searchParams: URLSearchParams): Record<string, string | string[]> {
     const query: Record<string, string | string[]> = {};
-    for (const [key, value] of url.searchParams) {
+    for (const [key, value] of searchParams) {
       if (key in query) {
         const existing = query[key];
         if (Array.isArray(existing)) {
@@ -901,33 +1012,6 @@ export class VectorRouter<TTypes extends VectorTypes = DefaultVectorTypes> {
     }
 
     return cookies;
-  }
-
-  private routeSpecificityScore(path: string): number {
-    const STATIC_SEGMENT_WEIGHT = 1000;
-    const PARAM_SEGMENT_WEIGHT = 10;
-    const WILDCARD_WEIGHT = 1;
-    const EXACT_MATCH_BONUS = 10000;
-
-    const segments = path.split('/').filter(Boolean);
-    let score = 0;
-
-    for (const segment of segments) {
-      if (segment.includes('*')) {
-        score += WILDCARD_WEIGHT;
-      } else if (segment.startsWith(':')) {
-        score += PARAM_SEGMENT_WEIGHT;
-      } else {
-        score += STATIC_SEGMENT_WEIGHT;
-      }
-    }
-
-    score += path.length;
-    if (!path.includes(':') && !path.includes('*')) {
-      score += EXACT_MATCH_BONUS;
-    }
-
-    return score;
   }
 
   private applyCorsResponse(response: Response, request: Request): Response {
