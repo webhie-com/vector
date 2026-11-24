@@ -4,7 +4,10 @@ Vector performance comes from a small runtime model:
 
 - Bun runtime and native APIs
 - Zero runtime routing dependencies
-- Pre-compiled route matchers
+- Bun's native router: routes whose paths Bun can match the same way (plain segments and
+  whole-segment `:params`) are registered with `Bun.serve({ routes })`, so those requests skip
+  JavaScript routing. Everything else (wildcards, `:param+`, missing methods, trailing slashes)
+  falls through to the pre-compiled JS matchers, with the same priority order
 - Built-in cache hooks to avoid duplicate expensive work
 
 Benchmarks in this repository include load, soak, and benchmark scripts under `tests/e2e`.

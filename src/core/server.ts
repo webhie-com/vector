@@ -271,6 +271,8 @@ export class VectorServer<TTypes extends VectorTypes = DefaultVectorTypes> {
     corsify: (response: Response, request: Request) => Response;
   } | null = null;
   private corsHeadersEntries: [string, string][] | null = null;
+  private nativeRoutesReloadScheduled = false;
+  private unsubscribeRoutesChanged: (() => void) | null = null;
 
   constructor(router: VectorRouter<TTypes>, config: VectorConfig<TTypes>) {
     this.router = router;
@@ -456,12 +458,13 @@ export class VectorServer<TTypes extends VectorTypes = DefaultVectorTypes> {
     return Boolean(acceptEncoding && /\bgzip\b/i.test(acceptEncoding));
   }
 
-  private validateReservedOpenAPIPaths(): void {
+  private getReservedOpenAPIPaths(): Set<string> {
+    const reserved = new Set<string>();
     if (!this.openapiConfig.enabled) {
-      return;
+      return reserved;
     }
 
-    const reserved = new Set<string>([this.openapiConfig.path]);
+    reserved.add(this.openapiConfig.path);
     if (this.openapiConfig.docs.enabled) {
       reserved.add(this.openapiConfig.docs.path);
       reserved.add(OPENAPI_TAILWIND_ASSET_PATH);
@@ -470,6 +473,14 @@ export class VectorServer<TTypes extends VectorTypes = DefaultVectorTypes> {
       for (const asset of OPENAPI_FAVICON_ASSETS) {
         reserved.add(asset.path);
       }
+    }
+    return reserved;
+  }
+
+  private validateReservedOpenAPIPaths(): void {
+    const reserved = this.getReservedOpenAPIPaths();
+    if (reserved.size === 0) {
+      return;
     }
 
     const methodConflicts = this.router
@@ -701,22 +712,43 @@ export class VectorServer<TTypes extends VectorTypes = DefaultVectorTypes> {
       }
     };
 
+    const errorHandler = (error: Error, request?: Request): Response => {
+      console.error('[ERROR] Server error:', error);
+      return this.applyCors(new Response('Internal Server Error', { status: 500 }), request);
+    };
+
     try {
       this.server = Bun.serve({
         port,
         hostname,
         reusePort: this.config.reusePort !== false,
+        // Bun matches these natively; everything else falls through to appFetch and the JS router.
+        routes: this.buildNativeRoutes(appFetch) as any,
         fetch: appFetch,
         idleTimeout: this.config.idleTimeout ?? 60,
-        error: (error, request?: Request) => {
-          console.error('[ERROR] Server error:', error);
-          return this.applyCors(new Response('Internal Server Error', { status: 500 }), request);
-        },
+        error: errorHandler as any,
       });
 
       if (!this.server || !this.server.port) {
         throw new Error(`Failed to start server on ${hostname}:${port} - server object is invalid`);
       }
+
+      // Routes added or cleared after startup must reach Bun's native table too, or a stale native
+      // route could shadow a newer, more specific one.
+      this.unsubscribeRoutesChanged = this.router.onRoutesChanged(() => {
+        if (this.nativeRoutesReloadScheduled) {
+          return;
+        }
+        this.nativeRoutesReloadScheduled = true;
+        queueMicrotask(() => {
+          this.nativeRoutesReloadScheduled = false;
+          this.server?.reload({
+            routes: this.buildNativeRoutes(appFetch) as any,
+            fetch: appFetch,
+            error: errorHandler,
+          } as any);
+        });
+      });
 
       return this.server;
     } catch (error: any) {
@@ -735,7 +767,23 @@ export class VectorServer<TTypes extends VectorTypes = DefaultVectorTypes> {
     }
   }
 
+  private buildNativeRoutes(appFetch: (request: Request) => Promise<Response>): Record<string, unknown> {
+    const routes = this.router.getNativeRoutes({ corsEnabled: this.corsHandler !== null }) as Record<
+      string,
+      unknown
+    >;
+    // The built-in OpenAPI endpoints answer GET before any user route, as they do in appFetch.
+    // Registering them as static paths keeps a native param route from capturing them.
+    for (const path of this.getReservedOpenAPIPaths()) {
+      routes[path] = { GET: appFetch };
+    }
+    return routes;
+  }
+
   stop() {
+    this.unsubscribeRoutesChanged?.();
+    this.unsubscribeRoutesChanged = null;
+    this.nativeRoutesReloadScheduled = false;
     if (this.server) {
       this.server.stop();
       this.server = null;
