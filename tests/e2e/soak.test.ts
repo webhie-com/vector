@@ -303,6 +303,7 @@ async function runSoakTest() {
 }
 
 // Run if executed directly
-if (import.meta.main) {
+// `bun test` also imports this file (and sets import.meta.main), so only run under `bun run`.
+if (import.meta.main && process.env.NODE_ENV !== 'test') {
   runSoakTest();
 }

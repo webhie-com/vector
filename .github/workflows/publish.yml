@@ -32,11 +32,16 @@ jobs:
       - name: Install dependencies
         run: bun install
 
-      - name: Run tests
-        run: bun test
+      # Same commands as ci.yml. A bare `bun test` also picks up the load/soak/benchmark scripts
+      # in tests/e2e, and runs the package-export checks before dist/ exists.
+      - name: Run unit tests
+        run: bun run test
 
       - name: Build package
         run: bun run build:lib
+
+      - name: Run e2e tests
+        run: bun run test:e2e
 
       - name: Update version in package.json
         run: |
