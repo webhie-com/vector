@@ -19,9 +19,6 @@
     "valibot": "^1.2.0",
     "zod": "^4.3.6"
   },
-  "peerDependencies": {
-    "bun": ">=1.0.0"
-  },
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
